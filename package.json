@@ -10,7 +10,8 @@
     "build": "npm run build -w packages/core && npm run build -w packages/cli && npm run build -w packages/web",
     "test": "vitest run",
     "lint": "eslint .",
-    "dev": "npm run dev --workspace=packages/web"
+    "dev": "npm run dev --workspace=packages/web",
+    "clean": "rm -rf packages/*/dist packages/*/*.tsbuildinfo"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
