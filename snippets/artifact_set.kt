@@ -1,0 +1,83 @@
+/**
+ * The override bit is to allow the id placement in the argument list at the first spot
+ */
+enum class Set(override val id: Int, item: Boolean = true, accessory: Boolean = false): HasId {
+    Life(1),
+    Offense(2),
+    Defense(3),
+    Speed(4),
+    CriticalRate(5),
+    CritDamage(6),
+    Accuracy(7),
+    Resistance(8),
+    Lifesteal(9),
+    Fury(10),
+    Daze(11),
+    Cursed(12),
+    Frost(13),
+    Frenzy(14),
+    Regeneration(15),
+    Immunity(16),
+    Shield(17),
+    Relentless(18),
+    Savage(19),
+    Destroy(20),
+    Stun(21),
+    Toxic(22),
+    Provoke(23),
+    Retaliation(24),
+    Avenging(25),
+    Stalwart(26),
+    Reflex(27),
+    Curing(28),
+    Cruel(29),
+    Immortal(30),
+    DivineOffense(31),
+    DivineCriticalRate(32),
+    DivineLife(33),
+    DivineSpeed(34),
+    SwiftParry(35),
+    Deflection(36),
+    Resilience(37),
+    Perception(38),
+    Affinitybreaker(39),
+    Untouchable(40),
+    Fatal(41),
+    Frostbite(42),
+    Bloodthirst(43),
+    Guardian(44),
+    Fortitude(45),
+    Lethal(46), //46
+    Protection(47, true, true),
+    StoneSkin(48, true, true),
+    Killstroke(49),
+    Instinct(50),
+    Bolster(51),
+    Defiant(52),
+    Impulse(53),
+    Zeal(54),
+    //Don't ask me why this jump and why is it this tiny and not to 60+
+    Righteous(57),
+    Supersonic(58, true, true),
+    Merciless(59, true, true),
+    Slayer(60, true, true),
+    Feral(61, true, true),
+    Pinpoint(62, true, true),
+    Stonecleaver(63, true, true),
+    Rebirth(64, true, true),
+    Chronophage(65, true, true),
+    //Don't ask me why this jump either
+    Refresh(1000, false, true),
+    Cleansing(1001, false, true),
+    Bloodshield(1002, false, true),
+    Reaction(1003, false, true),
+    Revenge(1004, false, true),
+
+    Empty1(0, false, false),
+    Empty2(-1, false, false);
+
+    companion object {
+        val idToEnumMap = Set.entries.associateBy { set -> set.id }
+        fun getById(id: Int): Set = idToEnumMap[id]!!
+    }
+}
