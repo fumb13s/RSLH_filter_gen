@@ -9,25 +9,10 @@
   <body>
     <main>
       <h1>RSLH Filter Generator</h1>
+      <p>Default filter with one rule (Legendary, 6-star, all gear slots):</p>
 
-      <form id="config-form">
-        <label for="config-name">Config name</label>
-        <input id="config-name" name="name" type="text" required placeholder="my-filter" />
-
-        <fieldset id="rules-fieldset">
-          <legend>Rules</legend>
-          <div id="rules-container"></div>
-          <button type="button" id="add-rule">+ Add rule</button>
-        </fieldset>
-
-        <button type="submit">Generate config</button>
-      </form>
-
-      <section id="output-section" hidden>
-        <h2>Generated config</h2>
-        <pre id="output"></pre>
-        <button id="download">Download JSON</button>
-      </section>
+      <pre id="output"></pre>
+      <button id="download">Download .hsf</button>
     </main>
 
     <script type="module" src="/src/main.ts"></script>
