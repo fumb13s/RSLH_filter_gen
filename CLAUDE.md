@@ -6,7 +6,7 @@ TypeScript monorepo for generating JSON config files. Uses npm workspaces.
 
 - `packages/core` — shared config generation logic (library)
 - `packages/cli` — command-line interface (uses commander)
-- `packages/web` — web UI hosted on GitLab Pages (uses vite)
+- `packages/web` — web UI hosted on GitHub Pages (uses vite)
 
 ## Commands
 
