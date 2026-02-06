@@ -1,0 +1,43 @@
+image: node:22
+
+stages:
+  - build
+  - test
+  - deploy
+
+build:
+  stage: build
+  script:
+    - npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - packages/*/dist
+
+test:
+  stage: test
+  needs: [build]
+  script:
+    - npm ci
+    - npm run build
+    - npm test
+
+lint:
+  stage: test
+  needs: [build]
+  script:
+    - npm ci
+    - npm run lint
+
+pages:
+  stage: deploy
+  needs: [build, test]
+  script:
+    - npm ci
+    - npm run build
+    - mv packages/web/dist public
+  artifacts:
+    paths:
+      - public
+  only:
+    - main

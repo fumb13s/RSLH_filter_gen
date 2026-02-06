@@ -1,0 +1,16 @@
+{
+  "name": "@rslh/web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@rslh/core": "*"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}

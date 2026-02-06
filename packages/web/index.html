@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RSLH Filter Generator</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main>
+      <h1>RSLH Filter Generator</h1>
+
+      <form id="config-form">
+        <label for="config-name">Config name</label>
+        <input id="config-name" name="name" type="text" required placeholder="my-filter" />
+
+        <fieldset id="rules-fieldset">
+          <legend>Rules</legend>
+          <div id="rules-container"></div>
+          <button type="button" id="add-rule">+ Add rule</button>
+        </fieldset>
+
+        <button type="submit">Generate config</button>
+      </form>
+
+      <section id="output-section" hidden>
+        <h2>Generated config</h2>
+        <pre id="output"></pre>
+        <button id="download">Download JSON</button>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

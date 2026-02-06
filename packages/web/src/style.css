@@ -1,0 +1,96 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  max-width: 640px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: #1a1a1a;
+  background: #fafafa;
+}
+
+h1 {
+  margin-bottom: 1.5rem;
+}
+
+label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+input[type="text"] {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+#config-name {
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+fieldset {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.rule-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.rule-row input {
+  flex: 1;
+}
+
+.rule-row select {
+  padding: 0.4rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.remove-rule {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  color: #888;
+}
+
+button {
+  cursor: pointer;
+  padding: 0.5rem 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 0.9rem;
+}
+
+button[type="submit"] {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  font-size: 1rem;
+  margin-top: 0.5rem;
+}
+
+#output-section {
+  margin-top: 2rem;
+}
+
+pre {
+  background: #f0f0f0;
+  padding: 1rem;
+  border-radius: 6px;
+  overflow-x: auto;
+}

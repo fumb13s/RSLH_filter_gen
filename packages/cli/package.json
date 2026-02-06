@@ -1,0 +1,21 @@
+{
+  "name": "@rslh/cli",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "@rslh/cli": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc --build && chmod +x dist/index.js"
+  },
+  "dependencies": {
+    "@rslh/core": "*",
+    "commander": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  }
+}
