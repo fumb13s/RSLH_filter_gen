@@ -476,6 +476,12 @@ function buildSubstatSelector(group: SettingGroup, index: number, cb: GeneratorC
 // Roll count control — range slider
 // ---------------------------------------------------------------------------
 
+const ROLL_PRESETS: { label: string; value: number }[] = [
+  { label: "Mid Game", value: 4 },
+  { label: "Late Game", value: 6 },
+  { label: "End Game", value: 7 },
+];
+
 function buildRollControl(group: SettingGroup, index: number, cb: GeneratorCallbacks): HTMLElement {
   const wrap = document.createElement("div");
   wrap.className = "group-section";
@@ -485,8 +491,22 @@ function buildRollControl(group: SettingGroup, index: number, cb: GeneratorCallb
 
   const label = document.createElement("div");
   label.className = "section-label";
-  label.textContent = "Min Rolls into Good Stats";
+  label.textContent = "Good Rolls at Level 16";
   labelRow.appendChild(label);
+
+  for (const preset of ROLL_PRESETS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "preset-btn";
+    btn.textContent = preset.label;
+    btn.addEventListener("click", () => {
+      group.rolls = preset.value;
+      slider.value = String(preset.value);
+      valueDisplay.textContent = String(preset.value);
+      cb.onGroupChange(index, group);
+    });
+    labelRow.appendChild(btn);
+  }
 
   const valueDisplay = document.createElement("span");
   valueDisplay.className = "roll-value";
