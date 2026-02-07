@@ -67,6 +67,7 @@ export const ARTIFACT_SET_NAMES: Record<number, string> = {
   63: "Stonecleaver",
   64: "Rebirth",
   65: "Chronophage",
+  66: "Mercurial",
   1000: "Refresh",
   1001: "Cleansing",
   1002: "Bloodshield",
