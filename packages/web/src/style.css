@@ -310,6 +310,11 @@ pre {
   color: #333;
 }
 
+.substat-rolls {
+  color: #6b7280;
+  font-size: 0.8rem;
+}
+
 /* Matched rule highlight */
 
 .rule-matched {

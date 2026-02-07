@@ -137,7 +137,7 @@ function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
     substatsEl.className = "rule-substats";
     substatsEl.innerHTML =
       '<div class="substats-title">Substats</div>' +
-      activeStats.map(renderSubstat).join("");
+      activeStats.map((s) => renderSubstat(s, rule.Rank)).join("");
     card.appendChild(substatsEl);
   }
 
@@ -160,11 +160,21 @@ function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
   return card;
 }
 
-function renderSubstat(s: HsfSubstat): string {
+function renderSubstat(s: HsfSubstat, rank: number): string {
   const name = lookupName(STAT_NAMES, s.ID);
   const flat = s.IsFlat ? " (flat)" : "";
   const cond = s.Condition || ">=";
-  return `<div class="substat-line">${esc(name)} ${esc(cond)} ${s.Value}${flat}</div>`;
+  const rolls = minRollsNeeded(s, rank);
+  const rollNote = rolls !== undefined && rolls > 1 ? ` <span class="substat-rolls">(${rolls})</span>` : "";
+  return `<div class="substat-line">${esc(name)} ${esc(cond)} ${s.Value}${flat}${rollNote}</div>`;
+}
+
+/** Minimum number of rolls needed to reach the substat's threshold value, or undefined if unknown. */
+function minRollsNeeded(s: HsfSubstat, rank: number): number | undefined {
+  if (s.IsFlat || rank === 0) return undefined;
+  const range = getRollRange(s.ID, rank);
+  if (!range) return undefined;
+  return Math.ceil(s.Value / range[1]);
 }
 
 function esc(text: string): string {
