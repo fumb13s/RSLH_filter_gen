@@ -264,6 +264,22 @@ function buildSlotSelector(group: SettingGroup, index: number, cb: GeneratorCall
   label.textContent = "Slots";
   headerRow.appendChild(label);
 
+  const SLOT_PRESETS: { label: string; ids: number[] }[] = [
+    { label: "Upper",  ids: [5, 1, 6] },
+    { label: "Lower",  ids: [3, 2, 4] },
+    { label: "Jewels", ids: [7, 8, 9] },
+  ];
+
+  for (const preset of SLOT_PRESETS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "preset-btn";
+    btn.textContent = preset.label;
+    headerRow.appendChild(btn);
+    // Wire after checkboxes are created
+    btn.addEventListener("click", () => applySlotPreset(preset.ids));
+  }
+
   const clearBtn = document.createElement("button");
   clearBtn.type = "button";
   clearBtn.className = "preset-btn";
@@ -304,6 +320,14 @@ function buildSlotSelector(group: SettingGroup, index: number, cb: GeneratorCall
     lbl.appendChild(span);
 
     grid.appendChild(lbl);
+  }
+
+  function applySlotPreset(ids: number[]): void {
+    group.slots = [...ids];
+    for (const c of checkboxes) {
+      c.checked = ids.includes(Number(c.value));
+    }
+    cb.onGroupChange(index, group);
   }
 
   clearBtn.addEventListener("click", () => {
