@@ -162,16 +162,16 @@ function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
 
 function renderSubstat(s: HsfSubstat, rank: number): string {
   const name = lookupName(STAT_NAMES, s.ID);
-  const flat = s.IsFlat ? " (flat)" : "";
   const cond = s.Condition || ">=";
   const rolls = minRollsNeeded(s, rank);
-  const rollNote = rolls !== undefined && rolls > 1 ? ` <span class="substat-rolls">(${rolls})</span>` : "";
-  return `<div class="substat-line">${esc(name)} ${esc(cond)} ${s.Value}${flat}${rollNote}</div>`;
+  const extra = rolls !== undefined ? rolls - 1 : 0;
+  const rollNote = extra > 0 ? ` <span class="substat-rolls">(${extra})</span>` : "";
+  return `<div class="substat-line">${esc(name)} ${esc(cond)} ${s.Value}${rollNote}</div>`;
 }
 
 /** Minimum number of rolls needed to reach the substat's threshold value, or undefined if unknown. */
 function minRollsNeeded(s: HsfSubstat, rank: number): number | undefined {
-  if (s.IsFlat || rank === 0) return undefined;
+  if (rank === 0) return undefined;
   const range = getRollRange(s.ID, rank);
   if (!range) return undefined;
   return Math.ceil(s.Value / range[1]);
@@ -361,14 +361,7 @@ function updateSubstatRange(i: number): void {
     return;
   }
 
-  const [statId, isFlat] = statVal.split(":").map(Number);
-  if (isFlat) {
-    // Flat stats have no roll range data — no max constraint
-    valueInput.min = "1";
-    valueInput.removeAttribute("max");
-    return;
-  }
-
+  const [statId] = statVal.split(":").map(Number);
   const rank = val("test-rank");
   const range = getRollRange(statId, rank);
   if (!range) {
