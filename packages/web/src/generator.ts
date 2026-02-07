@@ -112,10 +112,21 @@ function buildSetSelector(group: SettingGroup, index: number, cb: GeneratorCallb
   const wrap = document.createElement("div");
   wrap.className = "group-section";
 
+  const headerRow = document.createElement("div");
+  headerRow.className = "section-label-row";
+
   const label = document.createElement("div");
   label.className = "section-label";
   label.textContent = "Sets";
-  wrap.appendChild(label);
+  headerRow.appendChild(label);
+
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.className = "preset-btn";
+  clearBtn.textContent = "Clear";
+  headerRow.appendChild(clearBtn);
+
+  wrap.appendChild(headerRow);
 
   const dropdown = document.createElement("div");
   dropdown.className = "set-selector";
@@ -174,6 +185,17 @@ function buildSetSelector(group: SettingGroup, index: number, cb: GeneratorCallb
 
   panel.appendChild(list);
   dropdown.appendChild(panel);
+
+  // Clear button
+  clearBtn.addEventListener("click", () => {
+    group.sets = [];
+    for (const item of list.children) {
+      const input = (item as HTMLElement).querySelector("input");
+      if (input) input.checked = false;
+    }
+    toggle.textContent = summariseSets(group.sets);
+    cb.onGroupChange(index, group);
+  });
 
   // Filter on search
   search.addEventListener("input", () => {
