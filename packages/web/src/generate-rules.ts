@@ -56,6 +56,12 @@ export function generateRulesFromGroups(groups: SettingGroup[]): HsfRule[] {
 
     const parts = partitions(group.rolls, group.goodStats.length, 4);
 
+    // Main stat variants: one rule per selected main stat, or one with -1 (any)
+    const mainStatVariants: { MainStatID: number; MainStatF: number }[] =
+      group.mainStats.length > 0
+        ? group.mainStats.map(([id, isFlat]) => ({ MainStatID: id, MainStatF: isFlat ? 0 : 1 }))
+        : [{ MainStatID: -1, MainStatF: 1 }];
+
     for (const part of parts) {
       const substats = part
         .map((rolls, i) => {
@@ -77,20 +83,23 @@ export function generateRulesFromGroups(groups: SettingGroup[]): HsfRule[] {
       // Pad to exactly 4 substat slots
       while (substats.length < 4) substats.push(emptySubstat());
 
-      const rule = defaultRule({
-        ...(group.sets.length > 0 ? { ArtifactSet: [...group.sets] } : { ArtifactSet: undefined }),
-        ...(group.slots.length > 0 ? { ArtifactType: [...group.slots] } : { ArtifactType: undefined }),
-        Rank: 6,
-        IsRuleTypeAND: true,
-        LVLForCheck: 16,
-        Substats: substats,
-      });
+      for (const mainStat of mainStatVariants) {
+        const rule = defaultRule({
+          ...(group.sets.length > 0 ? { ArtifactSet: [...group.sets] } : { ArtifactSet: undefined }),
+          ...(group.slots.length > 0 ? { ArtifactType: [...group.slots] } : { ArtifactType: undefined }),
+          ...mainStat,
+          Rank: 6,
+          IsRuleTypeAND: true,
+          LVLForCheck: 16,
+          Substats: substats.map((s) => ({ ...s })),
+        });
 
-      // Remove ArtifactSet/ArtifactType keys when undefined (= "any")
-      if (rule.ArtifactSet === undefined) delete rule.ArtifactSet;
-      if (rule.ArtifactType === undefined) delete rule.ArtifactType;
+        // Remove ArtifactSet/ArtifactType keys when undefined (= "any")
+        if (rule.ArtifactSet === undefined) delete rule.ArtifactSet;
+        if (rule.ArtifactType === undefined) delete rule.ArtifactType;
 
-      rules.push(rule);
+        rules.push(rule);
+      }
     }
   }
 

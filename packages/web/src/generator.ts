@@ -14,8 +14,9 @@ import {
 export interface SettingGroup {
   sets: number[];
   slots: number[];
-  goodStats: [number, boolean][];  // [statId, isFlat]
-  rolls: number;                   // 4–9
+  mainStats: [number, boolean][];       // [statId, isFlat]
+  goodStats: [number, boolean][];      // [statId, isFlat]
+  rolls: number;                       // 4–9
 }
 
 export interface GeneratorCallbacks {
@@ -52,7 +53,7 @@ const GOOD_SUBSTATS = ALL_SUBSTATS.filter(
 // ---------------------------------------------------------------------------
 
 export function defaultGroup(): SettingGroup {
-  return { sets: [], slots: [], goodStats: [], rolls: 6 };
+  return { sets: [], slots: [], mainStats: [], goodStats: [], rolls: 6 };
 }
 
 export function renderGenerator(groups: SettingGroup[], callbacks: GeneratorCallbacks): void {
@@ -99,6 +100,9 @@ function buildGroupCard(group: SettingGroup, index: number, cb: GeneratorCallbac
 
   // Slot selector
   card.appendChild(buildSlotSelector(group, index, cb));
+
+  // Main stat selector
+  card.appendChild(buildMainStatSelector(group, index, cb));
 
   // Good substats selector
   card.appendChild(buildSubstatSelector(group, index, cb));
@@ -296,6 +300,70 @@ function buildSlotSelector(group: SettingGroup, index: number, cb: GeneratorCall
 
   clearBtn.addEventListener("click", () => {
     group.slots = [];
+    for (const c of checkboxes) c.checked = false;
+    cb.onGroupChange(index, group);
+  });
+
+  wrap.appendChild(grid);
+  return wrap;
+}
+
+// ---------------------------------------------------------------------------
+// Main stat selector — checkboxes
+// ---------------------------------------------------------------------------
+
+function buildMainStatSelector(group: SettingGroup, index: number, cb: GeneratorCallbacks): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "group-section";
+
+  const headerRow = document.createElement("div");
+  headerRow.className = "section-label-row";
+
+  const label = document.createElement("div");
+  label.className = "section-label";
+  label.textContent = "Main Stat";
+  headerRow.appendChild(label);
+
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.className = "preset-btn";
+  clearBtn.textContent = "Clear";
+  headerRow.appendChild(clearBtn);
+
+  wrap.appendChild(headerRow);
+
+  const grid = document.createElement("div");
+  grid.className = "substat-checkboxes";
+
+  const checkboxes: HTMLInputElement[] = [];
+
+  for (const [statId, isFlat] of ALL_SUBSTATS) {
+    const lbl = document.createElement("label");
+    lbl.className = "checkbox-label";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = group.mainStats.some(([s, f]) => s === statId && f === isFlat);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        group.mainStats.push([statId, isFlat]);
+      } else {
+        group.mainStats = group.mainStats.filter(([s, f]) => !(s === statId && f === isFlat));
+      }
+      cb.onGroupChange(index, group);
+    });
+    lbl.appendChild(checkbox);
+    checkboxes.push(checkbox);
+
+    const span = document.createElement("span");
+    span.textContent = statDisplayName(statId, isFlat);
+    lbl.appendChild(span);
+
+    grid.appendChild(lbl);
+  }
+
+  clearBtn.addEventListener("click", () => {
+    group.mainStats = [];
     for (const c of checkboxes) c.checked = false;
     cb.onGroupChange(index, group);
   });
