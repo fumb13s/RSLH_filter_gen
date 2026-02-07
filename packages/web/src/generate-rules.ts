@@ -60,6 +60,9 @@ export function generateRulesFromGroups(groups: SettingGroup[]): HsfRule[] {
         ? group.mainStats.map(([id, isFlat]) => ({ id, isFlat, MainStatID: id, MainStatF: isFlat ? 0 : 1 }))
         : [{ id: -1, isFlat: false, MainStatID: -1, MainStatF: 1 }];
 
+    // Level checkpoints: each step down from 16 reduces rolls by 1
+    const LEVEL_CHECKPOINTS = [16, 12, 8, 4, 0] as const;
+
     for (const mainStat of mainStatVariants) {
       // Exclude the main stat from good substats — an artifact can't have
       // the same stat as both main and substat
@@ -69,45 +72,51 @@ export function generateRulesFromGroups(groups: SettingGroup[]): HsfRule[] {
 
       if (effectiveGoodStats.length === 0) continue;
 
-      const parts = partitions(group.rolls, effectiveGoodStats.length, 4);
+      for (let li = 0; li < LEVEL_CHECKPOINTS.length; li++) {
+        const level = LEVEL_CHECKPOINTS[li];
+        const levelRolls = group.rolls - li;
+        if (levelRolls <= 0) break;
 
-      for (const part of parts) {
-        const substats = part
-          .map((rolls, i) => {
-            if (rolls === 0) return null;
-            const [statId] = effectiveGoodStats[i];
-            const range = getRollRange(statId, 6);
-            if (!range) return null;
-            const threshold = rolls * range[0];
-            return {
-              ID: statId,
-              Value: threshold,
-              IsFlat: false,
-              NotAvailable: false,
-              Condition: ">=",
-            };
-          })
-          .filter((s) => s !== null);
+        const parts = partitions(levelRolls, effectiveGoodStats.length, 4);
 
-        // Pad to exactly 4 substat slots
-        while (substats.length < 4) substats.push(emptySubstat());
+        for (const part of parts) {
+          const substats = part
+            .map((rolls, i) => {
+              if (rolls === 0) return null;
+              const [statId] = effectiveGoodStats[i];
+              const range = getRollRange(statId, 6);
+              if (!range) return null;
+              const threshold = rolls * range[0];
+              return {
+                ID: statId,
+                Value: threshold,
+                IsFlat: false,
+                NotAvailable: false,
+                Condition: ">=",
+              };
+            })
+            .filter((s) => s !== null);
 
-        const rule = defaultRule({
-          ...(group.sets.length > 0 ? { ArtifactSet: [...group.sets] } : { ArtifactSet: undefined }),
-          ...(group.slots.length > 0 ? { ArtifactType: [...group.slots] } : { ArtifactType: undefined }),
-          MainStatID: mainStat.MainStatID,
-          MainStatF: mainStat.MainStatF,
-          Rank: 6,
-          IsRuleTypeAND: true,
-          LVLForCheck: 16,
-          Substats: substats,
-        });
+          // Pad to exactly 4 substat slots
+          while (substats.length < 4) substats.push(emptySubstat());
 
-        // Remove ArtifactSet/ArtifactType keys when undefined (= "any")
-        if (rule.ArtifactSet === undefined) delete rule.ArtifactSet;
-        if (rule.ArtifactType === undefined) delete rule.ArtifactType;
+          const rule = defaultRule({
+            ...(group.sets.length > 0 ? { ArtifactSet: [...group.sets] } : { ArtifactSet: undefined }),
+            ...(group.slots.length > 0 ? { ArtifactType: [...group.slots] } : { ArtifactType: undefined }),
+            MainStatID: mainStat.MainStatID,
+            MainStatF: mainStat.MainStatF,
+            Rank: 6,
+            IsRuleTypeAND: true,
+            LVLForCheck: level,
+            Substats: substats,
+          });
 
-        rules.push(rule);
+          // Remove ArtifactSet/ArtifactType keys when undefined (= "any")
+          if (rule.ArtifactSet === undefined) delete rule.ArtifactSet;
+          if (rule.ArtifactType === undefined) delete rule.ArtifactType;
+
+          rules.push(rule);
+        }
       }
     }
   }
