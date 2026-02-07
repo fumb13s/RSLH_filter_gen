@@ -99,13 +99,17 @@ export const STAT_NAMES: Record<number, string> = {
   8: "ACC",
 };
 
-export const RARITY_BITS = {
-  Common: 1,
-  Uncommon: 2,
-  Rare: 4,
-  Epic: 8,
-  Legendary: 16,
-} as const;
+/**
+ * .hsf rarity IDs → rarity tier names.
+ * The .hsf Rarity field is a minimum-rarity threshold, not a bitmask.
+ * Common and Uncommon IDs are unknown and rarely used.
+ */
+export const HSF_RARITY_IDS: Record<number, string> = {
+  8: "Rare",
+  9: "Epic",
+  15: "Mythical",
+  16: "Legendary",
+};
 
 export const FACTION_NAMES: Record<number, string> = {
   1: "Banner Lords",
@@ -131,12 +135,9 @@ export function lookupName(map: Record<number, string>, id: number): string {
   return map[id] ?? `Unknown(${id})`;
 }
 
-/** Decode a rarity bitmask to a human-readable string (e.g. "Epic+Legendary"). */
+/** Describe an .hsf rarity threshold as a human-readable string. */
 export function describeRarity(value: number): string {
   if (value === 0) return "Any";
-  const names: string[] = [];
-  for (const [name, bit] of Object.entries(RARITY_BITS)) {
-    if (value & bit) names.push(name);
-  }
-  return names.length > 0 ? names.join("+") : `Unknown(${value})`;
+  const name = HSF_RARITY_IDS[value];
+  return name ? `>= ${name}` : `Unknown(${value})`;
 }

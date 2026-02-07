@@ -231,19 +231,18 @@ describe("lookupName", () => {
 });
 
 describe("describeRarity", () => {
-  it("decodes single-bit rarity", () => {
-    expect(describeRarity(16)).toBe("Legendary");
-  });
-
-  it("decodes multi-bit rarity", () => {
-    expect(describeRarity(9)).toBe("Common+Epic");
-  });
-
-  it("decodes all bits set", () => {
-    expect(describeRarity(31)).toBe("Common+Uncommon+Rare+Epic+Legendary");
+  it("describes known rarity thresholds", () => {
+    expect(describeRarity(8)).toBe(">= Rare");
+    expect(describeRarity(9)).toBe(">= Epic");
+    expect(describeRarity(16)).toBe(">= Legendary");
+    expect(describeRarity(15)).toBe(">= Mythical");
   });
 
   it("returns Any for 0", () => {
     expect(describeRarity(0)).toBe("Any");
+  });
+
+  it("returns Unknown for unmapped IDs", () => {
+    expect(describeRarity(99)).toBe("Unknown(99)");
   });
 });

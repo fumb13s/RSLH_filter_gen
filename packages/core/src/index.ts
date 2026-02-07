@@ -11,7 +11,7 @@ export {
   ARTIFACT_SET_NAMES,
   ARTIFACT_SLOT_NAMES,
   STAT_NAMES,
-  RARITY_BITS,
+  HSF_RARITY_IDS,
   FACTION_NAMES,
   lookupName,
   describeRarity,
