@@ -13,9 +13,12 @@ export {
   STAT_NAMES,
   HSF_RARITY_IDS,
   FACTION_NAMES,
+  SLOT_STATS,
   lookupName,
   describeRarity,
+  statDisplayName,
 } from "./mappings.js";
+export type { StatRef, SlotStatConfig } from "./mappings.js";
 export { ITEM_RARITIES, STARTING_SUBSTATS, MAX_SUBSTATS, UPGRADE_LEVELS, ROLL_RANGES, rollRangeGroup, getRollRange } from "./item.js";
 export type { Item, ItemSubstat, ItemRarity, RollRange } from "./item.js";
 export { evaluateFilter, matchesRule } from "./evaluate.js";

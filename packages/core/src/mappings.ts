@@ -130,6 +130,89 @@ export const FACTION_NAMES: Record<number, string> = {
   16: "Argonites",
 };
 
+// ---------------------------------------------------------------------------
+// Slot → stat mappings (primary / substat availability)
+// ---------------------------------------------------------------------------
+
+/** A stat reference: [statId, isFlat]. */
+export type StatRef = readonly [statId: number, isFlat: boolean];
+
+export interface SlotStatConfig {
+  readonly primaryStats: readonly StatRef[];
+  readonly substats: readonly StatRef[];
+}
+
+/**
+ * Which primary (main) stats and substats each slot can roll.
+ * Derived from official Plarium artifact stat table.
+ */
+export const SLOT_STATS: Record<number, SlotStatConfig> = {
+  // Weapon
+  5: {
+    primaryStats: [[2, true]],
+    substats: [[1, true], [1, false], [2, false], [4, true], [5, false], [6, false], [7, true], [8, true]],
+  },
+  // Helmet
+  1: {
+    primaryStats: [[1, true]],
+    substats: [[1, false], [2, true], [2, false], [3, true], [3, false], [4, true], [5, false], [6, false], [7, true], [8, true]],
+  },
+  // Shield
+  6: {
+    primaryStats: [[3, true]],
+    substats: [[1, true], [1, false], [3, false], [4, true], [5, false], [6, false], [7, true], [8, true]],
+  },
+  // Gloves
+  3: {
+    primaryStats: [[5, false], [6, false], [1, true], [1, false], [2, true], [2, false], [3, true], [3, false]],
+    substats: [[1, true], [1, false], [2, true], [2, false], [3, true], [3, false], [4, true], [5, false], [6, false], [7, true], [8, true]],
+  },
+  // Chest
+  2: {
+    primaryStats: [[8, true], [7, true], [1, true], [1, false], [2, true], [2, false], [3, true], [3, false]],
+    substats: [[1, true], [1, false], [2, true], [2, false], [3, true], [3, false], [4, true], [5, false], [6, false], [7, true], [8, true]],
+  },
+  // Boots
+  4: {
+    primaryStats: [[4, true], [1, true], [1, false], [2, true], [2, false], [3, true], [3, false]],
+    substats: [[1, true], [1, false], [2, true], [2, false], [3, true], [3, false], [4, true], [5, false], [6, false], [7, true], [8, true]],
+  },
+  // Ring
+  7: {
+    primaryStats: [[1, true], [2, true], [3, true]],
+    substats: [[1, true], [2, true], [3, true], [1, false], [2, false], [3, false]],
+  },
+  // Amulet
+  8: {
+    primaryStats: [[6, false], [1, true], [2, true], [3, true]],
+    substats: [[1, true], [2, true], [3, true], [8, true], [7, true], [6, false]],
+  },
+  // Banner
+  9: {
+    primaryStats: [[8, true], [7, true], [1, true], [2, true], [3, true]],
+    substats: [[1, true], [2, true], [3, true], [1, false], [2, false], [3, false], [4, true]],
+  },
+};
+
+/** Display name for a stat variant: combines stat ID with flat/percentage context. */
+export function statDisplayName(statId: number, isFlat: boolean): string {
+  switch (statId) {
+    case 1: return isFlat ? "HP" : "HP%";
+    case 2: return isFlat ? "ATK" : "ATK%";
+    case 3: return isFlat ? "DEF" : "DEF%";
+    case 4: return "SPD";
+    case 5: return "C.RATE";
+    case 6: return "C.DMG";
+    case 7: return "RES";
+    case 8: return "ACC";
+    default: return `Unknown(${statId})`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 /** Look up a name by ID, returning `"Unknown(N)"` for unmapped IDs. */
 export function lookupName(map: Record<number, string>, id: number): string {
   return map[id] ?? `Unknown(${id})`;
