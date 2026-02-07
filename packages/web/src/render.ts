@@ -101,8 +101,9 @@ function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
   const body = document.createElement("div");
   body.className = "rule-body";
 
-  const sets = rule.ArtifactSet
-    ? rule.ArtifactSet.map((id) => lookupName(ARTIFACT_SET_NAMES, id)).join(", ")
+  const setIds = rule.ArtifactSet?.filter((id) => id !== 0);
+  const sets = setIds && setIds.length > 0
+    ? setIds.map((id) => lookupName(ARTIFACT_SET_NAMES, id)).join(", ")
     : "Any";
   const slots = rule.ArtifactType
     ? rule.ArtifactType.map((id) => lookupName(ARTIFACT_SLOT_NAMES, id)).join(", ")
