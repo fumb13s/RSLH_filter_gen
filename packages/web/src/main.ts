@@ -50,7 +50,8 @@ function renderTabBar(): void {
 
     const label = document.createElement("span");
     label.className = "tab-label";
-    label.textContent = tab.fileName ?? "New Tab";
+    const typeLabel = TAB_TYPES.find((t) => t.type === tab.type)?.label ?? tab.type;
+    label.textContent = tab.fileName ?? typeLabel;
     btn.appendChild(label);
 
     const close = document.createElement("span");
