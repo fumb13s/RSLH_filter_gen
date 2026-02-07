@@ -6,6 +6,7 @@ import {
   lookupName,
   describeRarity,
   matchesRule,
+  getRollRange,
   ARTIFACT_SET_NAMES,
   ARTIFACT_SLOT_NAMES,
   STAT_NAMES,
@@ -263,14 +264,25 @@ export function renderTestPanel(filter: HsfFilter): void {
     populateSubstatOptions(slotId);
   });
 
-  // Wire up roll sliders to show current value
+  // Wire up roll sliders to show current value and update substat range
   for (let i = 0; i < 4; i++) {
     const slider = document.getElementById(`test-sub-rolls-${i}`) as HTMLInputElement;
     const label = document.getElementById(`test-sub-rolls-val-${i}`)!;
     slider.addEventListener("input", () => {
       label.textContent = String(Number(slider.value) - 1);
+      updateSubstatRange(i);
     });
+
+    // Update substat range when stat selection changes
+    const statSelect = document.getElementById(`test-sub-stat-${i}`) as HTMLSelectElement;
+    statSelect.addEventListener("change", () => updateSubstatRange(i));
   }
+
+  // Update all substat ranges when rank changes
+  const rankSelect = document.getElementById("test-rank") as HTMLSelectElement;
+  rankSelect.addEventListener("change", () => {
+    for (let i = 0; i < 4; i++) updateSubstatRange(i);
+  });
 
   document.getElementById("test-btn")!.addEventListener("click", () => {
     runTest(filter);
@@ -325,6 +337,46 @@ function populateSubstatOptions(slotId: number): void {
       select.value = "";
     }
   }
+}
+
+/** Constrain the value input for substat row `i` based on stat, rank, and rolls. */
+function updateSubstatRange(i: number): void {
+  const statVal = (document.getElementById(`test-sub-stat-${i}`) as HTMLSelectElement).value;
+  const valueInput = document.getElementById(`test-sub-value-${i}`) as HTMLInputElement;
+
+  if (!statVal) {
+    // "None" selected — reset constraints
+    valueInput.min = "1";
+    valueInput.removeAttribute("max");
+    return;
+  }
+
+  const [statId, isFlat] = statVal.split(":").map(Number);
+  if (isFlat) {
+    // Flat stats have no roll range data — no max constraint
+    valueInput.min = "1";
+    valueInput.removeAttribute("max");
+    return;
+  }
+
+  const rank = val("test-rank");
+  const range = getRollRange(statId, rank);
+  if (!range) {
+    valueInput.min = "1";
+    valueInput.removeAttribute("max");
+    return;
+  }
+
+  const rolls = Number((document.getElementById(`test-sub-rolls-${i}`) as HTMLInputElement).value);
+  const min = rolls * range[0];
+  const max = rolls * range[1];
+  valueInput.min = String(min);
+  valueInput.max = String(max);
+
+  // Clamp current value into the new range
+  const cur = Number(valueInput.value);
+  if (cur < min) valueInput.value = String(min);
+  else if (cur > max) valueInput.value = String(max);
 }
 
 function readSubstats(): ItemSubstat[] {
