@@ -48,6 +48,14 @@ const GOOD_SUBSTATS = ALL_SUBSTATS.filter(
   ([id, flat]) => !(flat && id <= 3),
 );
 
+/** Good substat presets. */
+const SUBSTAT_PRESETS: { label: string; stats: [number, boolean][] }[] = [
+  { label: "HP Nuker",  stats: [[1, false], [4, true], [5, false], [6, false]] },
+  { label: "ATK Nuker", stats: [[2, false], [4, true], [5, false], [6, false]] },
+  { label: "DEF Nuker", stats: [[3, false], [4, true], [5, false], [6, false]] },
+  { label: "Support",   stats: [[1, false], [3, false], [4, true], [7, true], [8, true]] },
+];
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -389,23 +397,15 @@ function buildSubstatSelector(group: SettingGroup, index: number, cb: GeneratorC
   headerRow.appendChild(label);
 
   // Preset buttons
-  const nukerBtn = document.createElement("button");
-  nukerBtn.type = "button";
-  nukerBtn.className = "preset-btn";
-  nukerBtn.textContent = "Nuker";
-  nukerBtn.addEventListener("click", () => {
-    // Placeholder — no-op for now
-  });
-  headerRow.appendChild(nukerBtn);
-
-  const supportBtn = document.createElement("button");
-  supportBtn.type = "button";
-  supportBtn.className = "preset-btn";
-  supportBtn.textContent = "Support";
-  supportBtn.addEventListener("click", () => {
-    // Placeholder — no-op for now
-  });
-  headerRow.appendChild(supportBtn);
+  const presetBtns: HTMLButtonElement[] = [];
+  for (const preset of SUBSTAT_PRESETS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "preset-btn";
+    btn.textContent = preset.label;
+    presetBtns.push(btn);
+    headerRow.appendChild(btn);
+  }
 
   const clearBtn = document.createElement("button");
   clearBtn.type = "button";
@@ -445,6 +445,21 @@ function buildSubstatSelector(group: SettingGroup, index: number, cb: GeneratorC
     lbl.appendChild(span);
 
     grid.appendChild(lbl);
+  }
+
+  // Wire preset buttons — apply preset by syncing checkboxes
+  function applyPreset(stats: [number, boolean][]): void {
+    group.goodStats = stats.map(([s, f]) => [s, f]);
+    for (const c of checkboxes) {
+      const sid = Number(c.dataset.statId);
+      const flat = c.dataset.isFlat === "true";
+      c.checked = stats.some(([s, f]) => s === sid && f === flat);
+    }
+    cb.onGroupChange(index, group);
+  }
+
+  for (let i = 0; i < SUBSTAT_PRESETS.length; i++) {
+    presetBtns[i].addEventListener("click", () => applyPreset(SUBSTAT_PRESETS[i].stats));
   }
 
   clearBtn.addEventListener("click", () => {
