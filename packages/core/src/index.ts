@@ -18,3 +18,4 @@ export {
 } from "./mappings.js";
 export { ITEM_RARITIES } from "./item.js";
 export type { Item, ItemRarity } from "./item.js";
+export { evaluateFilter, matchesRule } from "./evaluate.js";
