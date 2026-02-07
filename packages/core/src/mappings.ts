@@ -107,6 +107,25 @@ export const RARITY_BITS = {
   Legendary: 16,
 } as const;
 
+export const FACTION_NAMES: Record<number, string> = {
+  1: "Banner Lords",
+  2: "High Elves",
+  3: "Sacred Order",
+  4: "Barbarians",
+  5: "Ogryn Tribes",
+  6: "Lizardmen",
+  7: "Skinwalkers",
+  8: "Orcs",
+  9: "Demonspawn",
+  10: "Undead Hordes",
+  11: "Dark Elves",
+  12: "Knights Revenant",
+  13: "Dwarves",
+  14: "Shadowkin",
+  15: "Sylvan Watchers",
+  16: "Argonites",
+};
+
 /** Look up a name by ID, returning `"Unknown(N)"` for unmapped IDs. */
 export function lookupName(map: Record<number, string>, id: number): string {
   return map[id] ?? `Unknown(${id})`;

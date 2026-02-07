@@ -12,6 +12,9 @@ export {
   ARTIFACT_SLOT_NAMES,
   STAT_NAMES,
   RARITY_BITS,
+  FACTION_NAMES,
   lookupName,
   describeRarity,
 } from "./mappings.js";
+export { ITEM_RARITIES } from "./item.js";
+export type { Item, ItemRarity } from "./item.js";
