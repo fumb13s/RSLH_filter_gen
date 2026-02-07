@@ -16,6 +16,6 @@ export {
   lookupName,
   describeRarity,
 } from "./mappings.js";
-export { ITEM_RARITIES } from "./item.js";
-export type { Item, ItemRarity } from "./item.js";
+export { ITEM_RARITIES, STARTING_SUBSTATS, MAX_SUBSTATS, UPGRADE_LEVELS } from "./item.js";
+export type { Item, ItemSubstat, ItemRarity } from "./item.js";
 export { evaluateFilter, matchesRule } from "./evaluate.js";
