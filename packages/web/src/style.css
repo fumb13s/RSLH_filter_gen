@@ -124,6 +124,7 @@ pre {
   border-radius: 6px;
   margin-bottom: 1rem;
   font-weight: 500;
+  white-space: pre-wrap;
 }
 
 /* ---------------------------------------------------------------------------

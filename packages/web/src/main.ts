@@ -36,8 +36,8 @@ initUpload(
     } catch (err: unknown) {
       if (err instanceof SyntaxError) {
         renderError(`Invalid JSON: ${err.message}`);
-      } else if (err instanceof Error && err.name === "ZodError") {
-        renderError(`Invalid .hsf schema: ${err.message}`);
+      } else if (isZodError(err)) {
+        renderError(formatZodError(err));
       } else {
         renderError(`Unexpected error: ${err}`);
       }
@@ -48,3 +48,30 @@ initUpload(
     renderError(message);
   },
 );
+
+// ---------------------------------------------------------------------------
+// Zod error formatting
+// ---------------------------------------------------------------------------
+
+interface ZodIssue {
+  path: (string | number)[];
+  message: string;
+}
+
+function isZodError(err: unknown): err is Error & { issues: ZodIssue[] } {
+  return err instanceof Error && err.name === "ZodError" && Array.isArray((err as { issues?: unknown }).issues);
+}
+
+function formatZodError(err: Error & { issues: ZodIssue[] }): string {
+  const count = err.issues.length;
+  const heading = `Invalid .hsf schema \u2014 ${count} issue${count === 1 ? "" : "s"} found:`;
+
+  const lines = err.issues.map((issue) => {
+    const path = issue.path
+      .map((seg, i) => (typeof seg === "number" ? `[${seg}]` : (i > 0 ? "." : "") + seg))
+      .join("");
+    return `\u2022 ${path || "(root)"} \u2014 ${issue.message}`;
+  });
+
+  return heading + "\n" + lines.join("\n");
+}

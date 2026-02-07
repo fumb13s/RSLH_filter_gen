@@ -16,7 +16,7 @@ import {
 
 export function renderError(message: string): void {
   const banner = document.getElementById("error-banner")!;
-  banner.textContent = message;
+  banner.innerText = message;
   banner.hidden = false;
 
   // Hide results when showing error
