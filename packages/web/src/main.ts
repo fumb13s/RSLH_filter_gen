@@ -69,7 +69,7 @@ function isZodError(err: unknown): err is Error & { issues: ZodIssue[] } {
 
 const backToTop = document.getElementById("back-to-top")!;
 window.addEventListener("scroll", () => {
-  backToTop.hidden = window.scrollY < 200;
+  backToTop.classList.toggle("visible", window.scrollY >= window.innerHeight);
 });
 backToTop.addEventListener("click", () => {
   window.scrollTo({ top: 0, behavior: "smooth" });
