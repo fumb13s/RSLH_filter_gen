@@ -265,8 +265,10 @@ function buildSlotSelector(group: SettingGroup, index: number, cb: GeneratorCall
 
   const checkboxes: HTMLInputElement[] = [];
 
-  for (const [idStr, name] of Object.entries(ARTIFACT_SLOT_NAMES)) {
-    const id = Number(idStr);
+  // Display order: weapon/helmet/shield, gloves/chest/boots, ring/amulet/banner
+  const slotOrder = [5, 1, 6, 3, 2, 4, 7, 8, 9];
+  for (const id of slotOrder) {
+    const name = ARTIFACT_SLOT_NAMES[id];
     const lbl = document.createElement("label");
     lbl.className = "checkbox-label";
 
