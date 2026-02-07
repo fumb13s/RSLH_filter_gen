@@ -20,10 +20,10 @@ export type HsfSubstat = z.infer<typeof HsfSubstatSchema>;
 export const HsfRuleSchema = z
   .object({
     Keep: z.boolean(),
-    IsRuleTypeAND: z.boolean(),
+    IsRuleTypeAND: z.boolean().optional(),
     Use: z.boolean(),
     ArtifactSet: z.array(z.number().int()).optional(),
-    ArtifactType: z.array(z.number().int()),
+    ArtifactType: z.array(z.number().int()).optional(),
     Rank: z.number().int(),
     Rarity: z.number().int(),
     MainStatID: z.number().int(),
