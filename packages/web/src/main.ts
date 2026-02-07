@@ -297,21 +297,51 @@ initUpload(
 // Generate .hsf
 // ---------------------------------------------------------------------------
 
-document.getElementById("gen-generate-btn")!.addEventListener("click", () => {
+/** Try to generate rules from the active generator tab. Returns null on failure (shows error). */
+function generateFromActiveTab(): ReturnType<typeof generateFilter> | null {
   const tab = getActiveTab();
-  if (!tab || tab.type !== "generator") return;
+  if (!tab || tab.type !== "generator") return null;
 
   const rules = generateRulesFromGroups(tab.groups);
   if (rules.length === 0) {
     tabBarError.textContent = "No rules generated — add at least one group with good substats.";
     tabBarError.hidden = false;
-    return;
+    return null;
   }
 
   tabBarError.hidden = true;
-  const filter = generateFilter(rules);
+  return generateFilter(rules);
+}
+
+// Generate → open viewer tab with the result
+document.getElementById("gen-generate-btn")!.addEventListener("click", () => {
+  const filter = generateFromActiveTab();
+  if (!filter) return;
+
+  if (tabs.length >= MAX_TABS) {
+    tabBarError.textContent = `Maximum of ${MAX_TABS} tabs reached. Close a tab first.`;
+    tabBarError.hidden = false;
+    return;
+  }
+
+  const id = `tab-${++tabCounter}`;
+  const entry: TabEntry = {
+    id,
+    type: "viewer",
+    filter,
+    fileName: "Generated",
+    groups: [],
+  };
+  tabs.push(entry);
+  activateTab(id);
+});
+
+// Save .hsf → download as file
+document.getElementById("gen-save-hsf-btn")!.addEventListener("click", () => {
+  const filter = generateFromActiveTab();
+  if (!filter) return;
+
   const json = serializeFilter(filter);
-  // Prepend UTF-8 BOM to match game client output
   const bom = "\uFEFF";
   const blob = new Blob([bom + json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
