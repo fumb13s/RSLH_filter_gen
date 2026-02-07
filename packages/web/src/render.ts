@@ -231,7 +231,7 @@ export function renderTestPanel(filter: HsfFilter): void {
       <div class="test-field">
         <label for="test-level">Level</label>
         <select id="test-level">
-          ${Array.from({ length: 16 }, (_, i) => i + 1).map((n) => `<option value="${n}"${n === 16 ? " selected" : ""}>${n}</option>`).join("")}
+          ${Array.from({ length: 17 }, (_, i) => i).map((n) => `<option value="${n}">${n}</option>`).join("")}
         </select>
       </div>
     </div>
