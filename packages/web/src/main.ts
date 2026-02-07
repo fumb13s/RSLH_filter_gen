@@ -2,23 +2,34 @@ import type { HsfFilter } from "@rslh/core";
 import { parseFilter } from "@rslh/core";
 import { initUpload } from "./upload.js";
 import { renderSummary, renderRules, renderTestPanel, renderError, clearError, clearViewer } from "./render.js";
+import { renderGenerator, clearGenerator, defaultGroup } from "./generator.js";
+import type { SettingGroup } from "./generator.js";
 import "./style.css";
 
 // ---------------------------------------------------------------------------
 // Tab types and state
 // ---------------------------------------------------------------------------
 
-type TabType = "viewer";
+type TabType = "viewer" | "generator";
+
+interface FmblFile {
+  version: number;
+  groups: SettingGroup[];
+}
 
 interface TabEntry {
   id: string;
   type: TabType;
+  // Viewer state
   filter: HsfFilter | null;
   fileName: string | null;
+  // Generator state
+  groups: SettingGroup[];
 }
 
 const MAX_TABS = 5;
 const TAB_TYPES: { type: TabType; label: string }[] = [
+  { type: "generator", label: "Generator" },
   { type: "viewer", label: "Viewer" },
 ];
 
@@ -35,6 +46,8 @@ const tabBarError = document.getElementById("tab-bar-error")!;
 const tabContent = document.getElementById("tab-content")!;
 const emptyState = document.getElementById("empty-state")!;
 const dropZone = document.getElementById("drop-zone")!;
+const viewerContent = document.getElementById("viewer-content")!;
+const generatorContent = document.getElementById("generator-content")!;
 
 // ---------------------------------------------------------------------------
 // Tab bar rendering
@@ -75,9 +88,9 @@ function renderTabBar(): void {
   const addBtn = document.createElement("button");
   addBtn.className = "tab-add-btn";
   addBtn.textContent = "+";
-  addBtn.title = "New Viewer tab";
+  addBtn.title = "New Generator tab";
   addBtn.addEventListener("click", () => {
-    addTab("viewer");
+    addTab("generator");
   });
   splitWrap.appendChild(addBtn);
 
@@ -145,7 +158,13 @@ function addTab(type: TabType): void {
 
   tabBarError.hidden = true;
   const id = `tab-${++tabCounter}`;
-  const entry: TabEntry = { id, type, filter: null, fileName: null };
+  const entry: TabEntry = {
+    id,
+    type,
+    filter: null,
+    fileName: null,
+    groups: type === "generator" ? [defaultGroup()] : [],
+  };
   tabs.push(entry);
   activateTab(id);
 }
@@ -180,18 +199,48 @@ function activateTab(id: string): void {
   renderTabBar();
   showContent();
 
+  if (tab.type === "viewer") {
+    showViewerContent(tab);
+  } else if (tab.type === "generator") {
+    showGeneratorContent(tab);
+  }
+}
+
+function showViewerContent(tab: TabEntry): void {
+  viewerContent.hidden = false;
+  generatorContent.hidden = true;
+  clearGenerator();
+
   if (tab.filter) {
-    // Re-render stored filter data
     dropZone.hidden = true;
     clearError();
     renderSummary(tab.filter, tab.fileName!);
     renderTestPanel(tab.filter);
     renderRules(tab.filter);
   } else {
-    // No filter loaded yet — show upload zone
     clearViewer();
     dropZone.hidden = false;
   }
+}
+
+function showGeneratorContent(tab: TabEntry): void {
+  viewerContent.hidden = true;
+  generatorContent.hidden = false;
+  clearViewer();
+
+  renderGenerator(tab.groups, {
+    onGroupChange(index, group) {
+      tab.groups[index] = group;
+    },
+    onGroupDelete(index) {
+      tab.groups.splice(index, 1);
+      renderGenerator(tab.groups, this);
+    },
+    onGroupAdd() {
+      tab.groups.push(defaultGroup());
+      renderGenerator(tab.groups, this);
+    },
+  });
 }
 
 function showEmptyState(): void {
@@ -215,7 +264,7 @@ function getActiveTab(): TabEntry | undefined {
 initUpload(
   (text, fileName) => {
     const tab = getActiveTab();
-    if (!tab) return;
+    if (!tab || tab.type !== "viewer") return;
 
     clearError();
     try {
@@ -242,6 +291,70 @@ initUpload(
     renderError(message);
   },
 );
+
+// ---------------------------------------------------------------------------
+// .fmbl save/load
+// ---------------------------------------------------------------------------
+
+document.getElementById("gen-save-btn")!.addEventListener("click", () => {
+  const tab = getActiveTab();
+  if (!tab || tab.type !== "generator") return;
+
+  const data: FmblFile = { version: 1, groups: tab.groups };
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "filter.fmbl";
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+const fmblInput = document.getElementById("fmbl-input") as HTMLInputElement;
+
+document.getElementById("gen-load-btn")!.addEventListener("click", () => {
+  fmblInput.click();
+});
+
+fmblInput.addEventListener("change", () => {
+  const file = fmblInput.files?.[0];
+  if (!file) return;
+
+  file.text().then((text) => {
+    const tab = getActiveTab();
+    if (!tab || tab.type !== "generator") return;
+
+    try {
+      const data = JSON.parse(text) as FmblFile;
+      if (data.version !== 1 || !Array.isArray(data.groups)) {
+        throw new Error("Invalid .fmbl file format");
+      }
+      tab.groups = data.groups;
+      tab.fileName = file.name;
+      renderTabBar();
+      showGeneratorContent(tab);
+    } catch (err) {
+      // Show a brief error — reuse the tab-bar-level error since generator has no error banner
+      tabBarError.textContent = `Failed to load .fmbl: ${err instanceof Error ? err.message : err}`;
+      tabBarError.hidden = false;
+    }
+  });
+
+  fmblInput.value = "";
+});
+
+// ---------------------------------------------------------------------------
+// Generator "Add group" button
+// ---------------------------------------------------------------------------
+
+document.getElementById("gen-add-group")!.addEventListener("click", () => {
+  const tab = getActiveTab();
+  if (!tab || tab.type !== "generator") return;
+
+  tab.groups.push(defaultGroup());
+  showGeneratorContent(tab);
+});
 
 // ---------------------------------------------------------------------------
 // Zod error formatting
@@ -283,7 +396,7 @@ backToTop.addEventListener("click", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Initialize with one tab
+// Initialize with one generator tab (default)
 // ---------------------------------------------------------------------------
 
-addTab("viewer");
+addTab("generator");

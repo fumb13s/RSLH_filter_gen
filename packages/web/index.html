@@ -23,33 +23,47 @@
       </div>
 
       <div id="tab-content" class="tab-panels">
-        <!-- Upload section -->
-        <div id="drop-zone" class="drop-zone">
-          <p>Drag &amp; drop a <strong>.hsf</strong> file here</p>
-          <p>or <button id="browse-btn" type="button">browse</button></p>
-          <input type="file" id="file-input" accept=".hsf" hidden />
+        <!-- Generator content -->
+        <div id="generator-content" hidden>
+          <div class="generator-toolbar">
+            <button id="gen-save-btn" type="button" class="gen-toolbar-btn">Save .fmbl</button>
+            <button id="gen-load-btn" type="button" class="gen-toolbar-btn">Load .fmbl</button>
+            <input type="file" id="fmbl-input" accept=".fmbl" hidden />
+          </div>
+          <div id="groups-container"></div>
+          <button id="gen-add-group" type="button" class="gen-add-group-btn">+ Add Group</button>
         </div>
 
-        <!-- Error banner -->
-        <div id="error-banner" class="error-banner" hidden></div>
+        <!-- Viewer content -->
+        <div id="viewer-content">
+          <!-- Upload section -->
+          <div id="drop-zone" class="drop-zone">
+            <p>Drag &amp; drop a <strong>.hsf</strong> file here</p>
+            <p>or <button id="browse-btn" type="button">browse</button></p>
+            <input type="file" id="file-input" accept=".hsf" hidden />
+          </div>
 
-        <!-- Filter summary -->
-        <div id="filter-summary" hidden></div>
+          <!-- Error banner -->
+          <div id="error-banner" class="error-banner" hidden></div>
 
-        <!-- Test panel -->
-        <details id="test-panel" hidden>
-          <summary>Test Item</summary>
-          <div id="test-panel-body"></div>
-        </details>
+          <!-- Filter summary -->
+          <div id="filter-summary" hidden></div>
 
-        <!-- Rules container -->
-        <div id="rules-container"></div>
+          <!-- Test panel -->
+          <details id="test-panel" hidden>
+            <summary>Test Item</summary>
+            <div id="test-panel-body"></div>
+          </details>
 
-        <!-- Raw JSON collapsible -->
-        <details id="raw-json" hidden>
-          <summary>Raw JSON</summary>
-          <pre></pre>
-        </details>
+          <!-- Rules container -->
+          <div id="rules-container"></div>
+
+          <!-- Raw JSON collapsible -->
+          <details id="raw-json" hidden>
+            <summary>Raw JSON</summary>
+            <pre></pre>
+          </details>
+        </div>
       </div>
     </main>
 
