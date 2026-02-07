@@ -1,6 +1,6 @@
 import { parseFilter } from "@rslh/core";
 import { initUpload } from "./upload.js";
-import { renderSummary, renderRules, renderError, clearError } from "./render.js";
+import { renderSummary, renderRules, renderTestPanel, renderError, clearError } from "./render.js";
 import "./style.css";
 
 // ---------------------------------------------------------------------------
@@ -32,6 +32,7 @@ initUpload(
     try {
       const filter = parseFilter(text);
       renderSummary(filter, fileName);
+      renderTestPanel(filter);
       renderRules(filter);
     } catch (err: unknown) {
       if (err instanceof SyntaxError) {
@@ -61,6 +62,22 @@ interface ZodIssue {
 function isZodError(err: unknown): err is Error & { issues: ZodIssue[] } {
   return err instanceof Error && err.name === "ZodError" && Array.isArray((err as { issues?: unknown }).issues);
 }
+
+// ---------------------------------------------------------------------------
+// Back-to-top button
+// ---------------------------------------------------------------------------
+
+const backToTop = document.getElementById("back-to-top")!;
+window.addEventListener("scroll", () => {
+  backToTop.hidden = window.scrollY < 200;
+});
+backToTop.addEventListener("click", () => {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+
+// ---------------------------------------------------------------------------
+// Zod error formatting
+// ---------------------------------------------------------------------------
 
 function formatZodError(err: Error & { issues: ZodIssue[] }): string {
   const count = err.issues.length;

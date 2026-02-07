@@ -1,13 +1,16 @@
 /**
  * Rule card rendering — DOM construction and human-readable labels.
  */
-import type { HsfFilter, HsfRule, HsfSubstat } from "@rslh/core";
+import type { HsfFilter, HsfRule, HsfSubstat, Item } from "@rslh/core";
 import {
   lookupName,
   describeRarity,
+  matchesRule,
   ARTIFACT_SET_NAMES,
   ARTIFACT_SLOT_NAMES,
   STAT_NAMES,
+  ITEM_RARITIES,
+  FACTION_NAMES,
 } from "@rslh/core";
 
 // ---------------------------------------------------------------------------
@@ -21,6 +24,7 @@ export function renderError(message: string): void {
 
   // Hide results when showing error
   document.getElementById("filter-summary")!.hidden = true;
+  document.getElementById("test-panel")!.hidden = true;
   document.getElementById("rules-container")!.innerHTML = "";
   document.getElementById("raw-json")!.hidden = true;
 }
@@ -83,6 +87,7 @@ export function renderRules(filter: HsfFilter): void {
 function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
   const card = document.createElement("div");
   card.className = "rule-card";
+  card.id = `rule-${index + 1}`;
   if (!rule.Use) card.classList.add("inactive");
   card.classList.add(rule.Keep ? "keep" : "sell");
 
@@ -165,4 +170,128 @@ function esc(text: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// ---------------------------------------------------------------------------
+// Test panel
+// ---------------------------------------------------------------------------
+
+function buildOptions(map: Record<number, string>): string {
+  return Object.entries(map)
+    .map(([id, name]) => `<option value="${id}">${esc(name)}</option>`)
+    .join("");
+}
+
+export function renderTestPanel(filter: HsfFilter): void {
+  const panel = document.getElementById("test-panel")!;
+  panel.hidden = false;
+
+  const body = document.getElementById("test-panel-body")!;
+  body.innerHTML = `
+    <div class="test-form">
+      <div class="test-field">
+        <label for="test-set">Set</label>
+        <select id="test-set">
+          <option value="0">Any</option>
+          ${buildOptions(ARTIFACT_SET_NAMES)}
+        </select>
+      </div>
+      <div class="test-field">
+        <label for="test-slot">Slot</label>
+        <select id="test-slot">
+          ${buildOptions(ARTIFACT_SLOT_NAMES)}
+        </select>
+      </div>
+      <div class="test-field">
+        <label for="test-rank">Rank</label>
+        <select id="test-rank">
+          ${[1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}"${n === 6 ? " selected" : ""}>${n}-star</option>`).join("")}
+        </select>
+      </div>
+      <div class="test-field">
+        <label for="test-rarity">Rarity</label>
+        <select id="test-rarity">
+          ${ITEM_RARITIES.map((name, i) => `<option value="${i}"${i === 4 ? " selected" : ""}>${esc(name)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="test-field">
+        <label for="test-main-stat">Main Stat</label>
+        <select id="test-main-stat">
+          <option value="-1">Any</option>
+          ${buildOptions(STAT_NAMES)}
+        </select>
+      </div>
+      <div class="test-field">
+        <label for="test-faction">Faction</label>
+        <select id="test-faction">
+          <option value="0" selected>None</option>
+          ${buildOptions(FACTION_NAMES)}
+        </select>
+      </div>
+      <div class="test-field">
+        <label for="test-level">Level</label>
+        <select id="test-level">
+          ${Array.from({ length: 16 }, (_, i) => i + 1).map((n) => `<option value="${n}"${n === 16 ? " selected" : ""}>${n}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <button id="test-btn" class="test-btn" type="button">Test</button>
+    <div id="test-result"></div>
+  `;
+
+  document.getElementById("test-btn")!.addEventListener("click", () => {
+    runTest(filter);
+  });
+}
+
+function val(id: string): number {
+  return Number((document.getElementById(id) as HTMLSelectElement).value);
+}
+
+function runTest(filter: HsfFilter): void {
+  // Clear previous highlights
+  document.querySelectorAll(".rule-matched").forEach((el) => {
+    el.classList.remove("rule-matched");
+  });
+
+  const item: Item = {
+    set: val("test-set"),
+    slot: val("test-slot"),
+    rank: val("test-rank"),
+    rarity: val("test-rarity"),
+    mainStat: val("test-main-stat"),
+    substats: [],
+    level: val("test-level"),
+    faction: val("test-faction") || undefined,
+  };
+
+  const resultEl = document.getElementById("test-result")!;
+
+  let matchedIndex = -1;
+  for (let i = 0; i < filter.Rules.length; i++) {
+    const rule = filter.Rules[i];
+    if (!rule.Use) continue;
+    if (matchesRule(rule, item)) {
+      matchedIndex = i;
+      break;
+    }
+  }
+
+  if (matchedIndex === -1) {
+    resultEl.className = "test-result test-result-default";
+    resultEl.innerHTML = "Keep &mdash; no rule matched (default)";
+    return;
+  }
+
+  const rule = filter.Rules[matchedIndex];
+  const ruleNum = matchedIndex + 1;
+  const action = rule.Keep ? "Keep" : "Sell";
+  const cls = rule.Keep ? "test-result-keep" : "test-result-sell";
+
+  resultEl.className = `test-result ${cls}`;
+  resultEl.innerHTML = `${action} &mdash; matched <a href="#rule-${ruleNum}">rule #${ruleNum}</a>`;
+
+  // Highlight matched rule card
+  const card = document.getElementById(`rule-${ruleNum}`);
+  if (card) card.classList.add("rule-matched");
 }

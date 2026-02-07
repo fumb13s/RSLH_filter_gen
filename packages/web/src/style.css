@@ -310,6 +310,116 @@ pre {
   color: #333;
 }
 
+/* Matched rule highlight */
+
+.rule-matched {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   Test panel
+--------------------------------------------------------------------------- */
+
+.test-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.test-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.test-field label {
+  font-weight: 600;
+  color: #666;
+  min-width: 75px;
+  flex-shrink: 0;
+  font-size: 0.9rem;
+}
+
+.test-field select {
+  flex: 1;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  background: #fff;
+}
+
+.test-btn {
+  cursor: pointer;
+  padding: 0.4rem 1.25rem;
+  border: 1px solid #2563eb;
+  border-radius: 4px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.test-btn:hover {
+  background: #1d4ed8;
+}
+
+.test-result {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.test-result a {
+  color: inherit;
+}
+
+.test-result-keep {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.test-result-sell {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.test-result-default {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+/* ---------------------------------------------------------------------------
+   Back-to-top button
+--------------------------------------------------------------------------- */
+
+.back-to-top {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #555;
+  font-size: 1.2rem;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.back-to-top:hover {
+  background: #f3f4f6;
+  color: #1a1a1a;
+}
+
 /* ---------------------------------------------------------------------------
    Raw JSON details
 --------------------------------------------------------------------------- */
