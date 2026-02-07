@@ -6,7 +6,7 @@
 
 body {
   font-family: system-ui, -apple-system, sans-serif;
-  max-width: 640px;
+  max-width: 960px;
   margin: 2rem auto;
   padding: 0 1rem;
   color: #1a1a1a;
@@ -17,80 +17,282 @@ h1 {
   margin-bottom: 1.5rem;
 }
 
-label {
-  display: block;
-  font-weight: 600;
-  margin-bottom: 0.25rem;
-}
-
-input[type="text"] {
-  padding: 0.4rem 0.6rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  font-size: 1rem;
-}
-
-#config-name {
-  width: 100%;
-  margin-bottom: 1rem;
-}
-
-fieldset {
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  padding: 1rem;
-  margin-bottom: 1rem;
-}
-
-.rule-row {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  margin-bottom: 0.5rem;
-}
-
-.rule-row input {
-  flex: 1;
-}
-
-.rule-row select {
-  padding: 0.4rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.remove-rule {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 1.1rem;
-  color: #888;
-}
-
-button {
-  cursor: pointer;
-  padding: 0.5rem 1rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  background: #fff;
-  font-size: 0.9rem;
-}
-
-button[type="submit"] {
-  background: #2563eb;
-  color: #fff;
-  border: none;
-  font-size: 1rem;
-  margin-top: 0.5rem;
-}
-
-#output-section {
-  margin-top: 2rem;
-}
-
 pre {
   background: #f0f0f0;
   padding: 1rem;
   border-radius: 6px;
   overflow-x: auto;
+}
+
+/* ---------------------------------------------------------------------------
+   Tab bar
+--------------------------------------------------------------------------- */
+
+.tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #ddd;
+  margin-bottom: 1.5rem;
+}
+
+.tab-btn {
+  cursor: pointer;
+  padding: 0.5rem 1.25rem;
+  border: 2px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: #f0f0f0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: -2px;
+}
+
+.tab-btn:hover {
+  background: #e8e8e8;
+  color: #333;
+}
+
+.tab-btn.active {
+  background: #fff;
+  color: #1a1a1a;
+  border-color: #ddd;
+  border-bottom-color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+   Tab panels
+--------------------------------------------------------------------------- */
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+/* ---------------------------------------------------------------------------
+   Drop zone
+--------------------------------------------------------------------------- */
+
+.drop-zone {
+  border: 2px dashed #bbb;
+  border-radius: 8px;
+  padding: 2rem;
+  text-align: center;
+  color: #666;
+  transition: border-color 0.15s, background 0.15s;
+  margin-bottom: 1rem;
+}
+
+.drop-zone p {
+  margin: 0.25rem 0;
+}
+
+.drop-zone:hover,
+.drop-zone.drag-over {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+#browse-btn {
+  cursor: pointer;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid #2563eb;
+  border-radius: 4px;
+  background: #fff;
+  color: #2563eb;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+#browse-btn:hover {
+  background: #2563eb;
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+   Error banner
+--------------------------------------------------------------------------- */
+
+.error-banner {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+
+/* ---------------------------------------------------------------------------
+   Filter summary
+--------------------------------------------------------------------------- */
+
+.summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.summary-stat {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 80px;
+}
+
+.summary-value {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.summary-label {
+  font-size: 0.75rem;
+  color: #888;
+  text-transform: uppercase;
+}
+
+/* ---------------------------------------------------------------------------
+   Rule cards
+--------------------------------------------------------------------------- */
+
+.rule-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  border-left: 4px solid #e5e7eb;
+}
+
+.rule-card.keep {
+  border-left-color: #22c55e;
+}
+
+.rule-card.sell {
+  border-left-color: #ef4444;
+}
+
+.rule-card.inactive {
+  opacity: 0.5;
+}
+
+/* Header */
+
+.rule-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.rule-index {
+  font-weight: 700;
+  font-size: 1rem;
+  margin-right: 0.25rem;
+}
+
+/* Badges */
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.badge-keep {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge-sell {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.badge-active {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.badge-inactive {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.badge-logic {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* Body grid */
+
+.rule-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.field {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.field-label {
+  font-weight: 600;
+  color: #666;
+  min-width: 75px;
+  flex-shrink: 0;
+}
+
+.field-value {
+  color: #1a1a1a;
+}
+
+/* Substats */
+
+.rule-substats {
+  border-top: 1px solid #f0f0f0;
+  padding-top: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.substats-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 0.25rem;
+}
+
+.substat-line {
+  font-size: 0.9rem;
+  padding: 0.1rem 0;
+  color: #333;
+}
+
+/* ---------------------------------------------------------------------------
+   Raw JSON details
+--------------------------------------------------------------------------- */
+
+details {
+  margin-top: 1.5rem;
+}
+
+details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 0.5rem;
 }

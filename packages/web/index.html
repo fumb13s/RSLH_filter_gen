@@ -3,16 +3,44 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RSLH Filter Generator</title>
+    <title>RSLH Filter Tools</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <main>
-      <h1>RSLH Filter Generator</h1>
-      <p>Default filter with one rule (Legendary, 6-star, all gear slots):</p>
+      <h1>RSLH Filter Tools</h1>
 
-      <pre id="output"></pre>
-      <button id="download">Download .hsf</button>
+      <nav class="tab-bar">
+        <button class="tab-btn active" data-tab="viewer">Viewer</button>
+        <!-- Future tabs added here -->
+      </nav>
+
+      <div class="tab-panels">
+        <div id="tab-viewer" class="tab-panel active">
+          <!-- Upload section -->
+          <div id="drop-zone" class="drop-zone">
+            <p>Drag &amp; drop a <strong>.hsf</strong> file here</p>
+            <p>or <button id="browse-btn" type="button">browse</button></p>
+            <input type="file" id="file-input" accept=".hsf" hidden />
+          </div>
+
+          <!-- Error banner -->
+          <div id="error-banner" class="error-banner" hidden></div>
+
+          <!-- Filter summary -->
+          <div id="filter-summary" hidden></div>
+
+          <!-- Rules container -->
+          <div id="rules-container"></div>
+
+          <!-- Raw JSON collapsible -->
+          <details id="raw-json" hidden>
+            <summary>Raw JSON</summary>
+            <pre></pre>
+          </details>
+        </div>
+        <!-- Future tab panels added here -->
+      </div>
     </main>
 
     <script type="module" src="/src/main.ts"></script>
