@@ -38,6 +38,18 @@ export function clearError(): void {
   banner.hidden = true;
 }
 
+/** Reset all viewer content areas to their initial hidden/empty state. */
+export function clearViewer(): void {
+  clearError();
+  document.getElementById("filter-summary")!.hidden = true;
+  document.getElementById("test-panel")!.hidden = true;
+  document.getElementById("test-panel-body")!.innerHTML = "";
+  document.getElementById("rules-container")!.innerHTML = "";
+  const rawJson = document.getElementById("raw-json")!;
+  rawJson.hidden = true;
+  rawJson.querySelector("pre")!.textContent = "";
+}
+
 // ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------

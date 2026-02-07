@@ -10,42 +10,43 @@
     <main>
       <h1>RSLH Filter Tools</h1>
 
-      <nav class="tab-bar">
-        <button class="tab-btn active" data-tab="viewer">Viewer</button>
-        <!-- Future tabs added here -->
+      <nav class="tab-bar" id="tab-bar">
+        <!-- Dynamic tabs and + button rendered by main.ts -->
       </nav>
 
-      <div class="tab-panels">
-        <div id="tab-viewer" class="tab-panel active">
-          <!-- Upload section -->
-          <div id="drop-zone" class="drop-zone">
-            <p>Drag &amp; drop a <strong>.hsf</strong> file here</p>
-            <p>or <button id="browse-btn" type="button">browse</button></p>
-            <input type="file" id="file-input" accept=".hsf" hidden />
-          </div>
+      <!-- Empty state shown when no tabs are open -->
+      <div id="empty-state" class="empty-state" hidden>
+        <p>No tabs open. Click <strong>+</strong> to get started.</p>
+      </div>
 
-          <!-- Error banner -->
-          <div id="error-banner" class="error-banner" hidden></div>
-
-          <!-- Filter summary -->
-          <div id="filter-summary" hidden></div>
-
-          <!-- Test panel -->
-          <details id="test-panel" hidden>
-            <summary>Test Item</summary>
-            <div id="test-panel-body"></div>
-          </details>
-
-          <!-- Rules container -->
-          <div id="rules-container"></div>
-
-          <!-- Raw JSON collapsible -->
-          <details id="raw-json" hidden>
-            <summary>Raw JSON</summary>
-            <pre></pre>
-          </details>
+      <div id="tab-content" class="tab-panels">
+        <!-- Upload section -->
+        <div id="drop-zone" class="drop-zone">
+          <p>Drag &amp; drop a <strong>.hsf</strong> file here</p>
+          <p>or <button id="browse-btn" type="button">browse</button></p>
+          <input type="file" id="file-input" accept=".hsf" hidden />
         </div>
-        <!-- Future tab panels added here -->
+
+        <!-- Error banner -->
+        <div id="error-banner" class="error-banner" hidden></div>
+
+        <!-- Filter summary -->
+        <div id="filter-summary" hidden></div>
+
+        <!-- Test panel -->
+        <details id="test-panel" hidden>
+          <summary>Test Item</summary>
+          <div id="test-panel-body"></div>
+        </details>
+
+        <!-- Rules container -->
+        <div id="rules-container"></div>
+
+        <!-- Raw JSON collapsible -->
+        <details id="raw-json" hidden>
+          <summary>Raw JSON</summary>
+          <pre></pre>
+        </details>
       </div>
     </main>
 
