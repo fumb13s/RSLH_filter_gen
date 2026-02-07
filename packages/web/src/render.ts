@@ -114,7 +114,7 @@ function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
   body.innerHTML = `
     <div class="field"><span class="field-label">Sets</span><span class="field-value">${esc(sets)}</span></div>
     <div class="field"><span class="field-label">Slots</span><span class="field-value">${esc(slots)}</span></div>
-    <div class="field"><span class="field-label">Rank</span><span class="field-value">${rule.Rank}-star</span></div>
+    <div class="field"><span class="field-label">Rank</span><span class="field-value">${rule.Rank === 0 ? "Any" : `${rule.Rank}-star`}</span></div>
     <div class="field"><span class="field-label">Rarity</span><span class="field-value">${esc(describeRarity(rule.Rarity))}</span></div>
     <div class="field"><span class="field-label">Main Stat</span><span class="field-value">${esc(mainStat)}</span></div>
     <div class="field"><span class="field-label">Level</span><span class="field-value">${rule.LVLForCheck}</span></div>
