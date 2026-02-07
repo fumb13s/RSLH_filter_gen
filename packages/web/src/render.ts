@@ -1,7 +1,7 @@
 /**
  * Rule card rendering — DOM construction and human-readable labels.
  */
-import type { HsfFilter, HsfRule, HsfSubstat, Item } from "@rslh/core";
+import type { HsfFilter, HsfRule, HsfSubstat, Item, ItemSubstat } from "@rslh/core";
 import {
   lookupName,
   describeRarity,
@@ -11,6 +11,8 @@ import {
   STAT_NAMES,
   ITEM_RARITIES,
   FACTION_NAMES,
+  SLOT_STATS,
+  statDisplayName,
 } from "@rslh/core";
 
 // ---------------------------------------------------------------------------
@@ -217,8 +219,6 @@ export function renderTestPanel(filter: HsfFilter): void {
       <div class="test-field">
         <label for="test-main-stat">Main Stat</label>
         <select id="test-main-stat">
-          <option value="-1">Any</option>
-          ${buildOptions(STAT_NAMES)}
         </select>
       </div>
       <div class="test-field">
@@ -235,9 +235,34 @@ export function renderTestPanel(filter: HsfFilter): void {
         </select>
       </div>
     </div>
+    <div class="test-substats">
+      <div class="substats-title">Substats</div>
+      ${[0, 1, 2, 3].map((i) => `
+      <div class="test-substat-row">
+        <select id="test-sub-stat-${i}" class="test-sub-stat">
+          <option value="">None</option>
+        </select>
+        <label for="test-sub-rolls-${i}">Rolls</label>
+        <select id="test-sub-rolls-${i}">
+          ${[1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}">${n}</option>`).join("")}
+        </select>
+        <label for="test-sub-value-${i}">Value</label>
+        <input id="test-sub-value-${i}" type="number" min="1" value="1" class="test-sub-value" />
+      </div>`).join("")}
+    </div>
     <button id="test-btn" class="test-btn" type="button">Test</button>
     <div id="test-result"></div>
   `;
+
+  // Populate stat dropdowns for the initial slot
+  const slotSelect = document.getElementById("test-slot") as HTMLSelectElement;
+  populateMainStatOptions(Number(slotSelect.value));
+  populateSubstatOptions(Number(slotSelect.value));
+  slotSelect.addEventListener("change", () => {
+    const slotId = Number(slotSelect.value);
+    populateMainStatOptions(slotId);
+    populateSubstatOptions(slotId);
+  });
 
   document.getElementById("test-btn")!.addEventListener("click", () => {
     runTest(filter);
@@ -246,6 +271,65 @@ export function renderTestPanel(filter: HsfFilter): void {
 
 function val(id: string): number {
   return Number((document.getElementById(id) as HTMLSelectElement).value);
+}
+
+/** Read a stat ID from a select whose value is "statId:isFlat" or "-1". */
+function readStatId(id: string): number {
+  const v = (document.getElementById(id) as HTMLSelectElement).value;
+  if (v === "-1") return -1;
+  return Number(v.split(":")[0]);
+}
+
+function populateMainStatOptions(slotId: number): void {
+  const select = document.getElementById("test-main-stat") as HTMLSelectElement;
+  const prev = select.value;
+  const config = SLOT_STATS[slotId];
+  const refs = config?.primaryStats ?? [];
+  select.innerHTML =
+    '<option value="-1">Any</option>' +
+    refs.map(([statId, isFlat]) => {
+      const key = `${statId}:${isFlat ? 1 : 0}`;
+      return `<option value="${key}">${esc(statDisplayName(statId, isFlat))}</option>`;
+    }).join("");
+  if ([...select.options].some((o) => o.value === prev)) {
+    select.value = prev;
+  } else {
+    select.value = "-1";
+  }
+}
+
+function populateSubstatOptions(slotId: number): void {
+  const config = SLOT_STATS[slotId];
+  const refs = config?.substats ?? [];
+  for (let i = 0; i < 4; i++) {
+    const select = document.getElementById(`test-sub-stat-${i}`) as HTMLSelectElement;
+    const prev = select.value;
+    select.innerHTML =
+      '<option value="">None</option>' +
+      refs.map(([statId, isFlat]) => {
+        const key = `${statId}:${isFlat ? 1 : 0}`;
+        return `<option value="${key}">${esc(statDisplayName(statId, isFlat))}</option>`;
+      }).join("");
+    // Restore previous selection if still valid
+    if ([...select.options].some((o) => o.value === prev)) {
+      select.value = prev;
+    } else {
+      select.value = "";
+    }
+  }
+}
+
+function readSubstats(): ItemSubstat[] {
+  const result: ItemSubstat[] = [];
+  for (let i = 0; i < 4; i++) {
+    const statVal = (document.getElementById(`test-sub-stat-${i}`) as HTMLSelectElement).value;
+    if (!statVal) continue;
+    const [statId] = statVal.split(":").map(Number);
+    const rolls = Number((document.getElementById(`test-sub-rolls-${i}`) as HTMLSelectElement).value);
+    const value = Number((document.getElementById(`test-sub-value-${i}`) as HTMLInputElement).value) || 1;
+    result.push({ statId, rolls, value });
+  }
+  return result;
 }
 
 function runTest(filter: HsfFilter): void {
@@ -259,8 +343,8 @@ function runTest(filter: HsfFilter): void {
     slot: val("test-slot"),
     rank: val("test-rank"),
     rarity: val("test-rarity"),
-    mainStat: val("test-main-stat"),
-    substats: [],
+    mainStat: readStatId("test-main-stat"),
+    substats: readSubstats(),
     level: val("test-level"),
     faction: val("test-faction") || undefined,
   };

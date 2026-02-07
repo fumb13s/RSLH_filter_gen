@@ -351,6 +351,52 @@ pre {
   background: #fff;
 }
 
+.test-substats {
+  margin-bottom: 1rem;
+}
+
+.test-substats .substats-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 0.4rem;
+}
+
+.test-substat-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.test-substat-row select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  background: #fff;
+}
+
+.test-substat-row .test-sub-stat {
+  flex: 1;
+  min-width: 0;
+}
+
+.test-substat-row label {
+  font-weight: 600;
+  color: #666;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.test-sub-value {
+  width: 60px;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
 .test-btn {
   cursor: pointer;
   padding: 0.4rem 1.25rem;
