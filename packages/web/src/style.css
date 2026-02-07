@@ -389,6 +389,20 @@ pre {
   flex-shrink: 0;
 }
 
+.test-sub-rolls {
+  width: 80px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.test-sub-rolls-val {
+  width: 1ch;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+  flex-shrink: 0;
+}
+
 .test-sub-value {
   width: 60px;
   padding: 0.3rem 0.5rem;

@@ -243,9 +243,8 @@ export function renderTestPanel(filter: HsfFilter): void {
           <option value="">None</option>
         </select>
         <label for="test-sub-rolls-${i}">Rolls</label>
-        <select id="test-sub-rolls-${i}">
-          ${[1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}">${n}</option>`).join("")}
-        </select>
+        <input id="test-sub-rolls-${i}" type="range" min="1" max="6" value="1" class="test-sub-rolls" />
+        <span id="test-sub-rolls-val-${i}" class="test-sub-rolls-val">0</span>
         <label for="test-sub-value-${i}">Value</label>
         <input id="test-sub-value-${i}" type="number" min="1" value="1" class="test-sub-value" />
       </div>`).join("")}
@@ -263,6 +262,15 @@ export function renderTestPanel(filter: HsfFilter): void {
     populateMainStatOptions(slotId);
     populateSubstatOptions(slotId);
   });
+
+  // Wire up roll sliders to show current value
+  for (let i = 0; i < 4; i++) {
+    const slider = document.getElementById(`test-sub-rolls-${i}`) as HTMLInputElement;
+    const label = document.getElementById(`test-sub-rolls-val-${i}`)!;
+    slider.addEventListener("input", () => {
+      label.textContent = String(Number(slider.value) - 1);
+    });
+  }
 
   document.getElementById("test-btn")!.addEventListener("click", () => {
     runTest(filter);
@@ -325,7 +333,7 @@ function readSubstats(): ItemSubstat[] {
     const statVal = (document.getElementById(`test-sub-stat-${i}`) as HTMLSelectElement).value;
     if (!statVal) continue;
     const [statId] = statVal.split(":").map(Number);
-    const rolls = Number((document.getElementById(`test-sub-rolls-${i}`) as HTMLSelectElement).value);
+    const rolls = Number((document.getElementById(`test-sub-rolls-${i}`) as HTMLInputElement).value);
     const value = Number((document.getElementById(`test-sub-value-${i}`) as HTMLInputElement).value) || 1;
     result.push({ statId, rolls, value });
   }
