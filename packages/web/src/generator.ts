@@ -42,6 +42,11 @@ const ALL_SUBSTATS: readonly [number, boolean][] = [
   [8, true],   // ACC
 ];
 
+/** Substats eligible as "good stats" — excludes flat HP/ATK/DEF (no roll range data). */
+const GOOD_SUBSTATS = ALL_SUBSTATS.filter(
+  ([id, flat]) => !(flat && id <= 3),
+);
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -345,7 +350,7 @@ function buildSubstatSelector(group: SettingGroup, index: number, cb: GeneratorC
 
   const checkboxes: HTMLInputElement[] = [];
 
-  for (const [statId, isFlat] of ALL_SUBSTATS) {
+  for (const [statId, isFlat] of GOOD_SUBSTATS) {
     const lbl = document.createElement("label");
     lbl.className = "checkbox-label";
 

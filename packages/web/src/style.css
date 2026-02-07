@@ -626,6 +626,17 @@ pre {
   border-color: #9ca3af;
 }
 
+.gen-toolbar-btn-primary {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+}
+
+.gen-toolbar-btn-primary:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
 /* Group cards */
 
 .group-card {

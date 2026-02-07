@@ -1,9 +1,10 @@
 import type { HsfFilter } from "@rslh/core";
-import { parseFilter } from "@rslh/core";
+import { parseFilter, generateFilter, serializeFilter } from "@rslh/core";
 import { initUpload } from "./upload.js";
 import { renderSummary, renderRules, renderTestPanel, renderError, clearError, clearViewer } from "./render.js";
 import { renderGenerator, clearGenerator, defaultGroup } from "./generator.js";
 import type { SettingGroup } from "./generator.js";
+import { generateRulesFromGroups } from "./generate-rules.js";
 import "./style.css";
 
 // ---------------------------------------------------------------------------
@@ -291,6 +292,35 @@ initUpload(
     renderError(message);
   },
 );
+
+// ---------------------------------------------------------------------------
+// Generate .hsf
+// ---------------------------------------------------------------------------
+
+document.getElementById("gen-generate-btn")!.addEventListener("click", () => {
+  const tab = getActiveTab();
+  if (!tab || tab.type !== "generator") return;
+
+  const rules = generateRulesFromGroups(tab.groups);
+  if (rules.length === 0) {
+    tabBarError.textContent = "No rules generated — add at least one group with good substats.";
+    tabBarError.hidden = false;
+    return;
+  }
+
+  tabBarError.hidden = true;
+  const filter = generateFilter(rules);
+  const json = serializeFilter(filter);
+  // Prepend UTF-8 BOM to match game client output
+  const bom = "\uFEFF";
+  const blob = new Blob([bom + json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "filter.hsf";
+  a.click();
+  URL.revokeObjectURL(url);
+});
 
 // ---------------------------------------------------------------------------
 // .fmbl save/load
