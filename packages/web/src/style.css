@@ -815,8 +815,43 @@ pre {
 /* Roll slider */
 
 .roll-slider {
+  -webkit-appearance: none;
+  appearance: none;
   width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  outline: none;
   cursor: pointer;
+  /* filled/unfilled gradient set via JS */
+  background: #e5e7eb;
+}
+
+.roll-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--slider-color, #2563eb);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+}
+
+.roll-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--slider-color, #2563eb);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+}
+
+.roll-slider::-moz-range-progress {
+  background: var(--slider-color, #2563eb);
+  border-radius: 4px;
+  height: 8px;
 }
 
 .roll-value {

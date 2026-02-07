@@ -521,12 +521,33 @@ function buildRollControl(group: SettingGroup, index: number, cb: GeneratorCallb
   slider.min = "4";
   slider.max = "9";
   slider.value = String(group.rolls);
+  updateSliderFill(slider);
   slider.addEventListener("input", () => {
     group.rolls = Number(slider.value);
     valueDisplay.textContent = slider.value;
+    updateSliderFill(slider);
     cb.onGroupChange(index, group);
   });
+
   wrap.appendChild(slider);
 
+  // Patch preset buttons to also update slider fill
+  for (const btn of labelRow.querySelectorAll<HTMLButtonElement>(".preset-btn")) {
+    btn.addEventListener("click", () => updateSliderFill(slider));
+  }
+
   return wrap;
+}
+
+/** Map slider value (4–9) to a blue shade: lighter at 4, darker at 9. */
+function updateSliderFill(slider: HTMLInputElement): void {
+  const min = Number(slider.min);
+  const max = Number(slider.max);
+  const val = Number(slider.value);
+  const pct = ((val - min) / (max - min)) * 100;
+  // Lightness: 65% at min → 35% at max (always recognizably blue)
+  const lightness = 65 - ((val - min) / (max - min)) * 30;
+  const color = `hsl(217, 80%, ${lightness}%)`;
+  slider.style.setProperty("--slider-color", color);
+  slider.style.background = `linear-gradient(to right, ${color} ${pct}%, #e5e7eb ${pct}%)`;
 }
