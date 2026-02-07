@@ -133,6 +133,22 @@ function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
     card.appendChild(substatsEl);
   }
 
+  // Raw JSON toggle
+  const rawPre = document.createElement("pre");
+  rawPre.className = "rule-raw";
+  rawPre.hidden = true;
+  rawPre.textContent = JSON.stringify(rule, null, 2);
+  card.appendChild(rawPre);
+
+  const rawBtn = document.createElement("button");
+  rawBtn.className = "badge badge-raw";
+  rawBtn.textContent = "Raw";
+  rawBtn.addEventListener("click", () => {
+    rawPre.hidden = !rawPre.hidden;
+    rawBtn.classList.toggle("badge-raw-active", !rawPre.hidden);
+  });
+  header.appendChild(rawBtn);
+
   return card;
 }
 

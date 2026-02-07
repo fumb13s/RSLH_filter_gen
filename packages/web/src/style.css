@@ -237,6 +237,33 @@ pre {
   color: #92400e;
 }
 
+.badge-raw {
+  background: #f3f4f6;
+  color: #555;
+  cursor: pointer;
+  margin-left: auto;
+  border: 1px solid #ddd;
+}
+
+.badge-raw:hover {
+  background: #e5e7eb;
+}
+
+.badge-raw-active {
+  background: #dbeafe;
+  color: #1e40af;
+  border-color: #93c5fd;
+}
+
+/* Rule raw JSON */
+
+.rule-raw {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  max-height: 300px;
+  overflow: auto;
+}
+
 /* Body grid */
 
 .rule-body {
