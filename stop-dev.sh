@@ -12,7 +12,8 @@ fi
 
 PID="$(cat "$PID_FILE")"
 if kill -0 "$PID" 2>/dev/null; then
-  kill "$PID"
+  # Kill the entire process group (npm + sh + node vite)
+  kill -- -"$PID" 2>/dev/null || kill "$PID"
   echo "Dev server stopped (PID $PID)"
 else
   echo "Process $PID not running"

@@ -16,7 +16,7 @@ cd "$ROOT_DIR"
 
 # Start dev server, tee output to a temp file so we can watch for ready
 LOGFILE="$(mktemp)"
-npm run dev > "$LOGFILE" 2>&1 &
+setsid npm run dev > "$LOGFILE" 2>&1 &
 DEV_PID=$!
 echo $DEV_PID > "$PID_FILE"
 
