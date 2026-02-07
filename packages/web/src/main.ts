@@ -31,6 +31,7 @@ let tabCounter = 0;
 // ---------------------------------------------------------------------------
 
 const tabBar = document.getElementById("tab-bar")!;
+const tabBarError = document.getElementById("tab-bar-error")!;
 const tabContent = document.getElementById("tab-content")!;
 const emptyState = document.getElementById("empty-state")!;
 const dropZone = document.getElementById("drop-zone")!;
@@ -137,11 +138,12 @@ function toggleTypeMenu(anchor: HTMLElement): void {
 
 function addTab(type: TabType): void {
   if (tabs.length >= MAX_TABS) {
-    clearError();
-    renderError(`Maximum of ${MAX_TABS} tabs reached. Close a tab first.`);
+    tabBarError.textContent = `Maximum of ${MAX_TABS} tabs reached. Close a tab first.`;
+    tabBarError.hidden = false;
     return;
   }
 
+  tabBarError.hidden = true;
   const id = `tab-${++tabCounter}`;
   const entry: TabEntry = { id, type, filter: null, fileName: null };
   tabs.push(entry);
@@ -152,6 +154,7 @@ function removeTab(id: string): void {
   const idx = tabs.findIndex((t) => t.id === id);
   if (idx === -1) return;
 
+  tabBarError.hidden = true;
   tabs.splice(idx, 1);
 
   if (activeTabId === id) {
