@@ -220,6 +220,14 @@ function renderTiers(
     rollsInput.addEventListener("click", (e) => e.stopPropagation());
     // Blur when mouse leaves so the spinner arrows disappear
     rollsInput.addEventListener("mouseleave", () => rollsInput.blur());
+    // Scroll to cycle value
+    rollsInput.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const cur = Number(rollsInput.value);
+      const next = Math.max(1, Math.min(9, cur + (e.deltaY < 0 ? 1 : -1)));
+      rollsInput.value = String(next);
+      state.tiers[ti].rolls = next;
+    });
     header.appendChild(rollsInput);
 
     col.appendChild(header);
