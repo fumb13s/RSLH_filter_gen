@@ -829,6 +829,7 @@ pre {
   font-size: 1rem;
   color: inherit;
   padding: 0.1rem 0.3rem;
+  margin-left: calc(-0.3rem - 1px);
   border-radius: 3px;
   min-width: 4ch;
   outline: none;
@@ -973,6 +974,10 @@ pre {
   color: #374151;
   cursor: pointer;
   padding: 0.15rem 0;
+}
+
+.checkbox-label input[type="checkbox"] {
+  margin: 0;
 }
 
 /* Preset buttons */
