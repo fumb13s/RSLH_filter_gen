@@ -1004,6 +1004,27 @@ pre {
    Quick Generator
 --------------------------------------------------------------------------- */
 
+.quick-block {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  border-left: 4px solid #8b5cf6;
+}
+
+.quick-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.quick-block-title {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
 .quick-toolbar {
   display: flex;
   gap: 0.5rem;

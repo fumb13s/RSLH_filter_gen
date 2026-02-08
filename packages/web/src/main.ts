@@ -6,7 +6,7 @@ import { renderGenerator, clearGenerator, defaultGroup } from "./generator.js";
 import type { SettingGroup } from "./generator.js";
 import { generateRulesFromGroups } from "./generate-rules.js";
 import { renderQuickGenerator, clearQuickGenerator, defaultQuickState, quickStateToGroups } from "./quick-generator.js";
-import type { QuickGenState } from "./quick-generator.js";
+import type { QuickGenState, QuickBlock } from "./quick-generator.js";
 import { getSettings } from "./settings.js";
 import type { TabType } from "./settings.js";
 import "./style.css";
@@ -23,6 +23,12 @@ interface FmblFile {
 interface FqblFile {
   version: number;
   state: QuickGenState;
+}
+
+/** V1 format stored flat tiers/assignments/selectedProfiles at state level */
+interface FqblFileV1 {
+  version: 1;
+  state: QuickBlock;
 }
 
 interface TabEntry {
@@ -542,7 +548,7 @@ document.getElementById("quick-save-btn")!.addEventListener("click", () => {
   const tab = getActiveTab();
   if (!tab || tab.type !== "quick" || !tab.quickState) return;
 
-  const data: FqblFile = { version: 1, state: tab.quickState };
+  const data: FqblFile = { version: 2, state: tab.quickState };
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -569,11 +575,20 @@ fqblInput.addEventListener("change", () => {
     if (!tab || tab.type !== "quick") return;
 
     try {
-      const data = JSON.parse(text) as FqblFile;
-      if (data.version !== 1 || !data.state || typeof data.state.assignments !== "object") {
+      const raw = JSON.parse(text);
+      let quickState: QuickGenState;
+
+      if (raw.version === 1 && raw.state && typeof raw.state.assignments === "object") {
+        // V1 migration: flat state → wrap in blocks array
+        const v1 = raw as FqblFileV1;
+        quickState = { blocks: [v1.state] };
+      } else if (raw.version === 2 && raw.state && Array.isArray(raw.state.blocks)) {
+        quickState = raw.state as QuickGenState;
+      } else {
         throw new Error("Invalid .fqbl file format");
       }
-      tab.quickState = data.state;
+
+      tab.quickState = quickState;
       tab.fileName = file.name;
       renderTabBar();
       showQuickContent(tab);

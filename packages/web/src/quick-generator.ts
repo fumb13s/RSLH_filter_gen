@@ -17,10 +17,14 @@ interface SetTier {
   sellRolls?: number; // stashed rolls value while in sell mode
 }
 
-export interface QuickGenState {
+export interface QuickBlock {
   tiers: SetTier[];
   assignments: Record<number, number>; // set ID → tier index
   selectedProfiles: number[]; // indices into SUBSTAT_PRESETS
+}
+
+export interface QuickGenState {
+  blocks: QuickBlock[];
 }
 
 // ---------------------------------------------------------------------------
@@ -37,7 +41,7 @@ function getDefaultTiers(): SetTier[] {
   ];
 }
 
-export function defaultQuickState(): QuickGenState {
+export function defaultBlock(): QuickBlock {
   const tiers = getDefaultTiers();
   const assignments: Record<number, number> = {};
   const sellIdx = tiers.length - 1;
@@ -51,6 +55,10 @@ export function defaultQuickState(): QuickGenState {
   };
 }
 
+export function defaultQuickState(): QuickGenState {
+  return { blocks: [defaultBlock()] };
+}
+
 // ---------------------------------------------------------------------------
 // Cross-product: tiers x profiles → SettingGroup[]
 // ---------------------------------------------------------------------------
@@ -58,25 +66,27 @@ export function defaultQuickState(): QuickGenState {
 export function quickStateToGroups(state: QuickGenState): SettingGroup[] {
   const groups: SettingGroup[] = [];
 
-  for (let ti = 0; ti < state.tiers.length; ti++) {
-    const tier = state.tiers[ti];
-    if (tier.rolls < 0) continue;
+  for (const block of state.blocks) {
+    for (let ti = 0; ti < block.tiers.length; ti++) {
+      const tier = block.tiers[ti];
+      if (tier.rolls < 0) continue;
 
-    const sets = Object.entries(state.assignments)
-      .filter(([, idx]) => idx === ti)
-      .map(([id]) => Number(id));
-    if (sets.length === 0) continue;
+      const sets = Object.entries(block.assignments)
+        .filter(([, idx]) => idx === ti)
+        .map(([id]) => Number(id));
+      if (sets.length === 0) continue;
 
-    for (const pi of state.selectedProfiles) {
-      const preset = SUBSTAT_PRESETS[pi];
-      if (!preset) continue;
-      groups.push({
-        sets,
-        slots: [],
-        mainStats: [],
-        goodStats: preset.stats.map(([s, f]) => [s, f]),
-        rolls: tier.rolls,
-      });
+      for (const pi of block.selectedProfiles) {
+        const preset = SUBSTAT_PRESETS[pi];
+        if (!preset) continue;
+        groups.push({
+          sets,
+          slots: [],
+          mainStats: [],
+          goodStats: preset.stats.map(([s, f]) => [s, f]),
+          rolls: tier.rolls,
+        });
+      }
     }
   }
 
@@ -96,8 +106,62 @@ export function renderQuickGenerator(
   state: QuickGenState,
   onChange: (state: QuickGenState) => void,
 ): void {
-  renderProfiles(state, onChange);
-  renderTiers(state, onChange);
+  const container = document.getElementById("quick-tiers")!;
+  container.innerHTML = "";
+
+  // Hide the legacy profiles container — profiles now live inside each block
+  const legacyProfiles = document.getElementById("quick-profiles");
+  if (legacyProfiles) legacyProfiles.innerHTML = "";
+
+  for (let bi = 0; bi < state.blocks.length; bi++) {
+    const block = state.blocks[bi];
+
+    const card = document.createElement("div");
+    card.className = "quick-block";
+
+    // Block header
+    const header = document.createElement("div");
+    header.className = "quick-block-header";
+
+    const title = document.createElement("span");
+    title.className = "quick-block-title";
+    title.textContent = `Block ${bi + 1}`;
+    header.appendChild(title);
+
+    if (state.blocks.length > 1) {
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "group-delete";
+      del.textContent = "\u00d7";
+      del.title = "Delete block";
+      del.addEventListener("click", () => {
+        state.blocks.splice(bi, 1);
+        onChange(state);
+      });
+      header.appendChild(del);
+    }
+
+    card.appendChild(header);
+
+    // Profiles inside this block
+    renderBlockProfiles(card, block, bi, state, onChange);
+
+    // Tiers inside this block
+    renderBlockTiers(card, block, bi, state, onChange);
+
+    container.appendChild(card);
+  }
+
+  // Add Block button
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "gen-add-group-btn";
+  addBtn.textContent = "+ Add Block";
+  addBtn.addEventListener("click", () => {
+    state.blocks.push(defaultBlock());
+    onChange(state);
+  });
+  container.appendChild(addBtn);
 }
 
 export function clearQuickGenerator(): void {
@@ -108,16 +172,16 @@ export function clearQuickGenerator(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Profiles section
+// Profiles section (per block)
 // ---------------------------------------------------------------------------
 
-function renderProfiles(
+function renderBlockProfiles(
+  parent: HTMLElement,
+  block: QuickBlock,
+  _blockIdx: number,
   state: QuickGenState,
   onChange: (state: QuickGenState) => void,
 ): void {
-  const container = document.getElementById("quick-profiles")!;
-  container.innerHTML = "";
-
   const section = document.createElement("div");
   section.className = "quick-profiles-section";
 
@@ -136,12 +200,12 @@ function renderProfiles(
 
     const cb = document.createElement("input");
     cb.type = "checkbox";
-    cb.checked = state.selectedProfiles.includes(i);
+    cb.checked = block.selectedProfiles.includes(i);
     cb.addEventListener("change", () => {
       if (cb.checked) {
-        state.selectedProfiles.push(i);
+        block.selectedProfiles.push(i);
       } else {
-        state.selectedProfiles = state.selectedProfiles.filter((p) => p !== i);
+        block.selectedProfiles = block.selectedProfiles.filter((p) => p !== i);
       }
       onChange(state);
     });
@@ -155,20 +219,20 @@ function renderProfiles(
   }
 
   section.appendChild(row);
-  container.appendChild(section);
+  parent.appendChild(section);
 }
 
 // ---------------------------------------------------------------------------
 // Tier columns
 // ---------------------------------------------------------------------------
 
-function renderTiers(
+function renderBlockTiers(
+  parent: HTMLElement,
+  block: QuickBlock,
+  _blockIdx: number,
   state: QuickGenState,
   onChange: (state: QuickGenState) => void,
 ): void {
-  const container = document.getElementById("quick-tiers")!;
-  container.innerHTML = "";
-
   // Search
   const searchWrap = document.createElement("div");
   searchWrap.className = "quick-search";
@@ -177,7 +241,7 @@ function renderTiers(
   searchInput.placeholder = "Search sets\u2026";
   searchInput.className = "quick-search-input";
   searchWrap.appendChild(searchInput);
-  container.appendChild(searchWrap);
+  parent.appendChild(searchWrap);
 
   // Columns grid
   const grid = document.createElement("div");
@@ -187,8 +251,8 @@ function renderTiers(
   const columns: HTMLElement[] = [];
   const chipAreas: HTMLElement[] = [];
 
-  for (let ti = 0; ti < state.tiers.length; ti++) {
-    const tier = state.tiers[ti];
+  for (let ti = 0; ti < block.tiers.length; ti++) {
+    const tier = block.tiers[ti];
 
     const col = document.createElement("div");
     col.className = "quick-tier-column";
@@ -214,13 +278,13 @@ function renderTiers(
     rollsInput.addEventListener("input", () => {
       const raw = Number(rollsInput.value);
       if (!raw || raw < 1 || raw > 9) return;
-      state.tiers[ti].rolls = raw;
+      block.tiers[ti].rolls = raw;
     });
     // Clamp on blur
     rollsInput.addEventListener("blur", () => {
       const v = Math.max(1, Math.min(9, Number(rollsInput.value) || tier.rolls));
       rollsInput.value = String(v);
-      state.tiers[ti].rolls = v;
+      block.tiers[ti].rolls = v;
     });
     // Prevent click on input from triggering column drag-over / chip events
     rollsInput.addEventListener("click", (e) => e.stopPropagation());
@@ -232,12 +296,12 @@ function renderTiers(
       const cur = Number(rollsInput.value);
       const next = Math.max(1, Math.min(9, cur + (e.deltaY < 0 ? 1 : -1)));
       rollsInput.value = String(next);
-      state.tiers[ti].rolls = next;
+      block.tiers[ti].rolls = next;
     });
     header.appendChild(rollsInput);
 
     // Sell toggle — only on the last tier
-    const isLast = ti === state.tiers.length - 1;
+    const isLast = ti === block.tiers.length - 1;
     const isSell = tier.rolls < 0;
     if (isLast) {
       const sellLabel = document.createElement("label");
@@ -256,12 +320,12 @@ function renderTiers(
       sellCb.addEventListener("change", () => {
         if (sellCb.checked) {
           // Stash current rolls and switch to sell mode
-          state.tiers[ti].sellRolls = state.tiers[ti].rolls;
-          state.tiers[ti].rolls = -1;
+          block.tiers[ti].sellRolls = block.tiers[ti].rolls;
+          block.tiers[ti].rolls = -1;
         } else {
           // Restore stashed rolls
-          state.tiers[ti].rolls = state.tiers[ti].sellRolls ?? 9;
-          delete state.tiers[ti].sellRolls;
+          block.tiers[ti].rolls = block.tiers[ti].sellRolls ?? 9;
+          delete block.tiers[ti].sellRolls;
         }
         onChange(state);
       });
@@ -300,8 +364,8 @@ function renderTiers(
       const setId = e.dataTransfer?.getData("text/plain");
       if (!setId) return;
       const id = Number(setId);
-      if (state.assignments[id] === ti) return; // already in this tier
-      state.assignments[id] = ti;
+      if (block.assignments[id] === ti) return; // already in this tier
+      block.assignments[id] = ti;
       onChange(state);
     });
 
@@ -314,15 +378,15 @@ function renderTiers(
   const allChips: { el: HTMLElement; name: string }[] = [];
 
   for (const set of SORTED_SETS) {
-    const tierIdx = state.assignments[set.id] ?? state.tiers.length - 1;
+    const tierIdx = block.assignments[set.id] ?? block.tiers.length - 1;
 
     const chip = document.createElement("button");
     chip.type = "button";
     chip.className = "quick-chip";
     chip.draggable = true;
     chip.textContent = set.name;
-    const tierIsSell = state.tiers[tierIdx].rolls < 0;
-    chip.style.backgroundColor = tierIsSell ? "#e5e7eb" : state.tiers[tierIdx].color;
+    const tierIsSell = block.tiers[tierIdx].rolls < 0;
+    chip.style.backgroundColor = tierIsSell ? "#e5e7eb" : block.tiers[tierIdx].color;
     chip.style.color = tierIsSell ? "#6b7280" : "#fff";
     chip.title = `${set.name} — drag to move, click to cycle tier`;
 
@@ -340,18 +404,18 @@ function renderTiers(
 
     // Left-click: advance to next tier (wrap around)
     chip.addEventListener("click", () => {
-      const cur = state.assignments[set.id] ?? state.tiers.length - 1;
-      const next = (cur + 1) % state.tiers.length;
-      state.assignments[set.id] = next;
+      const cur = block.assignments[set.id] ?? block.tiers.length - 1;
+      const next = (cur + 1) % block.tiers.length;
+      block.assignments[set.id] = next;
       onChange(state);
     });
 
     // Right-click: go to previous tier
     chip.addEventListener("contextmenu", (e) => {
       e.preventDefault();
-      const cur = state.assignments[set.id] ?? state.tiers.length - 1;
-      const prev = (cur - 1 + state.tiers.length) % state.tiers.length;
-      state.assignments[set.id] = prev;
+      const cur = block.assignments[set.id] ?? block.tiers.length - 1;
+      const prev = (cur - 1 + block.tiers.length) % block.tiers.length;
+      block.assignments[set.id] = prev;
       onChange(state);
     });
 
@@ -367,5 +431,5 @@ function renderTiers(
     }
   });
 
-  container.appendChild(grid);
+  parent.appendChild(grid);
 }
