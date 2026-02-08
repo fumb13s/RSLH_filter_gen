@@ -11,8 +11,9 @@ import type { SettingGroup } from "./generator.js";
 
 interface SetTier {
   name: string;
-  rolls: number; // 4-9, or -1 for "Sell"
-  color: string; // CSS color for chips/header
+  rolls: number;    // 4-9, or -1 for "Sell"
+  color: string;    // CSS color for chips/header
+  sellRolls?: number; // stashed rolls value while in sell mode
 }
 
 export interface QuickGenState {
@@ -230,6 +231,47 @@ function renderTiers(
     });
     header.appendChild(rollsInput);
 
+    // Sell toggle — only on the last tier
+    const isLast = ti === state.tiers.length - 1;
+    const isSell = tier.rolls < 0;
+    if (isLast) {
+      const sellLabel = document.createElement("label");
+      sellLabel.className = "quick-sell-toggle";
+      sellLabel.title = "Sell everything in this column instead of filtering";
+
+      const sellCb = document.createElement("input");
+      sellCb.type = "checkbox";
+      sellCb.checked = isSell;
+      sellLabel.appendChild(sellCb);
+
+      const sellText = document.createElement("span");
+      sellText.textContent = "Sell";
+      sellLabel.appendChild(sellText);
+
+      sellCb.addEventListener("change", () => {
+        if (sellCb.checked) {
+          // Stash current rolls and switch to sell mode
+          state.tiers[ti].sellRolls = state.tiers[ti].rolls;
+          state.tiers[ti].rolls = -1;
+        } else {
+          // Restore stashed rolls
+          state.tiers[ti].rolls = state.tiers[ti].sellRolls ?? 9;
+          delete state.tiers[ti].sellRolls;
+        }
+        onChange(state);
+      });
+
+      header.appendChild(sellLabel);
+
+      // Hide rolls input in sell mode
+      if (isSell) {
+        rollsInput.hidden = true;
+        col.style.borderTopColor = "#e5e7eb";
+        header.style.color = "#6b7280";
+        col.classList.add("quick-tier-sell");
+      }
+    }
+
     col.appendChild(header);
 
     const chipArea = document.createElement("div");
@@ -274,8 +316,9 @@ function renderTiers(
     chip.className = "quick-chip";
     chip.draggable = true;
     chip.textContent = set.name;
-    chip.style.backgroundColor = state.tiers[tierIdx].color;
-    chip.style.color = "#fff";
+    const tierIsSell = state.tiers[tierIdx].rolls < 0;
+    chip.style.backgroundColor = tierIsSell ? "#e5e7eb" : state.tiers[tierIdx].color;
+    chip.style.color = tierIsSell ? "#6b7280" : "#fff";
     chip.title = `${set.name} — drag to move, click to cycle tier`;
 
     // Drag

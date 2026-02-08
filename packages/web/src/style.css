@@ -986,6 +986,23 @@ pre {
   margin: 0;
 }
 
+/* Sell toggle */
+
+.quick-sell-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.quick-tier-sell {
+  background: #fafafa;
+}
+
 .quick-tier-chips {
   display: flex;
   flex-wrap: wrap;
