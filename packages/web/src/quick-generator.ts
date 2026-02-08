@@ -103,13 +103,30 @@ export function quickStateToGroups(state: QuickGenState): SettingGroup[] {
       for (const pi of block.selectedProfiles) {
         const preset = SUBSTAT_PRESETS[pi];
         if (!preset) continue;
+        const goodStats: [number, boolean][] = preset.stats.map(([s, f]) => [s, f]);
+
+        // Rank 6 rules at the tier's roll threshold
         groups.push({
           sets,
           slots: [],
           mainStats: [],
-          goodStats: preset.stats.map(([s, f]) => [s, f]),
+          goodStats,
           rolls: tier.rolls,
+          rank: 6,
         });
+
+        // Rank 5 rules at +2 rolls (stricter to compensate for lower rank)
+        const rank5Rolls = tier.rolls + 2;
+        if (rank5Rolls <= 9) {
+          groups.push({
+            sets,
+            slots: [],
+            mainStats: [],
+            goodStats,
+            rolls: rank5Rolls,
+            rank: 5,
+          });
+        }
       }
     }
   }

@@ -186,7 +186,7 @@ function minRollsNeeded(s: HsfSubstat, rank: number): number | undefined {
   if (rank === 0) return undefined;
   const range = getRollRange(s.ID, rank);
   if (!range) return undefined;
-  return Math.ceil(s.Value / range[1]);
+  return Math.ceil(s.Value / range[0]);
 }
 
 function esc(text: string): string {

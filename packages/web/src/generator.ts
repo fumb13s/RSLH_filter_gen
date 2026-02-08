@@ -18,6 +18,7 @@ export interface SettingGroup {
   mainStats: [number, boolean][];       // [statId, isFlat]
   goodStats: [number, boolean][];      // [statId, isFlat]
   rolls: number;                       // 4–9
+  rank?: number;                       // 1–6, defaults to 6
 }
 
 export interface GeneratorCallbacks {
@@ -116,8 +117,8 @@ function buildGroupCard(group: SettingGroup, index: number, cb: GeneratorCallbac
   // Good substats selector
   card.appendChild(buildSubstatSelector(group, index, cb));
 
-  // Roll count
-  card.appendChild(buildRollControl(group, index, cb));
+  // Rank toggle + Roll count
+  card.appendChild(buildRankAndRollControl(group, index, cb));
 
   return card;
 }
@@ -498,7 +499,7 @@ function buildSubstatSelector(group: SettingGroup, index: number, cb: GeneratorC
 }
 
 // ---------------------------------------------------------------------------
-// Roll count control — range slider
+// Rank toggle + Roll count control
 // ---------------------------------------------------------------------------
 
 const ROLL_PRESETS: { label: string; value: number }[] = [
@@ -507,10 +508,30 @@ const ROLL_PRESETS: { label: string; value: number }[] = [
   { label: "End Game", value: 7 },
 ];
 
-function buildRollControl(group: SettingGroup, index: number, cb: GeneratorCallbacks): HTMLElement {
+function buildRankAndRollControl(group: SettingGroup, index: number, cb: GeneratorCallbacks): HTMLElement {
   const wrap = document.createElement("div");
   wrap.className = "group-section";
 
+  // Rank toggle row
+  const rankRow = document.createElement("div");
+  rankRow.className = "section-label-row";
+
+  const rankLabel = document.createElement("div");
+  rankLabel.className = "section-label";
+  rankLabel.textContent = "Rank";
+  rankRow.appendChild(rankLabel);
+
+  const rankToggle = document.createElement("button");
+  rankToggle.type = "button";
+  rankToggle.className = "preset-btn rank-toggle";
+  const currentRank = group.rank ?? 6;
+  rankToggle.textContent = `${currentRank}-star`;
+  rankToggle.title = "Toggle between rank 5 and 6";
+  rankRow.appendChild(rankToggle);
+
+  wrap.appendChild(rankRow);
+
+  // Roll control row
   const labelRow = document.createElement("div");
   labelRow.className = "section-label-row";
 
@@ -528,6 +549,7 @@ function buildRollControl(group: SettingGroup, index: number, cb: GeneratorCallb
       group.rolls = preset.value;
       slider.value = String(preset.value);
       valueDisplay.textContent = String(preset.value);
+      updateSliderFill(slider);
       cb.onGroupChange(index, group);
     });
     labelRow.appendChild(btn);
@@ -556,10 +578,22 @@ function buildRollControl(group: SettingGroup, index: number, cb: GeneratorCallb
 
   wrap.appendChild(slider);
 
-  // Patch preset buttons to also update slider fill
-  for (const btn of labelRow.querySelectorAll<HTMLButtonElement>(".preset-btn")) {
-    btn.addEventListener("click", () => updateSliderFill(slider));
-  }
+  // Rank toggle logic
+  rankToggle.addEventListener("click", () => {
+    const curRank = group.rank ?? 6;
+    if (curRank === 6) {
+      group.rank = 5;
+      group.rolls = Math.min(9, group.rolls + 2);
+    } else {
+      group.rank = 6;
+      group.rolls = Math.max(4, group.rolls - 2);
+    }
+    rankToggle.textContent = `${group.rank}-star`;
+    slider.value = String(group.rolls);
+    valueDisplay.textContent = String(group.rolls);
+    updateSliderFill(slider);
+    cb.onGroupChange(index, group);
+  });
 
   return wrap;
 }
