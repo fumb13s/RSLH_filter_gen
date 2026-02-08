@@ -443,8 +443,8 @@ fmblInput.addEventListener("change", () => {
 // Quick Generator toolbar
 // ---------------------------------------------------------------------------
 
-/** Try to generate rules from the active quick tab. Returns null on failure. */
-function generateFromQuickTab(): ReturnType<typeof generateFilter> | null {
+/** Build groups from the active quick tab. Returns null on failure (shows error). */
+function groupsFromQuickTab(): SettingGroup[] | null {
   const tab = getActiveTab();
   if (!tab || tab.type !== "quick" || !tab.quickState) return null;
 
@@ -454,6 +454,15 @@ function generateFromQuickTab(): ReturnType<typeof generateFilter> | null {
     tabBarError.hidden = false;
     return null;
   }
+
+  tabBarError.hidden = true;
+  return groups;
+}
+
+/** Try to generate a filter from the active quick tab. Returns null on failure. */
+function generateFromQuickTab(): ReturnType<typeof generateFilter> | null {
+  const groups = groupsFromQuickTab();
+  if (!groups) return null;
 
   const rules = generateRulesFromGroups(groups);
   if (rules.length === 0) {
@@ -466,28 +475,50 @@ function generateFromQuickTab(): ReturnType<typeof generateFilter> | null {
   return generateFilter(rules);
 }
 
-// Generate → open viewer tab
+// Generate → open Generator tab (groups) + Viewer tab (filter)
 document.getElementById("quick-generate-btn")!.addEventListener("click", () => {
-  const filter = generateFromQuickTab();
-  if (!filter) return;
+  const groups = groupsFromQuickTab();
+  if (!groups) return;
 
-  if (tabs.length >= MAX_TABS) {
-    tabBarError.textContent = `Maximum of ${MAX_TABS} tabs reached. Close a tab first.`;
+  const rules = generateRulesFromGroups(groups);
+  if (rules.length === 0) {
+    tabBarError.textContent = "No rules generated — check your tier/profile selections.";
     tabBarError.hidden = false;
     return;
   }
 
-  const id = `tab-${++tabCounter}`;
-  const entry: TabEntry = {
-    id,
+  if (tabs.length + 2 > MAX_TABS) {
+    tabBarError.textContent = `Need 2 free tab slots (Generator + Viewer). Close ${tabs.length + 2 - MAX_TABS} tab(s) first.`;
+    tabBarError.hidden = false;
+    return;
+  }
+
+  tabBarError.hidden = true;
+  const filter = generateFilter(rules);
+
+  // Generator tab with the intermediate groups
+  const genId = `tab-${++tabCounter}`;
+  tabs.push({
+    id: genId,
+    type: "generator",
+    filter: null,
+    fileName: null,
+    groups,
+    quickState: null,
+  });
+
+  // Viewer tab with the final filter
+  const viewId = `tab-${++tabCounter}`;
+  tabs.push({
+    id: viewId,
     type: "viewer",
     filter,
     fileName: "Generated",
     groups: [],
     quickState: null,
-  };
-  tabs.push(entry);
-  activateTab(id);
+  });
+
+  activateTab(viewId);
 });
 
 // Save .hsf
