@@ -102,7 +102,7 @@ function renderTabBar(): void {
   addBtn.textContent = "+";
   addBtn.title = "New Generator tab";
   addBtn.addEventListener("click", () => {
-    addTab("generator");
+    addTab("quick");
   });
   splitWrap.appendChild(addBtn);
 
@@ -610,4 +610,4 @@ backToTop.addEventListener("click", () => {
 // Initialize with one generator tab (default)
 // ---------------------------------------------------------------------------
 
-addTab("generator");
+addTab("quick");
