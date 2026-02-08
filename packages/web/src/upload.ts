@@ -5,6 +5,7 @@
 export function initUpload(
   onFileLoaded: (text: string, fileName: string) => void,
   onError: (message: string) => void,
+  onRedirect?: (file: File) => boolean,
 ): void {
   const dropZone = document.getElementById("drop-zone")!;
   const fileInput = document.getElementById("file-input") as HTMLInputElement;
@@ -16,7 +17,7 @@ export function initUpload(
   fileInput.addEventListener("change", () => {
     const file = fileInput.files?.[0];
     if (file) {
-      readFile(file, onFileLoaded, onError);
+      readFile(file, onFileLoaded, onError, onRedirect);
       fileInput.value = ""; // allow re-uploading same file
     }
   });
@@ -36,7 +37,7 @@ export function initUpload(
     dropZone.classList.remove("drag-over");
     const file = e.dataTransfer?.files[0];
     if (file) {
-      readFile(file, onFileLoaded, onError);
+      readFile(file, onFileLoaded, onError, onRedirect);
     }
   });
 }
@@ -45,8 +46,10 @@ function readFile(
   file: File,
   onFileLoaded: (text: string, fileName: string) => void,
   onError: (message: string) => void,
+  onRedirect?: (file: File) => boolean,
 ): void {
   if (!file.name.endsWith(".hsf")) {
+    if (onRedirect && onRedirect(file)) return;
     onError(`Invalid file type: "${file.name}". Please select a .hsf file.`);
     return;
   }

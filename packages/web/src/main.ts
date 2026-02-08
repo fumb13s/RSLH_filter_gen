@@ -68,6 +68,47 @@ const generatorContent = document.getElementById("generator-content")!;
 const quickContent = document.getElementById("quick-content")!;
 
 // ---------------------------------------------------------------------------
+// Cross-format file routing
+// ---------------------------------------------------------------------------
+
+const KNOWN_EXTENSIONS: Record<string, TabType> = {
+  ".hsf": "viewer",
+  ".fmbl": "generator",
+  ".fqbl": "quick",
+};
+
+/**
+ * Route a file to the correct tab type. If the active tab already matches,
+ * return false so the caller loads normally. Otherwise replace the current
+ * tab with one of the correct type and load the file there.
+ */
+function routeFile(file: File): boolean {
+  const ext = Object.keys(KNOWN_EXTENSIONS).find((e) => file.name.endsWith(e));
+  if (!ext) return false;
+
+  const targetType = KNOWN_EXTENSIONS[ext];
+  const tab = getActiveTab();
+
+  // Already on the right tab type — caller handles it
+  if (tab && tab.type === targetType) return false;
+
+  // Replace the current tab: remove it, then add one of the correct type
+  if (tab) removeTab(tab.id);
+  addTab(targetType);
+  const newTab = getActiveTab()!;
+
+  if (targetType === "viewer") {
+    loadHsfIntoTab(file, newTab);
+  } else if (targetType === "generator") {
+    loadFmblIntoTab(file, newTab);
+  } else if (targetType === "quick") {
+    loadFqblIntoTab(file, newTab);
+  }
+
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Drop zone helper for toolbar load buttons
 // ---------------------------------------------------------------------------
 
@@ -88,13 +129,19 @@ function wireDropZone(id: string, ext: string, onFile: (file: File) => void): vo
     e.preventDefault();
     zone.classList.remove("drag-over");
     const file = e.dataTransfer?.files[0];
-    if (!file || !file.name.endsWith(ext)) {
-      tabBarError.textContent = `Expected a ${ext} file.`;
-      tabBarError.hidden = false;
+    if (!file) return;
+
+    if (file.name.endsWith(ext)) {
+      tabBarError.hidden = true;
+      onFile(file);
       return;
     }
-    tabBarError.hidden = true;
-    onFile(file);
+
+    // Try routing to a different tab type
+    if (!routeFile(file)) {
+      tabBarError.textContent = `Expected a ${ext} file.`;
+      tabBarError.hidden = false;
+    }
   });
 }
 
@@ -333,6 +380,30 @@ function getActiveTab(): TabEntry | undefined {
 // Upload wiring
 // ---------------------------------------------------------------------------
 
+function loadHsfIntoTab(file: File, tab: TabEntry): void {
+  file.text().then((text) => {
+    clearError();
+    try {
+      const filter = parseFilter(text);
+      tab.filter = filter;
+      tab.fileName = file.name;
+      dropZone.hidden = true;
+      renderTabBar();
+      renderSummary(filter, file.name);
+      renderTestPanel(filter);
+      renderRules(filter);
+    } catch (err: unknown) {
+      if (err instanceof SyntaxError) {
+        renderError(`Invalid JSON: ${err.message}`);
+      } else if (isZodError(err)) {
+        renderError(formatZodError(err));
+      } else {
+        renderError(`Unexpected error: ${err}`);
+      }
+    }
+  });
+}
+
 initUpload(
   (text, fileName) => {
     const tab = getActiveTab();
@@ -344,7 +415,7 @@ initUpload(
       tab.filter = filter;
       tab.fileName = fileName;
       dropZone.hidden = true;
-      renderTabBar(); // Update tab label with filename
+      renderTabBar();
       renderSummary(filter, fileName);
       renderTestPanel(filter);
       renderRules(filter);
@@ -362,6 +433,7 @@ initUpload(
     clearError();
     renderError(message);
   },
+  routeFile,
 );
 
 // ---------------------------------------------------------------------------
@@ -449,11 +521,8 @@ document.getElementById("gen-load-btn")!.addEventListener("click", () => {
   fmblInput.click();
 });
 
-function loadFmblFile(file: File): void {
+function loadFmblIntoTab(file: File, tab: TabEntry): void {
   file.text().then((text) => {
-    const tab = getActiveTab();
-    if (!tab || tab.type !== "generator") return;
-
     try {
       const data = JSON.parse(text) as FmblFile;
       if (data.version !== 1 || !Array.isArray(data.groups)) {
@@ -468,6 +537,12 @@ function loadFmblFile(file: File): void {
       tabBarError.hidden = false;
     }
   });
+}
+
+function loadFmblFile(file: File): void {
+  const tab = getActiveTab();
+  if (!tab || tab.type !== "generator") return;
+  loadFmblIntoTab(file, tab);
 }
 
 fmblInput.addEventListener("change", () => {
@@ -630,11 +705,8 @@ document.getElementById("quick-load-btn")!.addEventListener("click", () => {
   fqblInput.click();
 });
 
-function loadFqblFile(file: File): void {
+function loadFqblIntoTab(file: File, tab: TabEntry): void {
   file.text().then((text) => {
-    const tab = getActiveTab();
-    if (!tab || tab.type !== "quick") return;
-
     try {
       const data = JSON.parse(text);
       const migrated = migrateFqbl(data);
@@ -647,6 +719,12 @@ function loadFqblFile(file: File): void {
       tabBarError.hidden = false;
     }
   });
+}
+
+function loadFqblFile(file: File): void {
+  const tab = getActiveTab();
+  if (!tab || tab.type !== "quick") return;
+  loadFqblIntoTab(file, tab);
 }
 
 fqblInput.addEventListener("change", () => {
