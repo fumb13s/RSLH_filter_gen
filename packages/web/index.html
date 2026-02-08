@@ -8,7 +8,10 @@
   </head>
   <body>
     <main>
-      <h1>RSLH Filter Tools</h1>
+      <div class="header-row">
+        <h1>RSLH Filter Tools</h1>
+        <button id="about-btn" class="about-btn" type="button" title="About">?</button>
+      </div>
 
       <nav class="tab-bar" id="tab-bar">
         <!-- Dynamic tabs and + button rendered by main.ts -->
@@ -81,6 +84,32 @@
         </div>
       </div>
     </main>
+
+    <!-- About modal -->
+    <div id="about-overlay" class="modal-overlay">
+      <div class="modal" role="dialog" aria-labelledby="about-title">
+        <button class="modal-close" id="about-close" type="button" aria-label="Close">&times;</button>
+        <h2 id="about-title">About RSLH Filter Tools</h2>
+        <p>
+          A tool for generating and viewing <strong>.hsf</strong> artifact filter files
+          for <strong>RSL Helper</strong>, a companion app for
+          <em>Raid: Shadow Legends</em>.
+        </p>
+        <p>
+          Huge thanks to Farbstoff for creating RSL Helper and making it
+          available to the community. Check out
+          his <a href="https://www.youtube.com/c/FarbstoffRSL" target="_blank" rel="noopener">YouTube channel</a>
+          and consider subscribing!
+        </p>
+        <p>
+          If you'd like to say thanks to me, consider checking out my
+          <a href="https://www.youtube.com/@Vircengitorix/streams" target="_blank" rel="noopener">YouTube streams</a>
+          or using my Aptoide promo code <strong id="about-promo-code">...</strong>
+          when spending in game. Not sure what that is?
+          Here's <a href="https://github.com/fumb13s/raid-guides/blob/main/aptoide.md" target="_blank" rel="noopener">a guide</a>.
+        </p>
+      </div>
+    </div>
 
     <button id="back-to-top" class="back-to-top" hidden aria-label="Back to top">&uarr;</button>
     <script type="module" src="/src/main.ts"></script>

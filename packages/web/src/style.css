@@ -17,8 +17,122 @@ body {
   background: #fafafa;
 }
 
-h1 {
+/* ---------------------------------------------------------------------------
+   Header row
+--------------------------------------------------------------------------- */
+
+.header-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   margin-bottom: 1.5rem;
+}
+
+.header-row h1 {
+  margin-bottom: 0;
+}
+
+.about-btn {
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #555;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.about-btn:hover {
+  background: #f3f4f6;
+  color: #1a1a1a;
+  border-color: #9ca3af;
+}
+
+/* ---------------------------------------------------------------------------
+   About modal
+--------------------------------------------------------------------------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-overlay.open {
+  display: flex;
+}
+
+.modal {
+  position: relative;
+  background: #fff;
+  border-radius: 8px;
+  padding: 1.5rem 2rem;
+  max-width: 480px;
+  width: calc(100% - 2rem);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.modal h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+}
+
+.modal h3 {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.modal p {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #374151;
+}
+
+.modal ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 0.9rem;
+}
+
+.modal li {
+  margin-bottom: 0.25rem;
+}
+
+.modal a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.modal a:hover {
+  text-decoration: underline;
+}
+
+.modal-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  color: #999;
+  line-height: 1;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+}
+
+.modal-close:hover {
+  background: #f3f4f6;
+  color: #333;
 }
 
 pre {

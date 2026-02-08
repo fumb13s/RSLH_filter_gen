@@ -626,6 +626,45 @@ function formatZodError(err: Error & { issues: ZodIssue[] }): string {
 }
 
 // ---------------------------------------------------------------------------
+// About modal
+// ---------------------------------------------------------------------------
+
+const aboutOverlay = document.getElementById("about-overlay")!;
+const aboutBtn = document.getElementById("about-btn")!;
+const aboutClose = document.getElementById("about-close")!;
+
+function openAbout(): void {
+  aboutOverlay.classList.add("open");
+}
+
+function closeAbout(): void {
+  aboutOverlay.classList.remove("open");
+}
+
+aboutBtn.addEventListener("click", openAbout);
+aboutClose.addEventListener("click", closeAbout);
+aboutOverlay.addEventListener("click", (e) => {
+  if (e.target === aboutOverlay) closeAbout();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && aboutOverlay.classList.contains("open")) closeAbout();
+});
+
+// Fetch Aptoide promo code from the guide
+const promoCodeEl = document.getElementById("about-promo-code")!;
+fetch("https://api.github.com/repos/fumb13s/raid-guides/contents/aptoide.md")
+  .then((r) => (r.ok ? r.json() : Promise.reject()))
+  .then((data: { content: string }) => {
+    const text = atob(data.content);
+    const match = text.match(/promo code\s+(\w+)\s*\(valid until\s+([\d-]+)\)/i);
+    if (match) promoCodeEl.textContent = `${match[1]} (valid until ${match[2]})`;
+    else promoCodeEl.textContent = "(see guide)";
+  })
+  .catch(() => {
+    promoCodeEl.textContent = "(see guide)";
+  });
+
+// ---------------------------------------------------------------------------
 // Back-to-top button
 // ---------------------------------------------------------------------------
 
