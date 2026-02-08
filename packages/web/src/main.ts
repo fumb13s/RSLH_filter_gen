@@ -37,7 +37,7 @@ interface TabEntry {
   quickState: QuickGenState | null;
 }
 
-const MAX_TABS = 5;
+const MAX_TABS = 9;
 const TAB_TYPES: { type: TabType; label: string }[] = [
   { type: "quick", label: "Quick Generator" },
   { type: "generator", label: "Generator" },
