@@ -13,6 +13,7 @@ import { getSettings } from "./settings.js";
 // ---------------------------------------------------------------------------
 
 export interface SettingGroup {
+  name?: string;
   sets: number[];
   slots: number[];
   mainStats: [number, boolean][];       // [statId, isFlat]
@@ -91,9 +92,18 @@ function buildGroupCard(group: SettingGroup, index: number, cb: GeneratorCallbac
   const header = document.createElement("div");
   header.className = "group-header";
 
-  const title = document.createElement("span");
-  title.className = "group-title";
-  title.textContent = `Group ${index + 1}`;
+  const title = document.createElement("input");
+  title.type = "text";
+  title.className = "group-title editable-title";
+  title.value = group.name ?? "";
+  title.placeholder = `Group ${index + 1}`;
+  title.addEventListener("input", () => {
+    group.name = title.value || undefined;
+  });
+  title.addEventListener("blur", () => {
+    group.name = title.value || undefined;
+    cb.onGroupChange(index, group);
+  });
   header.appendChild(title);
 
   const delBtn = document.createElement("button");

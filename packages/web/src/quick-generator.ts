@@ -18,6 +18,7 @@ interface SetTier {
 }
 
 export interface QuickBlock {
+  name?: string;
   tiers: SetTier[];
   assignments: Record<number, number>; // set ID → tier index
   selectedProfiles: number[]; // indices into SUBSTAT_PRESETS
@@ -176,9 +177,18 @@ export function renderQuickGenerator(
     const header = document.createElement("div");
     header.className = "quick-block-header";
 
-    const title = document.createElement("span");
-    title.className = "quick-block-title";
-    title.textContent = `Block ${bi + 1}`;
+    const title = document.createElement("input");
+    title.type = "text";
+    title.className = "quick-block-title editable-title";
+    title.value = block.name ?? "";
+    title.placeholder = `Block ${bi + 1}`;
+    title.addEventListener("input", () => {
+      block.name = title.value || undefined;
+    });
+    title.addEventListener("blur", () => {
+      block.name = title.value || undefined;
+      onChange(state);
+    });
     header.appendChild(title);
 
     if (state.blocks.length > 1) {

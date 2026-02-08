@@ -820,6 +820,29 @@ pre {
   font-size: 1rem;
 }
 
+/* Editable title inputs (block & group names) */
+
+.editable-title {
+  border: 1px solid transparent;
+  background: transparent;
+  font-weight: 700;
+  font-size: 1rem;
+  color: inherit;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  min-width: 4ch;
+  outline: none;
+}
+
+.editable-title:hover {
+  border-color: #d1d5db;
+}
+
+.editable-title:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
 .group-delete {
   cursor: pointer;
   background: none;
