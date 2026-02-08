@@ -218,6 +218,8 @@ function renderTiers(
     });
     // Prevent click on input from triggering column drag-over / chip events
     rollsInput.addEventListener("click", (e) => e.stopPropagation());
+    // Blur when mouse leaves so the spinner arrows disappear
+    rollsInput.addEventListener("mouseleave", () => rollsInput.blur());
     header.appendChild(rollsInput);
 
     col.appendChild(header);

@@ -968,7 +968,8 @@ pre {
   margin: 0;
 }
 
-/* Show spinner arrows on focus */
+/* Show spinner arrows on hover and focus */
+.quick-tier-rolls-input:hover,
 .quick-tier-rolls-input:focus {
   outline: none;
   border-color: currentColor;
@@ -977,6 +978,8 @@ pre {
   width: 4.5ch;
 }
 
+.quick-tier-rolls-input:hover::-webkit-inner-spin-button,
+.quick-tier-rolls-input:hover::-webkit-outer-spin-button,
 .quick-tier-rolls-input:focus::-webkit-inner-spin-button,
 .quick-tier-rolls-input:focus::-webkit-outer-spin-button {
   -webkit-appearance: auto;
