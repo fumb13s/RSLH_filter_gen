@@ -36,6 +36,19 @@
           <button id="gen-add-group" type="button" class="gen-add-group-btn">+ Add Group</button>
         </div>
 
+        <!-- Quick Generator content -->
+        <div id="quick-content" hidden>
+          <div class="quick-toolbar">
+            <button id="quick-generate-btn" type="button" class="gen-toolbar-btn gen-toolbar-btn-primary">Generate</button>
+            <button id="quick-save-hsf-btn" type="button" class="gen-toolbar-btn">Save .hsf</button>
+            <button id="quick-save-btn" type="button" class="gen-toolbar-btn">Save .fqbl</button>
+            <button id="quick-load-btn" type="button" class="gen-toolbar-btn">Load .fqbl</button>
+            <input type="file" id="fqbl-input" accept=".fqbl" hidden />
+          </div>
+          <div id="quick-profiles"></div>
+          <div id="quick-tiers"></div>
+        </div>
+
         <!-- Viewer content -->
         <div id="viewer-content">
           <!-- Upload section -->

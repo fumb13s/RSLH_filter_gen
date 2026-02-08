@@ -5,17 +5,24 @@ import { renderSummary, renderRules, renderTestPanel, renderError, clearError, c
 import { renderGenerator, clearGenerator, defaultGroup } from "./generator.js";
 import type { SettingGroup } from "./generator.js";
 import { generateRulesFromGroups } from "./generate-rules.js";
+import { renderQuickGenerator, clearQuickGenerator, defaultQuickState, quickStateToGroups } from "./quick-generator.js";
+import type { QuickGenState } from "./quick-generator.js";
 import "./style.css";
 
 // ---------------------------------------------------------------------------
 // Tab types and state
 // ---------------------------------------------------------------------------
 
-type TabType = "viewer" | "generator";
+type TabType = "viewer" | "generator" | "quick";
 
 interface FmblFile {
   version: number;
   groups: SettingGroup[];
+}
+
+interface FqblFile {
+  version: number;
+  state: QuickGenState;
 }
 
 interface TabEntry {
@@ -26,10 +33,13 @@ interface TabEntry {
   fileName: string | null;
   // Generator state
   groups: SettingGroup[];
+  // Quick Generator state
+  quickState: QuickGenState | null;
 }
 
 const MAX_TABS = 5;
 const TAB_TYPES: { type: TabType; label: string }[] = [
+  { type: "quick", label: "Quick Generator" },
   { type: "generator", label: "Generator" },
   { type: "viewer", label: "Viewer" },
 ];
@@ -49,6 +59,7 @@ const emptyState = document.getElementById("empty-state")!;
 const dropZone = document.getElementById("drop-zone")!;
 const viewerContent = document.getElementById("viewer-content")!;
 const generatorContent = document.getElementById("generator-content")!;
+const quickContent = document.getElementById("quick-content")!;
 
 // ---------------------------------------------------------------------------
 // Tab bar rendering
@@ -165,6 +176,7 @@ function addTab(type: TabType): void {
     filter: null,
     fileName: null,
     groups: type === "generator" ? [defaultGroup()] : [],
+    quickState: type === "quick" ? defaultQuickState() : null,
   };
   tabs.push(entry);
   activateTab(id);
@@ -204,13 +216,17 @@ function activateTab(id: string): void {
     showViewerContent(tab);
   } else if (tab.type === "generator") {
     showGeneratorContent(tab);
+  } else if (tab.type === "quick") {
+    showQuickContent(tab);
   }
 }
 
 function showViewerContent(tab: TabEntry): void {
   viewerContent.hidden = false;
   generatorContent.hidden = true;
+  quickContent.hidden = true;
   clearGenerator();
+  clearQuickGenerator();
 
   if (tab.filter) {
     dropZone.hidden = true;
@@ -224,10 +240,28 @@ function showViewerContent(tab: TabEntry): void {
   }
 }
 
+function showQuickContent(tab: TabEntry): void {
+  viewerContent.hidden = true;
+  generatorContent.hidden = true;
+  quickContent.hidden = false;
+  clearViewer();
+  clearGenerator();
+
+  if (!tab.quickState) tab.quickState = defaultQuickState();
+
+  const onQuickChange = (state: QuickGenState): void => {
+    tab.quickState = state;
+    renderQuickGenerator(state, onQuickChange);
+  };
+  renderQuickGenerator(tab.quickState, onQuickChange);
+}
+
 function showGeneratorContent(tab: TabEntry): void {
   viewerContent.hidden = true;
   generatorContent.hidden = false;
+  quickContent.hidden = true;
   clearViewer();
+  clearQuickGenerator();
 
   renderGenerator(tab.groups, {
     onGroupChange(index, group) {
@@ -331,6 +365,7 @@ document.getElementById("gen-generate-btn")!.addEventListener("click", () => {
     filter,
     fileName: "Generated",
     groups: [],
+    quickState: null,
   };
   tabs.push(entry);
   activateTab(id);
@@ -402,6 +437,122 @@ fmblInput.addEventListener("change", () => {
   });
 
   fmblInput.value = "";
+});
+
+// ---------------------------------------------------------------------------
+// Quick Generator toolbar
+// ---------------------------------------------------------------------------
+
+/** Try to generate rules from the active quick tab. Returns null on failure. */
+function generateFromQuickTab(): ReturnType<typeof generateFilter> | null {
+  const tab = getActiveTab();
+  if (!tab || tab.type !== "quick" || !tab.quickState) return null;
+
+  const groups = quickStateToGroups(tab.quickState);
+  if (groups.length === 0) {
+    tabBarError.textContent = "No rules generated — assign sets to tiers and select at least one profile.";
+    tabBarError.hidden = false;
+    return null;
+  }
+
+  const rules = generateRulesFromGroups(groups);
+  if (rules.length === 0) {
+    tabBarError.textContent = "No rules generated — check your tier/profile selections.";
+    tabBarError.hidden = false;
+    return null;
+  }
+
+  tabBarError.hidden = true;
+  return generateFilter(rules);
+}
+
+// Generate → open viewer tab
+document.getElementById("quick-generate-btn")!.addEventListener("click", () => {
+  const filter = generateFromQuickTab();
+  if (!filter) return;
+
+  if (tabs.length >= MAX_TABS) {
+    tabBarError.textContent = `Maximum of ${MAX_TABS} tabs reached. Close a tab first.`;
+    tabBarError.hidden = false;
+    return;
+  }
+
+  const id = `tab-${++tabCounter}`;
+  const entry: TabEntry = {
+    id,
+    type: "viewer",
+    filter,
+    fileName: "Generated",
+    groups: [],
+    quickState: null,
+  };
+  tabs.push(entry);
+  activateTab(id);
+});
+
+// Save .hsf
+document.getElementById("quick-save-hsf-btn")!.addEventListener("click", () => {
+  const filter = generateFromQuickTab();
+  if (!filter) return;
+
+  const json = serializeFilter(filter);
+  const bom = "\uFEFF";
+  const blob = new Blob([bom + json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "filter.hsf";
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// Save .fqbl
+document.getElementById("quick-save-btn")!.addEventListener("click", () => {
+  const tab = getActiveTab();
+  if (!tab || tab.type !== "quick" || !tab.quickState) return;
+
+  const data: FqblFile = { version: 1, state: tab.quickState };
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "filter.fqbl";
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// Load .fqbl
+const fqblInput = document.getElementById("fqbl-input") as HTMLInputElement;
+
+document.getElementById("quick-load-btn")!.addEventListener("click", () => {
+  fqblInput.click();
+});
+
+fqblInput.addEventListener("change", () => {
+  const file = fqblInput.files?.[0];
+  if (!file) return;
+
+  file.text().then((text) => {
+    const tab = getActiveTab();
+    if (!tab || tab.type !== "quick") return;
+
+    try {
+      const data = JSON.parse(text) as FqblFile;
+      if (data.version !== 1 || !data.state || typeof data.state.assignments !== "object") {
+        throw new Error("Invalid .fqbl file format");
+      }
+      tab.quickState = data.state;
+      tab.fileName = file.name;
+      renderTabBar();
+      showQuickContent(tab);
+    } catch (err) {
+      tabBarError.textContent = `Failed to load .fqbl: ${err instanceof Error ? err.message : err}`;
+      tabBarError.hidden = false;
+    }
+  });
+
+  fqblInput.value = "";
 });
 
 // ---------------------------------------------------------------------------

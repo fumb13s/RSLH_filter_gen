@@ -49,7 +49,7 @@ const GOOD_SUBSTATS = ALL_SUBSTATS.filter(
 );
 
 /** Good substat presets. */
-const SUBSTAT_PRESETS: { label: string; stats: [number, boolean][] }[] = [
+export const SUBSTAT_PRESETS: { label: string; stats: [number, boolean][] }[] = [
   { label: "HP Nuker",  stats: [[1, false], [4, true], [5, false], [6, false]] },
   { label: "ATK Nuker", stats: [[2, false], [4, true], [5, false], [6, false]] },
   { label: "DEF Nuker", stats: [[3, false], [4, true], [5, false], [6, false]] },
