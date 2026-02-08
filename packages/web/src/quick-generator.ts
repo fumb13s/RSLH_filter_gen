@@ -4,6 +4,7 @@
 import { ARTIFACT_SET_NAMES } from "@rslh/core";
 import { SUBSTAT_PRESETS } from "./generator.js";
 import type { SettingGroup } from "./generator.js";
+import { getSettings } from "./settings.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,21 +27,25 @@ export interface QuickGenState {
 // Defaults
 // ---------------------------------------------------------------------------
 
-const DEFAULT_TIERS: SetTier[] = [
-  { name: "Must-Keep", rolls: 4, color: "#22c55e" },
-  { name: "Good", rolls: 6, color: "#3b82f6" },
-  { name: "Situational", rolls: 7, color: "#f59e0b" },
-  { name: "Off-Set", rolls: 9, color: "#ef4444" },
-];
+function getDefaultTiers(): SetTier[] {
+  const r = getSettings().quickTierRolls;
+  return [
+    { name: "Must-Keep", rolls: r[0], color: "#22c55e" },
+    { name: "Good", rolls: r[1], color: "#3b82f6" },
+    { name: "Situational", rolls: r[2], color: "#f59e0b" },
+    { name: "Off-Set", rolls: r[3], color: "#ef4444" },
+  ];
+}
 
 export function defaultQuickState(): QuickGenState {
+  const tiers = getDefaultTiers();
   const assignments: Record<number, number> = {};
-  const sellIdx = DEFAULT_TIERS.length - 1;
+  const sellIdx = tiers.length - 1;
   for (const id of Object.keys(ARTIFACT_SET_NAMES)) {
     assignments[Number(id)] = sellIdx;
   }
   return {
-    tiers: DEFAULT_TIERS.map((t) => ({ ...t })),
+    tiers: tiers.map((t) => ({ ...t })),
     assignments,
     selectedProfiles: [],
   };

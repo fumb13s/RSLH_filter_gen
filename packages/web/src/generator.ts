@@ -6,6 +6,7 @@ import {
   ARTIFACT_SLOT_NAMES,
   statDisplayName,
 } from "@rslh/core";
+import { getSettings } from "./settings.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,7 +62,7 @@ export const SUBSTAT_PRESETS: { label: string; stats: [number, boolean][] }[] = 
 // ---------------------------------------------------------------------------
 
 export function defaultGroup(): SettingGroup {
-  return { sets: [], slots: [], mainStats: [], goodStats: [], rolls: 6 };
+  return { sets: [], slots: [], mainStats: [], goodStats: [], rolls: getSettings().generatorDefaultRolls };
 }
 
 export function renderGenerator(groups: SettingGroup[], callbacks: GeneratorCallbacks): void {

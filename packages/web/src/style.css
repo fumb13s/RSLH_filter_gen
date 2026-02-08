@@ -1,3 +1,7 @@
+:root {
+  --max-tab-label-width: 100%;
+}
+
 *,
 *::before,
 *::after {
@@ -71,6 +75,7 @@ pre {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: var(--max-tab-label-width);
 }
 
 .tab-close {

@@ -7,13 +7,13 @@ import type { SettingGroup } from "./generator.js";
 import { generateRulesFromGroups } from "./generate-rules.js";
 import { renderQuickGenerator, clearQuickGenerator, defaultQuickState, quickStateToGroups } from "./quick-generator.js";
 import type { QuickGenState } from "./quick-generator.js";
+import { getSettings } from "./settings.js";
+import type { TabType } from "./settings.js";
 import "./style.css";
 
 // ---------------------------------------------------------------------------
 // Tab types and state
 // ---------------------------------------------------------------------------
-
-type TabType = "viewer" | "generator" | "quick";
 
 interface FmblFile {
   version: number;
@@ -37,7 +37,7 @@ interface TabEntry {
   quickState: QuickGenState | null;
 }
 
-const MAX_TABS = 9;
+const settings = getSettings();
 const TAB_TYPES: { type: TabType; label: string }[] = [
   { type: "quick", label: "Quick Generator" },
   { type: "generator", label: "Generator" },
@@ -102,7 +102,7 @@ function renderTabBar(): void {
   addBtn.textContent = "+";
   addBtn.title = "New Generator tab";
   addBtn.addEventListener("click", () => {
-    addTab("quick");
+    addTab(settings.defaultTabType);
   });
   splitWrap.appendChild(addBtn);
 
@@ -162,8 +162,8 @@ function toggleTypeMenu(anchor: HTMLElement): void {
 // ---------------------------------------------------------------------------
 
 function addTab(type: TabType): void {
-  if (tabs.length >= MAX_TABS) {
-    tabBarError.textContent = `Maximum of ${MAX_TABS} tabs reached. Close a tab first.`;
+  if (tabs.length >= settings.maxTabs) {
+    tabBarError.textContent = `Maximum of ${settings.maxTabs} tabs reached. Close a tab first.`;
     tabBarError.hidden = false;
     return;
   }
@@ -352,8 +352,8 @@ document.getElementById("gen-generate-btn")!.addEventListener("click", () => {
   const filter = generateFromActiveTab();
   if (!filter) return;
 
-  if (tabs.length >= MAX_TABS) {
-    tabBarError.textContent = `Maximum of ${MAX_TABS} tabs reached. Close a tab first.`;
+  if (tabs.length >= settings.maxTabs) {
+    tabBarError.textContent = `Maximum of ${settings.maxTabs} tabs reached. Close a tab first.`;
     tabBarError.hidden = false;
     return;
   }
@@ -487,8 +487,8 @@ document.getElementById("quick-generate-btn")!.addEventListener("click", () => {
     return;
   }
 
-  if (tabs.length + 2 > MAX_TABS) {
-    tabBarError.textContent = `Need 2 free tab slots (Generator + Viewer). Close ${tabs.length + 2 - MAX_TABS} tab(s) first.`;
+  if (tabs.length + 2 > settings.maxTabs) {
+    tabBarError.textContent = `Need 2 free tab slots (Generator + Viewer). Close ${tabs.length + 2 - settings.maxTabs} tab(s) first.`;
     tabBarError.hidden = false;
     return;
   }
@@ -638,7 +638,9 @@ backToTop.addEventListener("click", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Initialize with one generator tab (default)
+// Initialize
 // ---------------------------------------------------------------------------
 
-addTab("quick");
+document.documentElement.style.setProperty("--max-tab-label-width", settings.maxTabLabelWidthPercent + "%");
+
+addTab(settings.defaultTabType);
