@@ -31,6 +31,17 @@ export interface QuickGenState {
 // Defaults
 // ---------------------------------------------------------------------------
 
+/** Curated set-to-tier assignments extracted from the user's .fqbl file. */
+const DEFAULT_ASSIGNMENTS: Record<number, number> = {
+  1: 3, 2: 3, 3: 3, 4: 1, 5: 3, 6: 3, 7: 3, 8: 3, 9: 3, 10: 3,
+  11: 3, 12: 3, 13: 3, 14: 3, 15: 2, 16: 3, 17: 2, 18: 1, 19: 1, 20: 3,
+  21: 2, 22: 3, 23: 2, 24: 3, 25: 3, 26: 3, 27: 2, 28: 3, 29: 2, 30: 2,
+  31: 3, 32: 3, 33: 3, 34: 1, 35: 1, 36: 1, 37: 3, 38: 1, 39: 3, 40: 3,
+  41: 3, 42: 3, 43: 3, 44: 2, 45: 3, 46: 0, 47: 0, 48: 0, 49: 3, 50: 1,
+  51: 0, 52: 2, 53: 0, 54: 1, 57: 1, 58: 1, 59: 0, 60: 3, 61: 0, 62: 0,
+  63: 2, 64: 0, 65: 0, 66: 0, 1000: 1, 1001: 3, 1002: 3, 1003: 0, 1004: 3,
+};
+
 function getDefaultTiers(): SetTier[] {
   const r = getSettings().quickTierRolls;
   return [
@@ -43,10 +54,11 @@ function getDefaultTiers(): SetTier[] {
 
 export function defaultBlock(): QuickBlock {
   const tiers = getDefaultTiers();
+  const lastTier = tiers.length - 1;
   const assignments: Record<number, number> = {};
-  const sellIdx = tiers.length - 1;
   for (const id of Object.keys(ARTIFACT_SET_NAMES)) {
-    assignments[Number(id)] = sellIdx;
+    const n = Number(id);
+    assignments[n] = DEFAULT_ASSIGNMENTS[n] ?? lastTier;
   }
   return {
     tiers: tiers.map((t) => ({ ...t })),

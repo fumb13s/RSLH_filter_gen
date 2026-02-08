@@ -18,7 +18,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   maxTabs: 9,
   maxTabLabelWidthPercent: 100,
   generatorDefaultRolls: 6,
-  quickTierRolls: [4, 6, 7, 9],
+  quickTierRolls: [5, 7, 8, 9],
 };
 
 export function getSettings(): UserSettings {
