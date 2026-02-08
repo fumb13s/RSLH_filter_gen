@@ -187,6 +187,7 @@ function renderTiers(
     const col = document.createElement("div");
     col.className = "quick-tier-column";
     col.style.borderTopColor = tier.color;
+    col.dataset.tier = String(ti);
 
     const header = document.createElement("div");
     header.className = "quick-tier-column-header";
@@ -198,6 +199,28 @@ function renderTiers(
     const chipArea = document.createElement("div");
     chipArea.className = "quick-tier-chips";
     col.appendChild(chipArea);
+
+    // Drop target
+    col.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      col.classList.add("drag-over");
+    });
+    col.addEventListener("dragleave", (e) => {
+      // Only remove when actually leaving the column (not entering a child)
+      if (!col.contains(e.relatedTarget as Node)) {
+        col.classList.remove("drag-over");
+      }
+    });
+    col.addEventListener("drop", (e) => {
+      e.preventDefault();
+      col.classList.remove("drag-over");
+      const setId = e.dataTransfer?.getData("text/plain");
+      if (!setId) return;
+      const id = Number(setId);
+      if (state.assignments[id] === ti) return; // already in this tier
+      state.assignments[id] = ti;
+      onChange(state);
+    });
 
     columns.push(col);
     chipAreas.push(chipArea);
@@ -213,10 +236,23 @@ function renderTiers(
     const chip = document.createElement("button");
     chip.type = "button";
     chip.className = "quick-chip";
+    chip.draggable = true;
     chip.textContent = set.name;
     chip.style.backgroundColor = state.tiers[tierIdx].color;
     chip.style.color = tierIdx === state.tiers.length - 1 ? "#6b7280" : "#fff";
-    chip.title = `${set.name} — click to cycle tier`;
+    chip.title = `${set.name} — drag to move, click to cycle tier`;
+
+    // Drag
+    chip.addEventListener("dragstart", (e) => {
+      e.dataTransfer!.setData("text/plain", String(set.id));
+      e.dataTransfer!.effectAllowed = "move";
+      chip.classList.add("dragging");
+    });
+    chip.addEventListener("dragend", () => {
+      chip.classList.remove("dragging");
+      // Clean up any lingering drag-over highlights
+      for (const col of columns) col.classList.remove("drag-over");
+    });
 
     // Left-click: advance to next tier (wrap around)
     chip.addEventListener("click", () => {
