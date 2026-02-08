@@ -59,6 +59,30 @@ export function defaultQuickState(): QuickGenState {
   return { blocks: [defaultBlock()] };
 }
 
+/** Strip tier colors for serialization (colors are not user-editable). */
+export function stripBlockColors(state: QuickGenState): QuickGenState {
+  return {
+    blocks: state.blocks.map((b) => ({
+      ...b,
+      tiers: b.tiers.map((t) => {
+        const { name, rolls, sellRolls } = t;
+        return sellRolls !== undefined ? { name, rolls, sellRolls } : { name, rolls };
+      }),
+    })),
+  };
+}
+
+/** Restore tier colors from defaults after deserialization. */
+export function restoreBlockColors(state: QuickGenState): QuickGenState {
+  const defaultColors = getDefaultTiers().map((t) => t.color);
+  return {
+    blocks: state.blocks.map((b) => ({
+      ...b,
+      tiers: b.tiers.map((t, i) => ({ ...t, color: t.color ?? defaultColors[i] ?? "#e5e7eb" })),
+    })),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Cross-product: tiers x profiles → SettingGroup[]
 // ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ import { renderSummary, renderRules, renderTestPanel, renderError, clearError, c
 import { renderGenerator, clearGenerator, defaultGroup } from "./generator.js";
 import type { SettingGroup } from "./generator.js";
 import { generateRulesFromGroups } from "./generate-rules.js";
-import { renderQuickGenerator, clearQuickGenerator, defaultQuickState, quickStateToGroups } from "./quick-generator.js";
+import { renderQuickGenerator, clearQuickGenerator, defaultQuickState, quickStateToGroups, stripBlockColors, restoreBlockColors } from "./quick-generator.js";
 import type { QuickGenState, QuickBlock } from "./quick-generator.js";
 import { getSettings } from "./settings.js";
 import type { TabType } from "./settings.js";
@@ -548,7 +548,7 @@ document.getElementById("quick-save-btn")!.addEventListener("click", () => {
   const tab = getActiveTab();
   if (!tab || tab.type !== "quick" || !tab.quickState) return;
 
-  const data: FqblFile = { version: 2, state: tab.quickState };
+  const data: FqblFile = { version: FQBL_CURRENT_VERSION, state: stripBlockColors(tab.quickState) };
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -558,6 +558,36 @@ document.getElementById("quick-save-btn")!.addEventListener("click", () => {
   a.click();
   URL.revokeObjectURL(url);
 });
+
+// .fqbl migration pipeline — each step migrates one version up
+const FQBL_CURRENT_VERSION = 3;
+
+function migrateFqbl(data: { version: number; state: unknown }): FqblFile {
+  if (!data || typeof data.version !== "number" || !data.state) {
+    throw new Error("Invalid .fqbl file format");
+  }
+
+  // V1 → V2: flat state → blocks array
+  if (data.version === 1) {
+    const v1 = data as FqblFileV1;
+    if (typeof v1.state.assignments !== "object") {
+      throw new Error("Invalid .fqbl v1 format");
+    }
+    data = { version: 2, state: { blocks: [v1.state] } };
+  }
+
+  // V2 → V3: strip tier colors (already present, just bump version)
+  if (data.version === 2) {
+    data = { version: 3, state: data.state };
+  }
+
+  // V3 (current): restore colors from defaults
+  if (data.version === FQBL_CURRENT_VERSION) {
+    return { version: FQBL_CURRENT_VERSION, state: restoreBlockColors(data.state as QuickGenState) };
+  }
+
+  throw new Error(`Unsupported .fqbl version: ${data.version}`);
+}
 
 // Load .fqbl
 const fqblInput = document.getElementById("fqbl-input") as HTMLInputElement;
@@ -575,20 +605,9 @@ fqblInput.addEventListener("change", () => {
     if (!tab || tab.type !== "quick") return;
 
     try {
-      const raw = JSON.parse(text);
-      let quickState: QuickGenState;
-
-      if (raw.version === 1 && raw.state && typeof raw.state.assignments === "object") {
-        // V1 migration: flat state → wrap in blocks array
-        const v1 = raw as FqblFileV1;
-        quickState = { blocks: [v1.state] };
-      } else if (raw.version === 2 && raw.state && Array.isArray(raw.state.blocks)) {
-        quickState = raw.state as QuickGenState;
-      } else {
-        throw new Error("Invalid .fqbl file format");
-      }
-
-      tab.quickState = quickState;
+      const data = JSON.parse(text);
+      const migrated = migrateFqbl(data);
+      tab.quickState = migrated.state;
       tab.fileName = file.name;
       renderTabBar();
       showQuickContent(tab);
