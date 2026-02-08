@@ -68,6 +68,37 @@ const generatorContent = document.getElementById("generator-content")!;
 const quickContent = document.getElementById("quick-content")!;
 
 // ---------------------------------------------------------------------------
+// Drop zone helper for toolbar load buttons
+// ---------------------------------------------------------------------------
+
+function wireDropZone(id: string, ext: string, onFile: (file: File) => void): void {
+  const zone = document.getElementById(id);
+  if (!zone) return;
+
+  zone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    zone.classList.add("drag-over");
+  });
+  zone.addEventListener("dragleave", (e) => {
+    if (!zone.contains(e.relatedTarget as Node)) {
+      zone.classList.remove("drag-over");
+    }
+  });
+  zone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    zone.classList.remove("drag-over");
+    const file = e.dataTransfer?.files[0];
+    if (!file || !file.name.endsWith(ext)) {
+      tabBarError.textContent = `Expected a ${ext} file.`;
+      tabBarError.hidden = false;
+      return;
+    }
+    tabBarError.hidden = true;
+    onFile(file);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Tab bar rendering
 // ---------------------------------------------------------------------------
 
@@ -418,10 +449,7 @@ document.getElementById("gen-load-btn")!.addEventListener("click", () => {
   fmblInput.click();
 });
 
-fmblInput.addEventListener("change", () => {
-  const file = fmblInput.files?.[0];
-  if (!file) return;
-
+function loadFmblFile(file: File): void {
   file.text().then((text) => {
     const tab = getActiveTab();
     if (!tab || tab.type !== "generator") return;
@@ -436,14 +464,20 @@ fmblInput.addEventListener("change", () => {
       renderTabBar();
       showGeneratorContent(tab);
     } catch (err) {
-      // Show a brief error — reuse the tab-bar-level error since generator has no error banner
       tabBarError.textContent = `Failed to load .fmbl: ${err instanceof Error ? err.message : err}`;
       tabBarError.hidden = false;
     }
   });
+}
 
+fmblInput.addEventListener("change", () => {
+  const file = fmblInput.files?.[0];
+  if (!file) return;
+  loadFmblFile(file);
   fmblInput.value = "";
 });
+
+wireDropZone("gen-load-drop", ".fmbl", loadFmblFile);
 
 // ---------------------------------------------------------------------------
 // Quick Generator toolbar
@@ -596,10 +630,7 @@ document.getElementById("quick-load-btn")!.addEventListener("click", () => {
   fqblInput.click();
 });
 
-fqblInput.addEventListener("change", () => {
-  const file = fqblInput.files?.[0];
-  if (!file) return;
-
+function loadFqblFile(file: File): void {
   file.text().then((text) => {
     const tab = getActiveTab();
     if (!tab || tab.type !== "quick") return;
@@ -616,9 +647,16 @@ fqblInput.addEventListener("change", () => {
       tabBarError.hidden = false;
     }
   });
+}
 
+fqblInput.addEventListener("change", () => {
+  const file = fqblInput.files?.[0];
+  if (!file) return;
+  loadFqblFile(file);
   fqblInput.value = "";
 });
+
+wireDropZone("quick-load-drop", ".fqbl", loadFqblFile);
 
 // ---------------------------------------------------------------------------
 // Generator "Add group" button

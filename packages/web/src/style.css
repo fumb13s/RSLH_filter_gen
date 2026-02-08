@@ -756,6 +756,47 @@ pre {
   border-color: #1d4ed8;
 }
 
+/* Toolbar drop zone (wraps load buttons) */
+
+.toolbar-drop-zone {
+  display: flex;
+  align-items: stretch;
+  border-radius: 4px;
+  transition: outline-color 0.15s, background 0.15s;
+  outline: 2px dashed transparent;
+  outline-offset: -2px;
+}
+
+.toolbar-drop-zone.drag-over {
+  outline-color: #2563eb;
+  background: #eff6ff;
+}
+
+.toolbar-drop-btn {
+  border-radius: 4px 0 0 4px;
+  border-right: none;
+}
+
+.toolbar-drop-icon {
+  display: flex;
+  align-items: center;
+  padding: 0 0.4rem;
+  border: 1px solid #d1d5db;
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+  background: #f9fafb;
+  color: #9ca3af;
+  font-size: 0.95rem;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.toolbar-drop-zone.drag-over .toolbar-drop-icon {
+  color: #2563eb;
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
 /* Group cards */
 
 .group-card {

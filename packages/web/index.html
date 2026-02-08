@@ -32,7 +32,10 @@
             <button id="gen-generate-btn" type="button" class="gen-toolbar-btn gen-toolbar-btn-primary">Generate</button>
             <button id="gen-save-hsf-btn" type="button" class="gen-toolbar-btn">Save .hsf</button>
             <button id="gen-save-btn" type="button" class="gen-toolbar-btn">Save .fmbl</button>
-            <button id="gen-load-btn" type="button" class="gen-toolbar-btn">Load .fmbl</button>
+            <div id="gen-load-drop" class="toolbar-drop-zone">
+              <button id="gen-load-btn" type="button" class="gen-toolbar-btn toolbar-drop-btn" title="Click to browse or drag-and-drop a .fmbl file">Load .fmbl</button>
+              <span class="toolbar-drop-icon" title="Drop .fmbl file here">&#8615;</span>
+            </div>
             <input type="file" id="fmbl-input" accept=".fmbl" hidden />
           </div>
           <div id="groups-container"></div>
@@ -45,7 +48,10 @@
             <button id="quick-generate-btn" type="button" class="gen-toolbar-btn gen-toolbar-btn-primary">Generate</button>
             <button id="quick-save-hsf-btn" type="button" class="gen-toolbar-btn">Save .hsf</button>
             <button id="quick-save-btn" type="button" class="gen-toolbar-btn">Save .fqbl</button>
-            <button id="quick-load-btn" type="button" class="gen-toolbar-btn">Load .fqbl</button>
+            <div id="quick-load-drop" class="toolbar-drop-zone">
+              <button id="quick-load-btn" type="button" class="gen-toolbar-btn toolbar-drop-btn" title="Click to browse or drag-and-drop a .fqbl file">Load .fqbl</button>
+              <span class="toolbar-drop-icon" title="Drop .fqbl file here">&#8615;</span>
+            </div>
             <input type="file" id="fqbl-input" accept=".fqbl" hidden />
           </div>
           <div id="quick-profiles"></div>
