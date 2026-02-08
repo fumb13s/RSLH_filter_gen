@@ -29,7 +29,7 @@ const DEFAULT_TIERS: SetTier[] = [
   { name: "Must-Keep", rolls: 4, color: "#22c55e" },
   { name: "Good", rolls: 6, color: "#3b82f6" },
   { name: "Situational", rolls: 7, color: "#f59e0b" },
-  { name: "Sell", rolls: -1, color: "#e5e7eb" },
+  { name: "Off-Set", rolls: 9, color: "#ef4444" },
 ];
 
 export function defaultQuickState(): QuickGenState {
@@ -54,7 +54,7 @@ export function quickStateToGroups(state: QuickGenState): SettingGroup[] {
 
   for (let ti = 0; ti < state.tiers.length; ti++) {
     const tier = state.tiers[ti];
-    if (tier.rolls < 0) continue; // skip Sell
+    if (tier.rolls < 0) continue;
 
     const sets = Object.entries(state.assignments)
       .filter(([, idx]) => idx === ti)
@@ -191,7 +191,7 @@ function renderTiers(
 
     const header = document.createElement("div");
     header.className = "quick-tier-column-header";
-    header.style.color = tier.color === "#e5e7eb" ? "#6b7280" : tier.color;
+    header.style.color = tier.color;
     const rollsLabel = tier.rolls < 0 ? "" : ` (${tier.rolls})`;
     header.textContent = `${tier.name}${rollsLabel}`;
     col.appendChild(header);
@@ -239,7 +239,7 @@ function renderTiers(
     chip.draggable = true;
     chip.textContent = set.name;
     chip.style.backgroundColor = state.tiers[tierIdx].color;
-    chip.style.color = tierIdx === state.tiers.length - 1 ? "#6b7280" : "#fff";
+    chip.style.color = "#fff";
     chip.title = `${set.name} — drag to move, click to cycle tier`;
 
     // Drag
