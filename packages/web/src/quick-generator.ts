@@ -296,16 +296,6 @@ function renderBlockTiers(
   state: QuickGenState,
   onChange: (state: QuickGenState) => void,
 ): void {
-  // Search
-  const searchWrap = document.createElement("div");
-  searchWrap.className = "quick-search";
-  const searchInput = document.createElement("input");
-  searchInput.type = "text";
-  searchInput.placeholder = "Search sets\u2026";
-  searchInput.className = "quick-search-input";
-  searchWrap.appendChild(searchInput);
-  parent.appendChild(searchWrap);
-
   // Columns grid
   const grid = document.createElement("div");
   grid.className = "quick-tier-columns";
@@ -438,7 +428,6 @@ function renderBlockTiers(
   }
 
   // Create chips — one per set, placed in the correct column
-  const allChips: { el: HTMLElement; name: string }[] = [];
 
   for (const set of SORTED_SETS) {
     const tierIdx = block.assignments[set.id] ?? block.tiers.length - 1;
@@ -483,16 +472,7 @@ function renderBlockTiers(
     });
 
     chipAreas[tierIdx].appendChild(chip);
-    allChips.push({ el: chip, name: set.name.toLowerCase() });
   }
-
-  // Search filtering
-  searchInput.addEventListener("input", () => {
-    const q = searchInput.value.toLowerCase();
-    for (const { el, name } of allChips) {
-      el.hidden = q !== "" && !name.includes(q);
-    }
-  });
 
   parent.appendChild(grid);
 }
