@@ -192,8 +192,34 @@ function renderTiers(
     const header = document.createElement("div");
     header.className = "quick-tier-column-header";
     header.style.color = tier.color;
-    const rollsLabel = tier.rolls < 0 ? "" : ` (${tier.rolls})`;
-    header.textContent = `${tier.name}${rollsLabel}`;
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = tier.name;
+    header.appendChild(nameSpan);
+
+    const rollsInput = document.createElement("input");
+    rollsInput.type = "number";
+    rollsInput.className = "quick-tier-rolls-input";
+    rollsInput.min = "1";
+    rollsInput.max = "9";
+    rollsInput.value = String(tier.rolls);
+    rollsInput.title = "Good rolls required at level 16";
+    // Update state on input without re-rendering (keeps focus)
+    rollsInput.addEventListener("input", () => {
+      const raw = Number(rollsInput.value);
+      if (!raw || raw < 1 || raw > 9) return;
+      state.tiers[ti].rolls = raw;
+    });
+    // Clamp on blur
+    rollsInput.addEventListener("blur", () => {
+      const v = Math.max(1, Math.min(9, Number(rollsInput.value) || tier.rolls));
+      rollsInput.value = String(v);
+      state.tiers[ti].rolls = v;
+    });
+    // Prevent click on input from triggering column drag-over / chip events
+    rollsInput.addEventListener("click", (e) => e.stopPropagation());
+    header.appendChild(rollsInput);
+
     col.appendChild(header);
 
     const chipArea = document.createElement("div");

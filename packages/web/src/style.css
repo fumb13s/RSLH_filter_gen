@@ -939,11 +939,48 @@ pre {
 }
 
 .quick-tier-column-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   font-weight: 700;
   font-size: 0.85rem;
   margin-bottom: 0.5rem;
   padding-bottom: 0.35rem;
   border-bottom: 1px solid #f0f0f0;
+}
+
+.quick-tier-rolls-input {
+  width: 3ch;
+  padding: 0.1rem 0.2rem;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+  color: inherit;
+  background: #fff;
+  -moz-appearance: textfield;
+}
+
+.quick-tier-rolls-input::-webkit-inner-spin-button,
+.quick-tier-rolls-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Show spinner arrows on focus */
+.quick-tier-rolls-input:focus {
+  outline: none;
+  border-color: currentColor;
+  box-shadow: 0 0 0 1px currentColor;
+  -moz-appearance: auto;
+  width: 4.5ch;
+}
+
+.quick-tier-rolls-input:focus::-webkit-inner-spin-button,
+.quick-tier-rolls-input:focus::-webkit-outer-spin-button {
+  -webkit-appearance: auto;
+  margin: 0;
 }
 
 .quick-tier-chips {
