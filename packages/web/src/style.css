@@ -1279,6 +1279,10 @@ pre {
   border-left-color: #d97706;
 }
 
+.rare-acc-block .quick-block-header {
+  margin-bottom: 0;
+}
+
 .rare-acc-scroll {
   overflow-x: auto;
 }
@@ -1291,7 +1295,7 @@ pre {
 
 .rare-acc-table thead th {
   padding: 0 0.1rem;
-  height: 7rem;
+  height: 5.5rem;
   white-space: nowrap;
   vertical-align: bottom;
   font-weight: 600;
