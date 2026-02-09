@@ -25,7 +25,6 @@ export interface QuickBlock {
 }
 
 export interface RareAccessoryBlock {
-  name?: string;
   selections: Record<number, number[]>; // setId → factionIds
 }
 
@@ -517,22 +516,13 @@ function renderRareAccessories(
   const card = document.createElement("div");
   card.className = "quick-block rare-acc-block";
 
-  // Header with editable title
+  // Header
   const header = document.createElement("div");
   header.className = "quick-block-header";
 
-  const title = document.createElement("input");
-  title.type = "text";
-  title.className = "quick-block-title editable-title";
-  title.value = block.name ?? "";
-  title.placeholder = "Rare Accessories";
-  title.addEventListener("input", () => {
-    block.name = title.value || undefined;
-  });
-  title.addEventListener("blur", () => {
-    block.name = title.value || undefined;
-    onChange(state);
-  });
+  const title = document.createElement("span");
+  title.className = "quick-block-title";
+  title.textContent = "Unconditional Keep — Rare Accessories";
   header.appendChild(title);
   card.appendChild(header);
 
