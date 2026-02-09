@@ -201,8 +201,12 @@ function oreWalkback(target: number, isEpic: boolean): { level: number; threshol
   return steps;
 }
 
-// All percentage substats that can receive concentrated rolls
-const ORE_STATS = [1, 2, 3, 4, 5, 6, 7, 8]; // HP%, ATK%, DEF%, SPD, CRATE, CDMG, RES, ACC
+// All substats that can receive concentrated rolls (percentage + flat HP/ATK/DEF)
+const ORE_STATS: [number, boolean][] = [
+  [1, false], [2, false], [3, false], [4, false],
+  [5, false], [6, false], [7, false], [8, false],
+  [1, true], [2, true], [3, true],
+];
 
 /**
  * Generate single-substat rules for ore reroll candidates.
@@ -246,8 +250,8 @@ export function generateOreRerollRules(block: OreRerollBlock | undefined): HsfRu
       // Rarity=15 (Leg/Myth) rules with Leg/Myth walkback
       const steps15 = oreWalkback(totalTarget, false);
       for (const { level, threshold: t } of steps15) {
-        for (const statId of ORE_STATS) {
-          const range = getRollRange(statId, rank);
+        for (const [statId, isFlat] of ORE_STATS) {
+          const range = getRollRange(statId, rank, isFlat);
           if (!range) continue;
           const rule = defaultRule({
             ArtifactSet: [...sets],
@@ -256,7 +260,7 @@ export function generateOreRerollRules(block: OreRerollBlock | undefined): HsfRu
             IsRuleTypeAND: false,
             LVLForCheck: level,
             Substats: [
-              { ID: statId, Value: t * range[0], IsFlat: false, NotAvailable: false, Condition: ">=" },
+              { ID: statId, Value: t * range[0], IsFlat: isFlat, NotAvailable: false, Condition: ">=" },
               emptySubstat(), emptySubstat(), emptySubstat(),
             ],
           });
@@ -269,8 +273,8 @@ export function generateOreRerollRules(block: OreRerollBlock | undefined): HsfRu
       if (totalTarget <= 4) {
         const steps9 = oreWalkback(totalTarget, true);
         for (const { level, threshold: t } of steps9) {
-          for (const statId of ORE_STATS) {
-            const range = getRollRange(statId, rank);
+          for (const [statId, isFlat] of ORE_STATS) {
+            const range = getRollRange(statId, rank, isFlat);
             if (!range) continue;
             const rule = defaultRule({
               ArtifactSet: [...sets],
@@ -279,7 +283,7 @@ export function generateOreRerollRules(block: OreRerollBlock | undefined): HsfRu
               IsRuleTypeAND: false,
               LVLForCheck: level,
               Substats: [
-                { ID: statId, Value: t * range[0], IsFlat: false, NotAvailable: false, Condition: ">=" },
+                { ID: statId, Value: t * range[0], IsFlat: isFlat, NotAvailable: false, Condition: ">=" },
                 emptySubstat(), emptySubstat(), emptySubstat(),
               ],
             });

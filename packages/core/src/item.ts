@@ -30,17 +30,26 @@ export type RollRange = readonly [min: number, max: number];
  * Substat roll ranges by stat group, indexed by rank (1–6).
  * Index 0 is a placeholder so that rank N maps to index N.
  */
-export const ROLL_RANGES: Record<"percent" | "accRes" | "speed", readonly [RollRange, ...RollRange[]]> = {
+export const ROLL_RANGES: Record<"percent" | "accRes" | "speed" | "flatHp" | "flatAtkDef", readonly [RollRange, ...RollRange[]]> = {
   // HP%, ATK%, DEF%, C.RATE, C.DMG
   percent: [[0, 0], [1, 2], [1, 3], [2, 4], [3, 5], [4, 6], [5, 7]],
   // ACC, RES
   accRes:  [[0, 0], [4, 7], [5, 8], [6, 9], [7, 10], [8, 11], [9, 12]],
   // SPD
   speed:   [[0, 0], [1, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6]],
+  // Flat HP
+  flatHp:     [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [135, 450], [200, 565]],
+  // Flat ATK, Flat DEF
+  flatAtkDef: [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [12, 23], [15, 30]],
 };
 
-/** Map a stat ID to its roll range group. Returns undefined for flat stats (no data yet). */
-export function rollRangeGroup(statId: number): "percent" | "accRes" | "speed" | undefined {
+/** Map a stat ID (and flat flag) to its roll range group. Returns undefined for unknown stats. */
+export function rollRangeGroup(statId: number, isFlat = false): "percent" | "accRes" | "speed" | "flatHp" | "flatAtkDef" | undefined {
+  if (isFlat) {
+    if (statId === 1) return "flatHp";
+    if (statId === 2 || statId === 3) return "flatAtkDef";
+    return undefined;
+  }
   switch (statId) {
     case 1: case 2: case 3: case 5: case 6: return "percent";
     case 7: case 8: return "accRes";
@@ -49,9 +58,9 @@ export function rollRangeGroup(statId: number): "percent" | "accRes" | "speed" |
   }
 }
 
-/** Get the [min, max] roll range for a stat at a given rank. Returns undefined for flat stats. */
-export function getRollRange(statId: number, rank: number): RollRange | undefined {
-  const group = rollRangeGroup(statId);
+/** Get the [min, max] roll range for a stat at a given rank. Returns undefined for unknown stats. */
+export function getRollRange(statId: number, rank: number, isFlat = false): RollRange | undefined {
+  const group = rollRangeGroup(statId, isFlat);
   if (!group) return undefined;
   return ROLL_RANGES[group][rank];
 }

@@ -173,7 +173,7 @@ function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
 }
 
 function renderSubstat(s: HsfSubstat, rank: number): string {
-  const name = lookupName(STAT_NAMES, s.ID);
+  const name = statDisplayName(s.ID, s.IsFlat);
   const cond = s.Condition || ">=";
   const rolls = minRollsNeeded(s, rank);
   const extra = rolls !== undefined ? rolls - 1 : 0;
@@ -184,7 +184,7 @@ function renderSubstat(s: HsfSubstat, rank: number): string {
 /** Minimum number of rolls needed to reach the substat's threshold value, or undefined if unknown. */
 function minRollsNeeded(s: HsfSubstat, rank: number): number | undefined {
   if (rank === 0) return undefined;
-  const range = getRollRange(s.ID, rank);
+  const range = getRollRange(s.ID, rank, s.IsFlat);
   if (!range) return undefined;
   return Math.ceil(s.Value / range[0]);
 }
@@ -373,9 +373,9 @@ function updateSubstatRange(i: number): void {
     return;
   }
 
-  const [statId] = statVal.split(":").map(Number);
+  const [statId, flatFlag] = statVal.split(":").map(Number);
   const rank = val("test-rank");
-  const range = getRollRange(statId, rank);
+  const range = getRollRange(statId, rank, flatFlag === 1);
   if (!range) {
     valueInput.min = "1";
     valueInput.removeAttribute("max");
