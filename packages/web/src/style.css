@@ -1349,6 +1349,7 @@ pre {
 .rare-acc-table tbody td input[type="checkbox"] {
   margin: 0;
   cursor: pointer;
+  accent-color: #d97706;
 }
 
 .rare-acc-table tbody tr:hover {
