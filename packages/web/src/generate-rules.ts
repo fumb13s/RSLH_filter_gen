@@ -249,7 +249,7 @@ export function generateOreRerollRules(block: OreRerollBlock | undefined): HsfRu
         for (const statId of ORE_STATS) {
           const range = getRollRange(statId, rank);
           if (!range) continue;
-          rules.push(defaultRule({
+          const rule = defaultRule({
             ArtifactSet: [...sets],
             Rank: rank,
             Rarity: 15,
@@ -259,7 +259,9 @@ export function generateOreRerollRules(block: OreRerollBlock | undefined): HsfRu
               { ID: statId, Value: t * range[0], IsFlat: false, NotAvailable: false, Condition: ">=" },
               emptySubstat(), emptySubstat(), emptySubstat(),
             ],
-          }));
+          });
+          delete rule.ArtifactType;
+          rules.push(rule);
         }
       }
 
@@ -270,7 +272,7 @@ export function generateOreRerollRules(block: OreRerollBlock | undefined): HsfRu
           for (const statId of ORE_STATS) {
             const range = getRollRange(statId, rank);
             if (!range) continue;
-            rules.push(defaultRule({
+            const rule = defaultRule({
               ArtifactSet: [...sets],
               Rank: rank,
               Rarity: 9,
@@ -280,7 +282,9 @@ export function generateOreRerollRules(block: OreRerollBlock | undefined): HsfRu
                 { ID: statId, Value: t * range[0], IsFlat: false, NotAvailable: false, Condition: ">=" },
                 emptySubstat(), emptySubstat(), emptySubstat(),
               ],
-            }));
+            });
+            delete rule.ArtifactType;
+            rules.push(rule);
           }
         }
       }
