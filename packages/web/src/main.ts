@@ -4,7 +4,7 @@ import { initUpload } from "./upload.js";
 import { renderSummary, renderRules, renderTestPanel, renderError, clearError, clearViewer } from "./render.js";
 import { renderGenerator, clearGenerator, defaultGroup } from "./generator.js";
 import type { SettingGroup } from "./generator.js";
-import { generateRulesFromGroups } from "./generate-rules.js";
+import { generateRulesFromGroups, generateRareAccessoryRules } from "./generate-rules.js";
 import { renderQuickGenerator, clearQuickGenerator, defaultQuickState, quickStateToGroups, stripBlockColors, restoreBlockColors } from "./quick-generator.js";
 import type { QuickGenState, QuickBlock } from "./quick-generator.js";
 import { getSettings } from "./settings.js";
@@ -564,7 +564,10 @@ function groupsFromQuickTab(): SettingGroup[] | null {
   if (!tab || tab.type !== "quick" || !tab.quickState) return null;
 
   const groups = quickStateToGroups(tab.quickState);
-  if (groups.length === 0) {
+  const hasRareAccessories = Object.values(tab.quickState.rareAccessories?.selections ?? {})
+    .some((factions) => factions.length > 0);
+
+  if (groups.length === 0 && !hasRareAccessories) {
     tabBarError.textContent = "No rules generated — assign sets to tiers and select at least one profile.";
     tabBarError.hidden = false;
     return null;
@@ -576,10 +579,13 @@ function groupsFromQuickTab(): SettingGroup[] | null {
 
 /** Try to generate a filter from the active quick tab. Returns null on failure. */
 function generateFromQuickTab(): ReturnType<typeof generateFilter> | null {
+  const tab = getActiveTab();
   const groups = groupsFromQuickTab();
   if (!groups) return null;
 
-  const rules = generateRulesFromGroups(groups);
+  const rareRules = generateRareAccessoryRules(tab?.quickState?.rareAccessories);
+  const groupRules = generateRulesFromGroups(groups);
+  const rules = [...rareRules, ...groupRules];
   if (rules.length === 0) {
     tabBarError.textContent = "No rules generated — check your tier/profile selections.";
     tabBarError.hidden = false;
@@ -592,10 +598,13 @@ function generateFromQuickTab(): ReturnType<typeof generateFilter> | null {
 
 // Generate → open Generator tab (groups) + Viewer tab (filter)
 document.getElementById("quick-generate-btn")!.addEventListener("click", () => {
+  const tab = getActiveTab();
   const groups = groupsFromQuickTab();
   if (!groups) return;
 
-  const rules = generateRulesFromGroups(groups);
+  const rareRules = generateRareAccessoryRules(tab?.quickState?.rareAccessories);
+  const groupRules = generateRulesFromGroups(groups);
+  const rules = [...rareRules, ...groupRules];
   if (rules.length === 0) {
     tabBarError.textContent = "No rules generated — check your tier/profile selections.";
     tabBarError.hidden = false;

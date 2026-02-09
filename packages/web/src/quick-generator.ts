@@ -1,7 +1,7 @@
 /**
  * Quick Generator — two-axis approach: set tiers x build profiles.
  */
-import { ARTIFACT_SET_NAMES } from "@rslh/core";
+import { ARTIFACT_SET_NAMES, ACCESSORY_SET_IDS, FACTION_NAMES } from "@rslh/core";
 import { SUBSTAT_PRESETS } from "./generator.js";
 import type { SettingGroup } from "./generator.js";
 import { getSettings } from "./settings.js";
@@ -24,8 +24,14 @@ export interface QuickBlock {
   selectedProfiles: number[]; // indices into SUBSTAT_PRESETS
 }
 
+export interface RareAccessoryBlock {
+  name?: string;
+  selections: Record<number, number[]>; // setId → factionIds
+}
+
 export interface QuickGenState {
   blocks: QuickBlock[];
+  rareAccessories?: RareAccessoryBlock;
 }
 
 // ---------------------------------------------------------------------------
@@ -68,8 +74,12 @@ export function defaultBlock(): QuickBlock {
   };
 }
 
+export function defaultRareAccessoryBlock(): RareAccessoryBlock {
+  return { selections: {} };
+}
+
 export function defaultQuickState(): QuickGenState {
-  return { blocks: [defaultBlock()] };
+  return { blocks: [defaultBlock()], rareAccessories: defaultRareAccessoryBlock() };
 }
 
 /** Strip tier colors for serialization (colors are not user-editable). */
@@ -82,6 +92,7 @@ export function stripBlockColors(state: QuickGenState): QuickGenState {
         return sellRolls !== undefined ? { name, rolls, sellRolls } : { name, rolls };
       }),
     })),
+    rareAccessories: state.rareAccessories,
   };
 }
 
@@ -93,6 +104,7 @@ export function restoreBlockColors(state: QuickGenState): QuickGenState {
       ...b,
       tiers: b.tiers.map((t, i) => ({ ...t, color: t.color ?? defaultColors[i] ?? "#e5e7eb" })),
     })),
+    rareAccessories: state.rareAccessories,
   };
 }
 
@@ -214,6 +226,9 @@ export function renderQuickGenerator(
 
     container.appendChild(card);
   }
+
+  // Rare Accessories block
+  renderRareAccessories(container, state, onChange);
 
   // Add Block button
   const addBtn = document.createElement("button");
@@ -475,4 +490,109 @@ function renderBlockTiers(
   }
 
   parent.appendChild(grid);
+}
+
+// ---------------------------------------------------------------------------
+// Rare Accessories block
+// ---------------------------------------------------------------------------
+
+/** Accessory sets sorted alphabetically for the grid. */
+const SORTED_ACCESSORY_SETS = ACCESSORY_SET_IDS
+  .map((id) => ({ id, name: ARTIFACT_SET_NAMES[id] ?? `Set ${id}` }))
+  .sort((a, b) => a.name.localeCompare(b.name));
+
+/** Factions sorted by ID for stable column order. */
+const SORTED_FACTIONS = Object.entries(FACTION_NAMES)
+  .map(([id, name]) => ({ id: Number(id), name }))
+  .sort((a, b) => a.id - b.id);
+
+function renderRareAccessories(
+  container: HTMLElement,
+  state: QuickGenState,
+  onChange: (state: QuickGenState) => void,
+): void {
+  if (!state.rareAccessories) state.rareAccessories = defaultRareAccessoryBlock();
+  const block = state.rareAccessories;
+
+  const card = document.createElement("div");
+  card.className = "quick-block rare-acc-block";
+
+  // Header with editable title
+  const header = document.createElement("div");
+  header.className = "quick-block-header";
+
+  const title = document.createElement("input");
+  title.type = "text";
+  title.className = "quick-block-title editable-title";
+  title.value = block.name ?? "";
+  title.placeholder = "Rare Accessories";
+  title.addEventListener("input", () => {
+    block.name = title.value || undefined;
+  });
+  title.addEventListener("blur", () => {
+    block.name = title.value || undefined;
+    onChange(state);
+  });
+  header.appendChild(title);
+  card.appendChild(header);
+
+  // Table
+  const table = document.createElement("table");
+  table.className = "rare-acc-table";
+
+  // Header row
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  headerRow.appendChild(document.createElement("th")); // empty corner cell
+  for (const faction of SORTED_FACTIONS) {
+    const th = document.createElement("th");
+    const span = document.createElement("span");
+    span.textContent = faction.name;
+    th.appendChild(span);
+    headerRow.appendChild(th);
+  }
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  // Body rows — one per accessory set
+  const tbody = document.createElement("tbody");
+  for (const set of SORTED_ACCESSORY_SETS) {
+    const row = document.createElement("tr");
+
+    const labelCell = document.createElement("td");
+    labelCell.className = "rare-acc-set-label";
+    labelCell.textContent = set.name;
+    row.appendChild(labelCell);
+
+    for (const faction of SORTED_FACTIONS) {
+      const td = document.createElement("td");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = (block.selections[set.id] ?? []).includes(faction.id);
+      cb.addEventListener("change", () => {
+        if (!block.selections[set.id]) block.selections[set.id] = [];
+        if (cb.checked) {
+          if (!block.selections[set.id].includes(faction.id)) {
+            block.selections[set.id].push(faction.id);
+          }
+        } else {
+          block.selections[set.id] = block.selections[set.id].filter((f) => f !== faction.id);
+          if (block.selections[set.id].length === 0) delete block.selections[set.id];
+        }
+        onChange(state);
+      });
+      td.appendChild(cb);
+      row.appendChild(td);
+    }
+
+    tbody.appendChild(row);
+  }
+  table.appendChild(tbody);
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "rare-acc-scroll";
+  wrapper.appendChild(table);
+  card.appendChild(wrapper);
+
+  container.appendChild(card);
 }

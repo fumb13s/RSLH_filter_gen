@@ -130,6 +130,15 @@ export const FACTION_NAMES: Record<number, string> = {
   16: "Argonites",
 };
 
+/**
+ * Set IDs that can roll accessories (Ring / Amulet / Banner).
+ * Includes item+accessory sets (47-48, 58-65) and accessory-only sets (1000-1004).
+ */
+export const ACCESSORY_SET_IDS: readonly number[] = [
+  47, 48, 58, 59, 60, 61, 62, 63, 64, 65,
+  1000, 1001, 1002, 1003, 1004,
+] as const;
+
 // ---------------------------------------------------------------------------
 // Slot → stat mappings (primary / substat availability)
 // ---------------------------------------------------------------------------

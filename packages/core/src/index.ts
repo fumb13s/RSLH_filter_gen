@@ -13,6 +13,7 @@ export {
   STAT_NAMES,
   HSF_RARITY_IDS,
   FACTION_NAMES,
+  ACCESSORY_SET_IDS,
   SLOT_STATS,
   lookupName,
   describeRarity,

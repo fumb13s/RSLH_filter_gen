@@ -1272,6 +1272,69 @@ pre {
 }
 
 /* ---------------------------------------------------------------------------
+   Rare Accessories grid
+--------------------------------------------------------------------------- */
+
+.rare-acc-block {
+  border-left-color: #d97706;
+}
+
+.rare-acc-scroll {
+  overflow-x: auto;
+}
+
+.rare-acc-table {
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  width: 100%;
+}
+
+.rare-acc-table thead th {
+  padding: 0 0.1rem;
+  height: 7rem;
+  white-space: nowrap;
+  vertical-align: bottom;
+  font-weight: 600;
+  color: #555;
+  font-size: 0.7rem;
+  position: relative;
+}
+
+.rare-acc-table thead th span {
+  display: block;
+  transform: rotate(-60deg);
+  transform-origin: left bottom;
+  width: max-content;
+  position: absolute;
+  bottom: 0.3rem;
+  left: 50%;
+}
+
+.rare-acc-set-label {
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: #374151;
+  white-space: nowrap;
+  width: 0;
+  padding: 0.2rem 0.25rem 0.2rem 0;
+  text-align: left;
+}
+
+.rare-acc-table tbody td {
+  text-align: center;
+  padding: 0.15rem 0.1rem;
+}
+
+.rare-acc-table tbody td input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.rare-acc-table tbody tr:hover {
+  background: #f9fafb;
+}
+
+/* ---------------------------------------------------------------------------
    Raw JSON details
 --------------------------------------------------------------------------- */
 

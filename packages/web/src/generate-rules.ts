@@ -7,6 +7,7 @@
 import { defaultRule, emptySubstat, getRollRange } from "@rslh/core";
 import type { HsfRule } from "@rslh/core";
 import type { SettingGroup } from "./generator.js";
+import type { RareAccessoryBlock } from "./quick-generator.js";
 
 /**
  * Enumerate all ways to distribute `total` into `k` non-negative integers
@@ -140,6 +141,32 @@ export function generateRulesFromGroups(groups: SettingGroup[]): HsfRule[] {
           rules.push(rule);
         }
       }
+    }
+  }
+
+  return rules;
+}
+
+/** Generate unconditional keep rules for rare accessory set+faction selections. */
+export function generateRareAccessoryRules(block: RareAccessoryBlock | undefined): HsfRule[] {
+  if (!block) return [];
+  const rules: HsfRule[] = [];
+
+  for (const [setIdStr, factionIds] of Object.entries(block.selections)) {
+    const setId = Number(setIdStr);
+    if (!factionIds || factionIds.length === 0) continue;
+
+    for (const factionId of factionIds) {
+      rules.push(defaultRule({
+        ArtifactSet: [setId],
+        ArtifactType: [7, 8, 9],
+        Faction: factionId,
+        Rank: 6,
+        Rarity: 16,
+        LVLForCheck: 0,
+        MainStatID: -1,
+        IsRuleTypeAND: true,
+      }));
     }
   }
 
