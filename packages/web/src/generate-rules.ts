@@ -7,7 +7,7 @@
 import { defaultRule, emptySubstat, getRollRange } from "@rslh/core";
 import type { HsfRule } from "@rslh/core";
 import type { SettingGroup } from "./generator.js";
-import type { RareAccessoryBlock } from "./quick-generator.js";
+import type { RareAccessoryBlock, OreRerollBlock } from "./quick-generator.js";
 
 /**
  * Enumerate all ways to distribute `total` into `k` non-negative integers
@@ -167,6 +167,123 @@ export function generateRareAccessoryRules(block: RareAccessoryBlock | undefined
         MainStatID: -1,
         IsRuleTypeAND: true,
       }));
+    }
+  }
+
+  return rules;
+}
+
+// ---------------------------------------------------------------------------
+// Ore Reroll Candidates — concentrated-roll OR rules
+// ---------------------------------------------------------------------------
+
+const LEVEL_CHECKPOINTS = [16, 12, 8, 4, 0] as const;
+
+/**
+ * Walkback thresholds for concentrated substats at each level checkpoint.
+ *
+ * Epic: rolls at L4, L8, L12; new substat at L16 → L16=T, L12=T, L8=T-1, L4=T-2, L0=T-3
+ * Leg/Myth: rolls at L0, L4, L8, L12, L16 → L16=T, L12=T-1, L8=T-2, L4=T-3, L0=T-4
+ *
+ * Returns array of { level, threshold } pairs (skips where threshold ≤ 0).
+ */
+function oreWalkback(target: number, isEpic: boolean): { level: number; threshold: number }[] {
+  const steps: { level: number; threshold: number }[] = [];
+  for (let i = 0; i < LEVEL_CHECKPOINTS.length; i++) {
+    const level = LEVEL_CHECKPOINTS[i];
+    // Epic: first two checkpoints (L16, L12) stay at target, then -1 per step
+    // Leg/Myth: decreases by 1 each step from L16
+    const decrement = isEpic ? Math.max(0, i - 1) : i;
+    const threshold = target - decrement;
+    if (threshold <= 0) break;
+    steps.push({ level, threshold });
+  }
+  return steps;
+}
+
+// All percentage substats that can receive concentrated rolls
+const ORE_STATS = [1, 2, 3, 4, 5, 6, 7, 8]; // HP%, ATK%, DEF%, SPD, CRATE, CDMG, RES, ACC
+
+/**
+ * Generate single-substat rules for ore reroll candidates.
+ *
+ * One rule per stat per level checkpoint — each rule checks whether a single
+ * substat has enough concentrated rolls to be worth keeping for ore reroll.
+ *
+ * Column labels are extra rolls (excluding the base roll). The total concentrated
+ * value = (extra + 1) × min, so the viewer displays "(extra)" after subtracting
+ * the base roll.
+ *
+ * Column mapping: 0=3extra, 1=4extra, 2=5extra
+ * Rank 5 adds +1 to compensate for lower roll values.
+ *
+ * Max concentrated totals: Epic=4, Legendary=5, Mythical=6.
+ */
+export function generateOreRerollRules(block: OreRerollBlock | undefined): HsfRule[] {
+  if (!block) return [];
+  const rules: HsfRule[] = [];
+
+  // Group sets by column
+  const columnSets: number[][] = [[], [], []];
+  for (const [setIdStr, colIdx] of Object.entries(block.assignments)) {
+    if (colIdx >= 0 && colIdx < 3) {
+      columnSets[colIdx].push(Number(setIdStr));
+    }
+  }
+
+  for (let ci = 0; ci < 3; ci++) {
+    const sets = columnSets[ci];
+    if (sets.length === 0) continue;
+
+    const extraRolls = ci + 3; // column 0=3, 1=4, 2=5
+
+    // For each rank (6 and 5)
+    for (const rank of [6, 5] as const) {
+      // Total concentrated rolls = base(1) + extra + rank5 penalty(+1)
+      const totalTarget = rank === 6 ? extraRolls + 1 : extraRolls + 2;
+      if (totalTarget > 6) continue; // exceeds Mythical max concentrated
+
+      // Rarity=15 (Leg/Myth) rules with Leg/Myth walkback
+      const steps15 = oreWalkback(totalTarget, false);
+      for (const { level, threshold: t } of steps15) {
+        for (const statId of ORE_STATS) {
+          const range = getRollRange(statId, rank);
+          if (!range) continue;
+          rules.push(defaultRule({
+            ArtifactSet: [...sets],
+            Rank: rank,
+            Rarity: 15,
+            IsRuleTypeAND: false,
+            LVLForCheck: level,
+            Substats: [
+              { ID: statId, Value: t * range[0], IsFlat: false, NotAvailable: false, Condition: ">=" },
+              emptySubstat(), emptySubstat(), emptySubstat(),
+            ],
+          }));
+        }
+      }
+
+      // Rarity=9 (Epic+) rules with Epic walkback — only when Epic can achieve it
+      if (totalTarget <= 4) {
+        const steps9 = oreWalkback(totalTarget, true);
+        for (const { level, threshold: t } of steps9) {
+          for (const statId of ORE_STATS) {
+            const range = getRollRange(statId, rank);
+            if (!range) continue;
+            rules.push(defaultRule({
+              ArtifactSet: [...sets],
+              Rank: rank,
+              Rarity: 9,
+              IsRuleTypeAND: false,
+              LVLForCheck: level,
+              Substats: [
+                { ID: statId, Value: t * range[0], IsFlat: false, NotAvailable: false, Condition: ">=" },
+                emptySubstat(), emptySubstat(), emptySubstat(),
+              ],
+            }));
+          }
+        }
+      }
     }
   }
 

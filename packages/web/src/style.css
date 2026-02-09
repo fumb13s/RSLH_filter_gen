@@ -1361,6 +1361,34 @@ pre {
 }
 
 /* ---------------------------------------------------------------------------
+   Ore Reroll Candidates
+--------------------------------------------------------------------------- */
+
+.ore-reroll-block {
+  border-left-color: #0d9488;
+}
+
+.ore-reroll-block .quick-block-header {
+  margin-bottom: 0.5rem;
+}
+
+.ore-columns {
+  grid-template-columns: repeat(3, 1fr) 1.5fr;
+}
+
+@media (max-width: 640px) {
+  .ore-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 800px) {
+  .ore-columns {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ---------------------------------------------------------------------------
    Raw JSON details
 --------------------------------------------------------------------------- */
 

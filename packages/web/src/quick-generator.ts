@@ -28,9 +28,14 @@ export interface RareAccessoryBlock {
   selections: Record<number, number[]>; // setId → factionIds
 }
 
+export interface OreRerollBlock {
+  assignments: Record<number, number>; // setId → column index (0=3rolls, 1=4rolls, 2=5rolls)
+}
+
 export interface QuickGenState {
   blocks: QuickBlock[];
   rareAccessories?: RareAccessoryBlock;
+  oreReroll?: OreRerollBlock;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,8 +82,18 @@ export function defaultRareAccessoryBlock(): RareAccessoryBlock {
   return { selections: {} };
 }
 
+const ORE_COLUMNS = [
+  { rolls: 3, label: "3 rolls", color: "#a855f7" },   // purple (Epic+)
+  { rolls: 4, label: "4 rolls", color: "#f59e0b" },   // amber (Legendary+)
+  { rolls: 5, label: "5 rolls", color: "#0d9488" },    // teal (Mythical+)
+];
+
+export function defaultOreRerollBlock(): OreRerollBlock {
+  return { assignments: {} };
+}
+
 export function defaultQuickState(): QuickGenState {
-  return { blocks: [defaultBlock()], rareAccessories: defaultRareAccessoryBlock() };
+  return { blocks: [defaultBlock()], rareAccessories: defaultRareAccessoryBlock(), oreReroll: defaultOreRerollBlock() };
 }
 
 /** Strip tier colors for serialization (colors are not user-editable). */
@@ -92,6 +107,7 @@ export function stripBlockColors(state: QuickGenState): QuickGenState {
       }),
     })),
     rareAccessories: state.rareAccessories,
+    oreReroll: state.oreReroll,
   };
 }
 
@@ -104,6 +120,7 @@ export function restoreBlockColors(state: QuickGenState): QuickGenState {
       tiers: b.tiers.map((t, i) => ({ ...t, color: t.color ?? defaultColors[i] ?? "#e5e7eb" })),
     })),
     rareAccessories: state.rareAccessories,
+    oreReroll: state.oreReroll,
   };
 }
 
@@ -228,6 +245,9 @@ export function renderQuickGenerator(
 
   // Rare Accessories block
   renderRareAccessories(container, state, onChange);
+
+  // Ore Reroll Candidates block
+  renderOreReroll(container, state, onChange);
 
   // Add Block button
   const addBtn = document.createElement("button");
@@ -623,5 +643,196 @@ function renderRareAccessories(
   wrapper.appendChild(table);
   card.appendChild(wrapper);
 
+  container.appendChild(card);
+}
+
+// ---------------------------------------------------------------------------
+// Ore Reroll Candidates block
+// ---------------------------------------------------------------------------
+
+/** Pool column index — sets not assigned to any roll column. */
+const ORE_POOL = -1;
+
+function renderOreReroll(
+  container: HTMLElement,
+  state: QuickGenState,
+  onChange: (state: QuickGenState) => void,
+): void {
+  if (!state.oreReroll) state.oreReroll = defaultOreRerollBlock();
+  const block = state.oreReroll;
+
+  const card = document.createElement("div");
+  card.className = "quick-block ore-reroll-block";
+
+  // Header
+  const header = document.createElement("div");
+  header.className = "quick-block-header";
+
+  const title = document.createElement("span");
+  title.className = "quick-block-title";
+  title.textContent = "Ore Reroll Candidates";
+  header.appendChild(title);
+  card.appendChild(header);
+
+  // Columns grid — roll columns + pool
+  const grid = document.createElement("div");
+  grid.className = "quick-tier-columns ore-columns";
+
+  const totalCols = ORE_COLUMNS.length + 1; // +1 for pool
+  const columns: HTMLElement[] = [];
+  const chipAreas: HTMLElement[] = [];
+
+  // Roll columns
+  for (let ci = 0; ci < ORE_COLUMNS.length; ci++) {
+    const colDef = ORE_COLUMNS[ci];
+
+    const col = document.createElement("div");
+    col.className = "quick-tier-column";
+    col.style.borderTopColor = colDef.color;
+    col.dataset.oreCol = String(ci);
+
+    const colHeader = document.createElement("div");
+    colHeader.className = "quick-tier-column-header";
+    colHeader.style.color = colDef.color;
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = colDef.label;
+    colHeader.appendChild(nameSpan);
+
+    col.appendChild(colHeader);
+
+    const chipArea = document.createElement("div");
+    chipArea.className = "quick-tier-chips";
+    col.appendChild(chipArea);
+
+    // Drop target
+    col.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      col.classList.add("drag-over");
+    });
+    col.addEventListener("dragleave", (e) => {
+      if (!col.contains(e.relatedTarget as Node)) {
+        col.classList.remove("drag-over");
+      }
+    });
+    col.addEventListener("drop", (e) => {
+      e.preventDefault();
+      col.classList.remove("drag-over");
+      const setId = e.dataTransfer?.getData("text/plain");
+      if (!setId) return;
+      const id = Number(setId);
+      if (block.assignments[id] === ci) return;
+      block.assignments[id] = ci;
+      onChange(state);
+    });
+
+    columns.push(col);
+    chipAreas.push(chipArea);
+    grid.appendChild(col);
+  }
+
+  // Pool column (unassigned — grey, like Sell tier)
+  const poolCol = document.createElement("div");
+  poolCol.className = "quick-tier-column quick-tier-sell";
+  poolCol.style.borderTopColor = "#e5e7eb";
+  poolCol.dataset.oreCol = "pool";
+
+  const poolHeader = document.createElement("div");
+  poolHeader.className = "quick-tier-column-header";
+  poolHeader.style.color = "#6b7280";
+
+  const poolName = document.createElement("span");
+  poolName.textContent = "Unassigned";
+  poolHeader.appendChild(poolName);
+
+  poolCol.appendChild(poolHeader);
+
+  const poolChipArea = document.createElement("div");
+  poolChipArea.className = "quick-tier-chips";
+  poolCol.appendChild(poolChipArea);
+
+  // Drop on pool
+  poolCol.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    poolCol.classList.add("drag-over");
+  });
+  poolCol.addEventListener("dragleave", (e) => {
+    if (!poolCol.contains(e.relatedTarget as Node)) {
+      poolCol.classList.remove("drag-over");
+    }
+  });
+  poolCol.addEventListener("drop", (e) => {
+    e.preventDefault();
+    poolCol.classList.remove("drag-over");
+    const setId = e.dataTransfer?.getData("text/plain");
+    if (!setId) return;
+    const id = Number(setId);
+    delete block.assignments[id];
+    onChange(state);
+  });
+
+  columns.push(poolCol);
+  chipAreas.push(poolChipArea);
+  grid.appendChild(poolCol);
+
+  // Create chips — one per set
+  for (const set of SORTED_SETS) {
+    const colIdx = block.assignments[set.id] ?? ORE_POOL;
+    const inPool = colIdx === ORE_POOL;
+    const chipAreaIdx = inPool ? totalCols - 1 : colIdx;
+    const color = inPool ? "#e5e7eb" : ORE_COLUMNS[colIdx].color;
+    const textColor = inPool ? "#6b7280" : "#fff";
+
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "quick-chip";
+    chip.draggable = true;
+    chip.textContent = set.name;
+    chip.style.backgroundColor = color;
+    chip.style.color = textColor;
+    chip.title = `${set.name} — drag to move, click to cycle column`;
+
+    // Drag
+    chip.addEventListener("dragstart", (e) => {
+      e.dataTransfer!.setData("text/plain", String(set.id));
+      e.dataTransfer!.effectAllowed = "move";
+      chip.classList.add("dragging");
+    });
+    chip.addEventListener("dragend", () => {
+      chip.classList.remove("dragging");
+      for (const c of columns) c.classList.remove("drag-over");
+    });
+
+    // Left-click: cycle through columns (0 → 1 → 2 → pool → 0)
+    chip.addEventListener("click", () => {
+      const cur = block.assignments[set.id] ?? ORE_POOL;
+      if (cur === ORE_POOL) {
+        block.assignments[set.id] = 0;
+      } else if (cur < ORE_COLUMNS.length - 1) {
+        block.assignments[set.id] = cur + 1;
+      } else {
+        delete block.assignments[set.id];
+      }
+      onChange(state);
+    });
+
+    // Right-click: reverse cycle (pool → 2 → 1 → 0 → pool)
+    chip.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const cur = block.assignments[set.id] ?? ORE_POOL;
+      if (cur === ORE_POOL) {
+        block.assignments[set.id] = ORE_COLUMNS.length - 1;
+      } else if (cur > 0) {
+        block.assignments[set.id] = cur - 1;
+      } else {
+        delete block.assignments[set.id];
+      }
+      onChange(state);
+    });
+
+    chipAreas[chipAreaIdx].appendChild(chip);
+  }
+
+  card.appendChild(grid);
   container.appendChild(card);
 }
