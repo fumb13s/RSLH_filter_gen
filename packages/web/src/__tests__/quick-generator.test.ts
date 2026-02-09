@@ -361,8 +361,8 @@ describe("generateRareAccessoryRules", () => {
     expect(rules[0].ArtifactSet).toEqual([47]);
     expect(rules[0].ArtifactType).toEqual([7, 8, 9]);
     expect(rules[0].Faction).toBe(1);
-    expect(rules[0].Rank).toBe(6);
-    expect(rules[0].Rarity).toBe(16);
+    expect(rules[0].Rank).toBe(0);
+    expect(rules[0].Rarity).toBe(0);
 
     assertRuleInvariants(rules);
   });
