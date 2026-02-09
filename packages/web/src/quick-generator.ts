@@ -85,7 +85,7 @@ export function defaultRareAccessoryBlock(): RareAccessoryBlock {
 const ORE_COLUMNS = [
   { rolls: 3, label: "3 rolls", color: "#a855f7" },   // purple (Epic+)
   { rolls: 4, label: "4 rolls", color: "#f59e0b" },   // amber (Legendary+)
-  { rolls: 5, label: "5 rolls", color: "#0d9488" },    // teal (Mythical+)
+  { rolls: 5, label: "5 rolls", color: "#ef4444" },    // red (Mythical+)
 ];
 
 export function defaultOreRerollBlock(): OreRerollBlock {
