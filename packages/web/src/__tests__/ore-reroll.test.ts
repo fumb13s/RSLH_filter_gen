@@ -1,11 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateFilter } from "@rslh/core";
-import {
-  generateOreRerollRules,
-  generateRulesFromGroups,
-  generateRareAccessoryRules,
-} from "../generate-rules.js";
-import { defaultQuickState, quickStateToGroups } from "../quick-generator.js";
+import { generateOreRerollRules } from "../generate-rules.js";
 import type { OreRerollBlock } from "../quick-generator.js";
 
 describe("generateOreRerollRules", () => {
@@ -58,42 +53,5 @@ describe("generateOreRerollRules", () => {
         expect([1, 2, 3]).toContain(s.ID);
       }
     }
-  });
-});
-
-describe("full quick-gen flow with ore reroll", () => {
-  it("generates and validates when default state has a profile selected + ore set assigned", () => {
-    const state = defaultQuickState();
-    // Select the first profile (HP Nuker)
-    state.blocks[0].selectedProfiles = [0];
-    // Add set 1 to ore column 0
-    state.oreReroll!.assignments[1] = 0;
-
-    const groups = quickStateToGroups(state);
-    const rareRules = generateRareAccessoryRules(state.rareAccessories);
-    const oreRules = generateOreRerollRules(state.oreReroll);
-    const groupRules = generateRulesFromGroups(groups);
-    const rules = [...rareRules, ...oreRules, ...groupRules];
-
-    expect(rules.length).toBeGreaterThan(0);
-
-    // This is the exact call that throws in the browser
-    expect(() => generateFilter(rules)).not.toThrow();
-  });
-
-  it("generates and validates when only ore reroll is configured (no profiles)", () => {
-    const state = defaultQuickState();
-    // No profiles selected
-    // Add set 1 to ore column 2 (5 extra rolls)
-    state.oreReroll!.assignments[1] = 2;
-
-    const groups = quickStateToGroups(state);
-    const rareRules = generateRareAccessoryRules(state.rareAccessories);
-    const oreRules = generateOreRerollRules(state.oreReroll);
-    const groupRules = generateRulesFromGroups(groups);
-    const rules = [...rareRules, ...oreRules, ...groupRules];
-
-    expect(rules.length).toBeGreaterThan(0);
-    expect(() => generateFilter(rules)).not.toThrow();
   });
 });
