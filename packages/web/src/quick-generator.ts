@@ -540,15 +540,42 @@ function renderRareAccessories(
   const table = document.createElement("table");
   table.className = "rare-acc-table";
 
+  const allFactionIds = SORTED_FACTIONS.map((f) => f.id);
+  const allSetIds = SORTED_ACCESSORY_SETS.map((s) => s.id);
+
   // Header row
   const thead = document.createElement("thead");
   const headerRow = document.createElement("tr");
   headerRow.appendChild(document.createElement("th")); // empty corner cell
   for (const faction of SORTED_FACTIONS) {
     const th = document.createElement("th");
+    const colAllChecked = allSetIds.every((sid) =>
+      (block.selections[sid] ?? []).includes(faction.id),
+    );
+    th.className = "rare-acc-col-header" + (colAllChecked ? " rare-acc-all-selected" : "");
     const span = document.createElement("span");
     span.textContent = faction.name;
     th.appendChild(span);
+    th.addEventListener("click", () => {
+      // Toggle column: if every set has this faction, clear; otherwise fill
+      const allChecked = allSetIds.every((sid) =>
+        (block.selections[sid] ?? []).includes(faction.id),
+      );
+      for (const sid of allSetIds) {
+        if (allChecked) {
+          if (block.selections[sid]) {
+            block.selections[sid] = block.selections[sid].filter((f) => f !== faction.id);
+            if (block.selections[sid].length === 0) delete block.selections[sid];
+          }
+        } else {
+          if (!block.selections[sid]) block.selections[sid] = [];
+          if (!block.selections[sid].includes(faction.id)) {
+            block.selections[sid].push(faction.id);
+          }
+        }
+      }
+      onChange(state);
+    });
     headerRow.appendChild(th);
   }
   thead.appendChild(headerRow);
@@ -560,8 +587,20 @@ function renderRareAccessories(
     const row = document.createElement("tr");
 
     const labelCell = document.createElement("td");
-    labelCell.className = "rare-acc-set-label";
+    const rowAllChecked = allFactionIds.every((fid) => (block.selections[set.id] ?? []).includes(fid));
+    labelCell.className = "rare-acc-set-label" + (rowAllChecked ? " rare-acc-all-selected" : "");
     labelCell.textContent = set.name;
+    labelCell.addEventListener("click", () => {
+      // Toggle row: if every faction is checked, clear; otherwise fill
+      const current = block.selections[set.id] ?? [];
+      const allChecked = allFactionIds.every((fid) => current.includes(fid));
+      if (allChecked) {
+        delete block.selections[set.id];
+      } else {
+        block.selections[set.id] = [...allFactionIds];
+      }
+      onChange(state);
+    });
     row.appendChild(labelCell);
 
     for (const faction of SORTED_FACTIONS) {
