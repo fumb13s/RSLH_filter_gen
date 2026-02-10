@@ -56,16 +56,6 @@ describe("generateOreRerollRules", () => {
     }
   });
 
-  it("all ore reroll rules use IsRuleTypeAND: false (OR semantics)", () => {
-    const block: OreRerollBlock = {
-      assignments: { 1: 0, 42: 2 },
-    };
-
-    const rules = generateOreRerollRules(block);
-    for (const rule of rules) {
-      expect(rule.IsRuleTypeAND).toBe(false);
-    }
-  });
 });
 
 describe("oreRerollToGroups", () => {
@@ -102,14 +92,6 @@ describe("oreRerollToGroups", () => {
     }
   });
 
-  it("all groups have isAnd: false", () => {
-    const block: OreRerollBlock = { assignments: { 1: 0 } };
-    const groups = oreRerollToGroups(block);
-
-    for (const g of groups) {
-      expect(g.isAnd).toBe(false);
-    }
-  });
 
   it("Leg/Myth groups have rarity=15 and walkbackDelay=0 (default)", () => {
     const block: OreRerollBlock = { assignments: { 1: 0 } };

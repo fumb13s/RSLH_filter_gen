@@ -113,7 +113,6 @@ function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
     <span class="rule-index">#${index + 1}</span>
     <span class="badge ${rule.Keep ? "badge-keep" : "badge-sell"}">${rule.Keep ? "Keep" : "Sell"}</span>
     <span class="badge ${rule.Use ? "badge-active" : "badge-inactive"}">${rule.Use ? "Active" : "Inactive"}</span>
-    <span class="badge badge-logic">${rule.IsRuleTypeAND ? "AND" : "OR"}</span>
   `;
   card.appendChild(header);
 

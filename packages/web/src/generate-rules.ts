@@ -76,7 +76,6 @@ export function generateRulesFromGroups(groups: SettingGroup[]): HsfRule[] {
         Rank: group.rank ?? 0,
         Rarity: group.rarity ?? 0,
         Faction: group.faction ?? 0,
-        IsRuleTypeAND: group.isAnd ?? true,
         LVLForCheck: 0,
         Substats: [emptySubstat(), emptySubstat(), emptySubstat(), emptySubstat()],
       });
@@ -150,7 +149,6 @@ export function generateRulesFromGroups(groups: SettingGroup[]): HsfRule[] {
             Rank: rank,
             Rarity: group.rarity ?? 16,
             Faction: group.faction ?? 0,
-            IsRuleTypeAND: group.isAnd ?? true,
             LVLForCheck: level,
             Substats: substats,
           });

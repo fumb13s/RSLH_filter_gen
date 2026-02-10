@@ -240,7 +240,6 @@ export function oreRerollToGroups(block: OreRerollBlock | undefined): SettingGro
           rolls: totalTarget,
           rank,
           rarity: 15,
-          isAnd: false,
         });
 
         // Epic group — only when Epic can achieve it
@@ -254,8 +253,7 @@ export function oreRerollToGroups(block: OreRerollBlock | undefined): SettingGro
             rank,
             rarity: 9,
             walkbackDelay: 1,
-            isAnd: false,
-          });
+            });
         }
       }
     }

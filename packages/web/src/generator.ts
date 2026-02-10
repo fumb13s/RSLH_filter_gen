@@ -23,7 +23,6 @@ export interface SettingGroup {
   rarity?: number;                     // min rarity threshold (default → 16 from defaultRule)
   faction?: number;                    // faction filter (default 0 = any)
   walkbackDelay?: number;              // level steps before walkback starts (default 0)
-  isAnd?: boolean;                     // AND vs OR rule semantics (default true)
 }
 
 export interface GeneratorCallbacks {

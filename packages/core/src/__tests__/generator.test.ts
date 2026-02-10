@@ -182,7 +182,6 @@ describe("real .hsf file", () => {
     const filter = parseFilter(raw);
     const r = filter.Rules[0];
     expect(r.Keep).toBe(true);
-    expect(r.IsRuleTypeAND).toBe(false);
     expect(r.Use).toBe(true);
     expect(r.ArtifactSet).toEqual([62, 65]);
     expect(r.ArtifactType).toEqual([5, 1, 6, 3, 2]);
