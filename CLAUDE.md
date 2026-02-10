@@ -35,3 +35,7 @@ npm run dev          # start vite dev server for web UI
 - TypeScript project references link packages together
 - ESLint uses flat config (`eslint.config.js`)
 - Tests live in `packages/*/src/__tests__/`
+
+## Services
+
+- **Analytics dashboard:** https://rslh-filter-gen.goatcounter.com/ (GoatCounter, privacy-friendly, no cookies)
