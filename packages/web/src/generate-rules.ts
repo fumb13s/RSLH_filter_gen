@@ -8,7 +8,7 @@ import { defaultRule, emptySubstat, getRollRange } from "@rslh/core";
 import type { HsfRule } from "@rslh/core";
 import type { SettingGroup } from "./generator.js";
 import type { RareAccessoryBlock, OreRerollBlock } from "./quick-generator.js";
-import { oreRerollToGroups } from "./quick-generator.js";
+import { oreRerollToGroups, rareAccessoriesToGroups } from "./quick-generator.js";
 
 /**
  * Enumerate all ways to distribute `total` into `k` non-negative integers
@@ -66,7 +66,25 @@ export function generateRulesFromGroups(groups: SettingGroup[]): HsfRule[] {
   const rules: HsfRule[] = [];
 
   for (const group of groups) {
-    if (group.goodStats.length === 0) continue;
+    // Unconditional keep: empty goodStats → single rule with empty substats
+    if (group.goodStats.length === 0) {
+      const rule = defaultRule({
+        ...(group.sets.length > 0 ? { ArtifactSet: [...group.sets] } : { ArtifactSet: undefined }),
+        ...(group.slots.length > 0 ? { ArtifactType: [...group.slots] } : { ArtifactType: undefined }),
+        MainStatID: -1,
+        MainStatF: 1,
+        Rank: group.rank ?? 0,
+        Rarity: group.rarity ?? 0,
+        Faction: group.faction ?? 0,
+        IsRuleTypeAND: group.isAnd ?? true,
+        LVLForCheck: 0,
+        Substats: [emptySubstat(), emptySubstat(), emptySubstat(), emptySubstat()],
+      });
+      if (rule.ArtifactSet === undefined) delete rule.ArtifactSet;
+      if (rule.ArtifactType === undefined) delete rule.ArtifactType;
+      rules.push(rule);
+      continue;
+    }
 
     const rank = group.rank ?? 6;
 
@@ -131,6 +149,7 @@ export function generateRulesFromGroups(groups: SettingGroup[]): HsfRule[] {
             MainStatF: mainStat.MainStatF,
             Rank: rank,
             Rarity: group.rarity ?? 16,
+            Faction: group.faction ?? 0,
             IsRuleTypeAND: group.isAnd ?? true,
             LVLForCheck: level,
             Substats: substats,
@@ -151,28 +170,7 @@ export function generateRulesFromGroups(groups: SettingGroup[]): HsfRule[] {
 
 /** Generate unconditional keep rules for rare accessory set+faction selections. */
 export function generateRareAccessoryRules(block: RareAccessoryBlock | undefined): HsfRule[] {
-  if (!block) return [];
-  const rules: HsfRule[] = [];
-
-  for (const [setIdStr, factionIds] of Object.entries(block.selections)) {
-    const setId = Number(setIdStr);
-    if (!factionIds || factionIds.length === 0) continue;
-
-    for (const factionId of factionIds) {
-      rules.push(defaultRule({
-        ArtifactSet: [setId],
-        ArtifactType: [7, 8, 9],
-        Faction: factionId,
-        Rank: 0,
-        Rarity: 0,
-        LVLForCheck: 0,
-        MainStatID: -1,
-        IsRuleTypeAND: true,
-      }));
-    }
-  }
-
-  return rules;
+  return generateRulesFromGroups(rareAccessoriesToGroups(block));
 }
 
 // ---------------------------------------------------------------------------

@@ -176,6 +176,35 @@ export function quickStateToGroups(state: QuickGenState): SettingGroup[] {
 }
 
 // ---------------------------------------------------------------------------
+// Rare accessories: RareAccessoryBlock → SettingGroup[]
+// ---------------------------------------------------------------------------
+
+export function rareAccessoriesToGroups(block: RareAccessoryBlock | undefined): SettingGroup[] {
+  if (!block) return [];
+  const groups: SettingGroup[] = [];
+
+  for (const [setIdStr, factionIds] of Object.entries(block.selections)) {
+    const setId = Number(setIdStr);
+    if (!factionIds || factionIds.length === 0) continue;
+
+    for (const factionId of factionIds) {
+      groups.push({
+        sets: [setId],
+        slots: [7, 8, 9],
+        mainStats: [],
+        goodStats: [],
+        rolls: 0,
+        rank: 0,
+        rarity: 0,
+        faction: factionId,
+      });
+    }
+  }
+
+  return groups;
+}
+
+// ---------------------------------------------------------------------------
 // Ore reroll: OreRerollBlock → SettingGroup[]
 // ---------------------------------------------------------------------------
 

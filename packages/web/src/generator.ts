@@ -21,6 +21,7 @@ export interface SettingGroup {
   rolls: number;                       // 4–9
   rank?: number;                       // 1–6, defaults to 6
   rarity?: number;                     // min rarity threshold (default → 16 from defaultRule)
+  faction?: number;                    // faction filter (default 0 = any)
   walkbackDelay?: number;              // level steps before walkback starts (default 0)
   isAnd?: boolean;                     // AND vs OR rule semantics (default true)
 }
@@ -528,6 +529,10 @@ const ROLL_PRESETS: { label: string; value: number }[] = [
   { label: "End Game", value: 7 },
 ];
 
+function rankLabel_(rank: number): string {
+  return rank === 0 ? "Any" : `${rank}-star`;
+}
+
 function buildRankAndRollControl(group: SettingGroup, index: number, cb: GeneratorCallbacks): HTMLElement {
   const wrap = document.createElement("div");
   wrap.className = "group-section";
@@ -545,7 +550,7 @@ function buildRankAndRollControl(group: SettingGroup, index: number, cb: Generat
   rankToggle.type = "button";
   rankToggle.className = "preset-btn rank-toggle";
   const currentRank = group.rank ?? 6;
-  rankToggle.textContent = `${currentRank}-star`;
+  rankToggle.textContent = rankLabel_(currentRank);
   rankToggle.title = "Toggle between rank 5 and 6";
   rankRow.appendChild(rankToggle);
 
@@ -608,7 +613,7 @@ function buildRankAndRollControl(group: SettingGroup, index: number, cb: Generat
       group.rank = 6;
       group.rolls = Math.max(4, group.rolls - 2);
     }
-    rankToggle.textContent = `${group.rank}-star`;
+    rankToggle.textContent = rankLabel_(group.rank!);
     slider.value = String(group.rolls);
     valueDisplay.textContent = String(group.rolls);
     updateSliderFill(slider);

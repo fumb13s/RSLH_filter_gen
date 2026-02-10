@@ -10,6 +10,7 @@ import {
   defaultQuickState,
   quickStateToGroups,
   oreRerollToGroups,
+  rareAccessoriesToGroups,
   stripBlockColors,
   restoreBlockColors,
 } from "../quick-generator.js";
@@ -202,11 +203,18 @@ describe("generateRulesFromGroups", () => {
     expect(generateRulesFromGroups([])).toEqual([]);
   });
 
-  it("empty goodStats → skipped", () => {
+  it("empty goodStats → unconditional keep rule", () => {
     const groups: SettingGroup[] = [
-      { sets: [1], slots: [], mainStats: [], goodStats: [], rolls: 5 },
+      { sets: [1], slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 },
     ];
-    expect(generateRulesFromGroups(groups)).toEqual([]);
+    const rules = generateRulesFromGroups(groups);
+    expect(rules).toHaveLength(1);
+    expect(rules[0].LVLForCheck).toBe(0);
+    expect(rules[0].MainStatID).toBe(-1);
+    expect(rules[0].Rank).toBe(0);
+    expect(rules[0].Rarity).toBe(0);
+    expect(rules[0].Substats.every((s) => s.ID === -1)).toBe(true);
+    assertRuleInvariants(rules);
   });
 
   it("single stat, single roll → one rule at L16", () => {
@@ -411,6 +419,86 @@ describe("generateRareAccessoryRules", () => {
 });
 
 // ---------------------------------------------------------------------------
+// rareAccessoriesToGroups
+// ---------------------------------------------------------------------------
+
+describe("rareAccessoriesToGroups", () => {
+  it("undefined block → empty", () => {
+    expect(rareAccessoriesToGroups(undefined)).toEqual([]);
+  });
+
+  it("empty selections → empty", () => {
+    expect(rareAccessoriesToGroups({ selections: {} })).toEqual([]);
+  });
+
+  it("single set, single faction → 1 group with correct shape", () => {
+    const groups = rareAccessoriesToGroups({ selections: { 47: [1] } });
+    expect(groups).toHaveLength(1);
+    expect(groups[0].sets).toEqual([47]);
+    expect(groups[0].slots).toEqual([7, 8, 9]);
+    expect(groups[0].goodStats).toEqual([]);
+    expect(groups[0].mainStats).toEqual([]);
+    expect(groups[0].rolls).toBe(0);
+    expect(groups[0].rank).toBe(0);
+    expect(groups[0].rarity).toBe(0);
+    expect(groups[0].faction).toBe(1);
+  });
+
+  it("single set, multiple factions → N groups", () => {
+    const groups = rareAccessoriesToGroups({ selections: { 47: [1, 2, 3] } });
+    expect(groups).toHaveLength(3);
+    expect(groups.map((g) => g.faction).sort()).toEqual([1, 2, 3]);
+    for (const g of groups) {
+      expect(g.sets).toEqual([47]);
+    }
+  });
+
+  it("multiple sets → each set×faction combo is a separate group", () => {
+    const groups = rareAccessoriesToGroups({ selections: { 47: [1], 48: [2, 3] } });
+    expect(groups).toHaveLength(3);
+    const set47 = groups.filter((g) => g.sets[0] === 47);
+    const set48 = groups.filter((g) => g.sets[0] === 48);
+    expect(set47).toHaveLength(1);
+    expect(set48).toHaveLength(2);
+  });
+
+  it("empty faction array → skipped", () => {
+    expect(rareAccessoriesToGroups({ selections: { 47: [] } })).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rare accessory two-step pipeline equivalence
+// ---------------------------------------------------------------------------
+
+describe("rare accessory two-step pipeline", () => {
+  it("rareAccessoriesToGroups + generateRulesFromGroups equals generateRareAccessoryRules", () => {
+    const block: RareAccessoryBlock = { selections: { 47: [1, 2], 48: [3] } };
+
+    // Direct (wrapper) path
+    const directRules = generateRareAccessoryRules(block);
+
+    // Two-step path
+    const groups = rareAccessoriesToGroups(block);
+    const twoStepRules = generateRulesFromGroups(groups);
+
+    // Should be identical
+    expect(twoStepRules).toEqual(directRules);
+    assertRuleInvariants(twoStepRules);
+  });
+
+  it("rare accessory groups produce valid rules that pass zod", () => {
+    const block: RareAccessoryBlock = { selections: { 47: [1], 48: [2, 3] } };
+    const groups = rareAccessoriesToGroups(block);
+    const rules = generateRulesFromGroups(groups);
+
+    expect(rules.length).toBeGreaterThan(0);
+    expect(() => generateFilter(rules)).not.toThrow();
+    assertRuleInvariants(rules);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // stripBlockColors / restoreBlockColors
 // ---------------------------------------------------------------------------
 
@@ -484,11 +572,12 @@ describe("full quick-gen flow", () => {
     state.blocks[0].selectedProfiles = [0];
     state.oreReroll!.assignments[1] = 0;
 
-    const groups = quickStateToGroups(state);
-    const rareRules = generateRareAccessoryRules(state.rareAccessories);
-    const oreRules = generateOreRerollRules(state.oreReroll);
-    const groupRules = generateRulesFromGroups(groups);
-    const rules = [...rareRules, ...oreRules, ...groupRules];
+    const groups = [
+      ...rareAccessoriesToGroups(state.rareAccessories),
+      ...quickStateToGroups(state),
+      ...oreRerollToGroups(state.oreReroll),
+    ];
+    const rules = generateRulesFromGroups(groups);
 
     expect(rules.length).toBeGreaterThan(0);
     expect(() => generateFilter(rules)).not.toThrow();
@@ -499,11 +588,12 @@ describe("full quick-gen flow", () => {
     const state = defaultQuickState();
     state.oreReroll!.assignments[1] = 2;
 
-    const groups = quickStateToGroups(state);
-    const rareRules = generateRareAccessoryRules(state.rareAccessories);
-    const oreRules = generateOreRerollRules(state.oreReroll);
-    const groupRules = generateRulesFromGroups(groups);
-    const rules = [...rareRules, ...oreRules, ...groupRules];
+    const groups = [
+      ...rareAccessoriesToGroups(state.rareAccessories),
+      ...quickStateToGroups(state),
+      ...oreRerollToGroups(state.oreReroll),
+    ];
+    const rules = generateRulesFromGroups(groups);
 
     expect(rules.length).toBeGreaterThan(0);
     expect(() => generateFilter(rules)).not.toThrow();
@@ -519,18 +609,18 @@ describe("full quick-gen flow", () => {
     // Rare accessories
     state.rareAccessories!.selections[47] = [1, 2];
 
-    const groups = quickStateToGroups(state);
-    const groupRules = generateRulesFromGroups(groups);
-    const oreRules = generateOreRerollRules(state.oreReroll);
-    const rareRules = generateRareAccessoryRules(state.rareAccessories);
+    const rareGroups = rareAccessoriesToGroups(state.rareAccessories);
+    const profileGroups = quickStateToGroups(state);
+    const oreGroups = oreRerollToGroups(state.oreReroll);
 
-    expect(groupRules.length).toBeGreaterThan(0);
-    expect(oreRules.length).toBeGreaterThan(0);
-    expect(rareRules.length).toBeGreaterThan(0);
+    expect(rareGroups.length).toBeGreaterThan(0);
+    expect(profileGroups.length).toBeGreaterThan(0);
+    expect(oreGroups.length).toBeGreaterThan(0);
 
-    const combined = [...rareRules, ...oreRules, ...groupRules];
-    expect(() => generateFilter(combined)).not.toThrow();
-    assertRuleInvariants(combined);
+    const rules = generateRulesFromGroups([...rareGroups, ...profileGroups, ...oreGroups]);
+    expect(rules.length).toBeGreaterThan(0);
+    expect(() => generateFilter(rules)).not.toThrow();
+    assertRuleInvariants(rules);
   });
 
   it("strip/restore round-trip produces same rules", () => {
@@ -540,12 +630,12 @@ describe("full quick-gen flow", () => {
     state.rareAccessories!.selections[47] = [1];
 
     // Generate rules from original state
-    const groups1 = quickStateToGroups(state);
-    const rules1 = [
-      ...generateRareAccessoryRules(state.rareAccessories),
-      ...generateOreRerollRules(state.oreReroll),
-      ...generateRulesFromGroups(groups1),
+    const groups1 = [
+      ...rareAccessoriesToGroups(state.rareAccessories),
+      ...quickStateToGroups(state),
+      ...oreRerollToGroups(state.oreReroll),
     ];
+    const rules1 = generateRulesFromGroups(groups1);
 
     // Strip → JSON → parse → restore
     const stripped = stripBlockColors(state);
@@ -554,12 +644,12 @@ describe("full quick-gen flow", () => {
     const restored = restoreBlockColors(parsed);
 
     // Generate rules from restored state
-    const groups2 = quickStateToGroups(restored);
-    const rules2 = [
-      ...generateRareAccessoryRules(restored.rareAccessories),
-      ...generateOreRerollRules(restored.oreReroll),
-      ...generateRulesFromGroups(groups2),
+    const groups2 = [
+      ...rareAccessoriesToGroups(restored.rareAccessories),
+      ...quickStateToGroups(restored),
+      ...oreRerollToGroups(restored.oreReroll),
     ];
+    const rules2 = generateRulesFromGroups(groups2);
 
     expect(rules2.length).toBe(rules1.length);
     assertRuleInvariants(rules2);
