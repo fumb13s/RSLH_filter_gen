@@ -9,6 +9,7 @@ import {
 import {
   defaultQuickState,
   quickStateToGroups,
+  oreRerollToGroups,
   stripBlockColors,
   restoreBlockColors,
 } from "../quick-generator.js";
@@ -308,7 +309,6 @@ describe("generateRulesFromGroups", () => {
 
   it("threshold values — HP% rank 6 and SPD rank 6", () => {
     const hpRange = getRollRange(1, 6)!;  // HP%
-    const spdRange = getRollRange(4, 6)!; // SPD (isFlat=false maps to % range)
 
     const groups: SettingGroup[] = [
       { sets: [1], slots: [], mainStats: [], goodStats: [[1, false]], rolls: 2, rank: 6 },
@@ -563,5 +563,36 @@ describe("full quick-gen flow", () => {
 
     expect(rules2.length).toBe(rules1.length);
     assertRuleInvariants(rules2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// oreRerollToGroups → generateRulesFromGroups equivalence
+// ---------------------------------------------------------------------------
+
+describe("ore reroll two-step pipeline", () => {
+  it("oreRerollToGroups + generateRulesFromGroups equals generateOreRerollRules", () => {
+    const block: OreRerollBlock = { assignments: { 1: 0, 42: 1, 10: 2 } };
+
+    // Direct (wrapper) path
+    const directRules = generateOreRerollRules(block);
+
+    // Two-step path
+    const groups = oreRerollToGroups(block);
+    const twoStepRules = generateRulesFromGroups(groups);
+
+    // Should be identical
+    expect(twoStepRules).toEqual(directRules);
+    assertRuleInvariants(twoStepRules);
+  });
+
+  it("ore groups produce valid rules that pass zod", () => {
+    const block: OreRerollBlock = { assignments: { 1: 0, 2: 1, 3: 2 } };
+    const groups = oreRerollToGroups(block);
+    const rules = generateRulesFromGroups(groups);
+
+    expect(rules.length).toBeGreaterThan(0);
+    expect(() => generateFilter(rules)).not.toThrow();
+    assertRuleInvariants(rules);
   });
 });

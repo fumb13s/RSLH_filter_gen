@@ -2,7 +2,7 @@
  * Quick Generator — two-axis approach: set tiers x build profiles.
  */
 import { ARTIFACT_SET_NAMES, ACCESSORY_SET_IDS, FACTION_NAMES } from "@rslh/core";
-import { SUBSTAT_PRESETS } from "./generator.js";
+import { SUBSTAT_PRESETS, ORE_STATS } from "./generator.js";
 import type { SettingGroup } from "./generator.js";
 import { getSettings } from "./settings.js";
 
@@ -166,6 +166,66 @@ export function quickStateToGroups(state: QuickGenState): SettingGroup[] {
             goodStats,
             rolls: rank5Rolls,
             rank: 5,
+          });
+        }
+      }
+    }
+  }
+
+  return groups;
+}
+
+// ---------------------------------------------------------------------------
+// Ore reroll: OreRerollBlock → SettingGroup[]
+// ---------------------------------------------------------------------------
+
+export function oreRerollToGroups(block: OreRerollBlock | undefined): SettingGroup[] {
+  if (!block) return [];
+  const groups: SettingGroup[] = [];
+
+  // Group sets by column
+  const columnSets: number[][] = [[], [], []];
+  for (const [setIdStr, colIdx] of Object.entries(block.assignments)) {
+    if (colIdx >= 0 && colIdx < 3) {
+      columnSets[colIdx].push(Number(setIdStr));
+    }
+  }
+
+  for (let ci = 0; ci < 3; ci++) {
+    const sets = columnSets[ci];
+    if (sets.length === 0) continue;
+
+    const extraRolls = ci + 3; // column 0=3, 1=4, 2=5
+
+    for (const rank of [6, 5] as const) {
+      const totalTarget = rank === 6 ? extraRolls + 1 : extraRolls + 2;
+      if (totalTarget > 6) continue;
+
+      for (const [statId, isFlat] of ORE_STATS) {
+        // Leg/Myth group
+        groups.push({
+          sets: [...sets],
+          slots: [],
+          mainStats: [],
+          goodStats: [[statId, isFlat]],
+          rolls: totalTarget,
+          rank,
+          rarity: 15,
+          isAnd: false,
+        });
+
+        // Epic group — only when Epic can achieve it
+        if (totalTarget <= 4) {
+          groups.push({
+            sets: [...sets],
+            slots: [],
+            mainStats: [],
+            goodStats: [[statId, isFlat]],
+            rolls: totalTarget,
+            rank,
+            rarity: 9,
+            walkbackDelay: 1,
+            isAnd: false,
           });
         }
       }

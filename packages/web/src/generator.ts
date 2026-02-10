@@ -20,6 +20,9 @@ export interface SettingGroup {
   goodStats: [number, boolean][];      // [statId, isFlat]
   rolls: number;                       // 4–9
   rank?: number;                       // 1–6, defaults to 6
+  rarity?: number;                     // min rarity threshold (default → 16 from defaultRule)
+  walkbackDelay?: number;              // level steps before walkback starts (default 0)
+  isAnd?: boolean;                     // AND vs OR rule semantics (default true)
 }
 
 export interface GeneratorCallbacks {
@@ -46,10 +49,17 @@ const ALL_SUBSTATS: readonly [number, boolean][] = [
   [8, true],   // ACC
 ];
 
-/** Substats eligible as "good stats" — excludes flat HP/ATK/DEF (no roll range data). */
-const GOOD_SUBSTATS = ALL_SUBSTATS.filter(
-  ([id, flat]) => !(flat && id <= 3),
-);
+/** Substats eligible as "good stats" in the generator UI. */
+const GOOD_SUBSTATS = ALL_SUBSTATS;
+
+/** All substats that can receive concentrated rolls — matches ALL_SUBSTATS isFlat convention. */
+export const ORE_STATS: [number, boolean][] = [
+  [1, false], [2, false], [3, false],  // HP%, ATK%, DEF%
+  [4, true],                            // SPD (flat only)
+  [5, false], [6, false],              // C.RATE, C.DMG
+  [7, true], [8, true],                // RES, ACC (flat only)
+  [1, true], [2, true], [3, true],     // flat HP, ATK, DEF
+];
 
 /** Good substat presets. */
 export const SUBSTAT_PRESETS: { label: string; stats: [number, boolean][] }[] = [
