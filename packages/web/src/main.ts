@@ -9,6 +9,7 @@ import { renderQuickGenerator, clearQuickGenerator, defaultQuickState, quickStat
 import type { QuickGenState, QuickBlock } from "./quick-generator.js";
 import { getSettings } from "./settings.js";
 import type { TabType } from "./settings.js";
+import { encodeState, decodeState } from "./share.js";
 import { initSettingsModal } from "./settings-modal.js";
 import { marked } from "marked";
 import readme from "../../../README.md?raw";
@@ -744,6 +745,42 @@ fqblInput.addEventListener("change", () => {
 
 wireDropZone("quick-load-drop", ".fqbl", loadFqblFile);
 
+// Share button — encode quick state into URL and copy to clipboard
+const shareBtn = document.getElementById("quick-share-btn")!;
+const MAX_SHARE_URL_LENGTH = 4096;
+
+shareBtn.addEventListener("click", async () => {
+  const tab = getActiveTab();
+  if (!tab || tab.type !== "quick" || !tab.quickState) return;
+
+  if (tab.quickState.blocks.length > 10) {
+    tabBarError.textContent = "Too many blocks to share — max 10.";
+    tabBarError.hidden = false;
+    return;
+  }
+
+  tabBarError.hidden = true;
+
+  try {
+    const encoded = await encodeState(tab.quickState);
+    const url = location.origin + location.pathname + "#q=" + encoded;
+
+    if (url.length > MAX_SHARE_URL_LENGTH) {
+      tabBarError.textContent = "State too large to share — try fewer blocks or assignments.";
+      tabBarError.hidden = false;
+      return;
+    }
+
+    await navigator.clipboard.writeText(url);
+    const original = shareBtn.textContent;
+    shareBtn.textContent = "Copied!";
+    setTimeout(() => { shareBtn.textContent = original; }, 1500);
+  } catch (err) {
+    tabBarError.textContent = `Failed to share: ${err instanceof Error ? err.message : err}`;
+    tabBarError.hidden = false;
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Generator "Add group" button
 // ---------------------------------------------------------------------------
@@ -917,4 +954,27 @@ backToTop.addEventListener("click", () => {
 
 document.documentElement.style.setProperty("--max-tab-label-width", settings.maxTabLabelWidthPercent + "%");
 
-addTab(settings.defaultTabType);
+// Load shared state from URL hash, or fall back to default tab
+async function loadSharedState(): Promise<QuickGenState | null> {
+  const hash = location.hash;
+  if (!hash.startsWith("#q=")) return null;
+  try {
+    return await decodeState(hash.slice(3));
+  } catch (e) {
+    console.warn("Failed to load shared state:", e);
+    return null;
+  }
+}
+
+(async () => {
+  const shared = await loadSharedState();
+  if (shared) {
+    addTab("quick");
+    const tab = getActiveTab()!;
+    tab.quickState = shared;
+    showQuickContent(tab);
+    history.replaceState(null, "", location.pathname);
+  } else {
+    addTab(settings.defaultTabType);
+  }
+})();
