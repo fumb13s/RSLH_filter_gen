@@ -43,6 +43,15 @@ const SUBSTAT_OPTIONS: { value: string; label: string }[] = [
 
 const CONDITION_OPTIONS = [">=", ">", "=", "<=", "<"];
 
+/** Index of the rule currently being dragged, or -1 if none. */
+let dragSourceIndex = -1;
+
+function clearDropIndicators(container: Element): void {
+  for (const el of container.querySelectorAll(".edit-drop-above, .edit-drop-below")) {
+    el.classList.remove("edit-drop-above", "edit-drop-below");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -57,6 +66,13 @@ export function renderEditableRules(
   const total = filter.Rules.length;
   filter.Rules.forEach((rule, i) => {
     container.appendChild(buildEditableRuleCard(rule, i, total, callbacks));
+  });
+
+  // Container-level drop indicator cleanup
+  container.addEventListener("dragleave", (e) => {
+    if (!container.contains(e.relatedTarget as Node)) {
+      clearDropIndicators(container);
+    }
   });
 }
 
@@ -76,12 +92,73 @@ function buildEditableRuleCard(
 ): HTMLElement {
   const card = document.createElement("div");
   card.className = "edit-card";
+  card.dataset.ruleIndex = String(index);
+  card.draggable = true;
   if (!rule.Use) card.classList.add("inactive");
   card.classList.add(rule.Keep ? "keep" : "sell");
+
+  // --- Drag-and-drop ---
+  card.addEventListener("dragstart", (e) => {
+    dragSourceIndex = index;
+    e.dataTransfer!.effectAllowed = "move";
+    e.dataTransfer!.setData("text/plain", String(index));
+    card.classList.add("edit-card-dragging");
+  });
+
+  card.addEventListener("dragend", () => {
+    card.classList.remove("edit-card-dragging");
+    dragSourceIndex = -1;
+    const container = card.parentElement;
+    if (container) clearDropIndicators(container);
+  });
+
+  card.addEventListener("dragover", (e) => {
+    if (dragSourceIndex === -1) return;
+    e.preventDefault();
+    e.dataTransfer!.dropEffect = "move";
+
+    const container = card.parentElement!;
+    clearDropIndicators(container);
+
+    const targetIndex = Number(card.dataset.ruleIndex);
+    if (targetIndex === dragSourceIndex) return;
+
+    const rect = card.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    if (e.clientY < midY) {
+      card.classList.add("edit-drop-above");
+    } else {
+      card.classList.add("edit-drop-below");
+    }
+  });
+
+  card.addEventListener("drop", (e) => {
+    e.preventDefault();
+    const from = dragSourceIndex;
+    if (from === -1) return;
+
+    const targetIndex = Number(card.dataset.ruleIndex);
+    if (from === targetIndex) return;
+
+    const rect = card.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    let to = e.clientY < midY ? targetIndex : targetIndex + 1;
+    // Adjust: if dragging downward past the original position, the splice
+    // removes the source first, shifting indices down by 1
+    if (from < to) to--;
+    if (from !== to) cb.onRuleMove(from, to);
+  });
 
   // --- Header ---
   const header = document.createElement("div");
   header.className = "edit-header";
+
+  // Drag handle
+  const dragHandle = document.createElement("span");
+  dragHandle.className = "edit-drag-handle";
+  dragHandle.textContent = "\u2630";
+  dragHandle.title = "Drag to reorder";
+  header.appendChild(dragHandle);
 
   const indexSpan = document.createElement("span");
   indexSpan.className = "rule-index";

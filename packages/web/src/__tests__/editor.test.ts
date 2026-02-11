@@ -283,4 +283,28 @@ describe("editor", () => {
       expect(rankSelect!.value).toBe("5");
     });
   });
+
+  describe("drag and drop", () => {
+    it("cards are draggable and have drag handles", () => {
+      const filter = makeFilter([defaultRule(), defaultRule()]);
+      renderEditableRules(filter, noopCallbacks());
+
+      const cards = document.querySelectorAll(".edit-card") as NodeListOf<HTMLElement>;
+      expect(cards[0].draggable).toBe(true);
+      expect(cards[1].draggable).toBe(true);
+
+      const handles = document.querySelectorAll(".edit-drag-handle");
+      expect(handles.length).toBe(2);
+    });
+
+    it("cards store their rule index in dataset", () => {
+      const filter = makeFilter([defaultRule(), defaultRule(), defaultRule()]);
+      renderEditableRules(filter, noopCallbacks());
+
+      const cards = document.querySelectorAll(".edit-card") as NodeListOf<HTMLElement>;
+      expect(cards[0].dataset.ruleIndex).toBe("0");
+      expect(cards[1].dataset.ruleIndex).toBe("1");
+      expect(cards[2].dataset.ruleIndex).toBe("2");
+    });
+  });
 });

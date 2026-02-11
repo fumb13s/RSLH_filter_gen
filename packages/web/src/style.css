@@ -1777,3 +1777,32 @@ details summary {
   opacity: 0.4;
   cursor: default;
 }
+
+/* Drag handle */
+
+.edit-drag-handle {
+  cursor: grab;
+  font-size: 1rem;
+  color: #9ca3af;
+  user-select: none;
+  padding: 0 0.15rem;
+  line-height: 1;
+}
+
+.edit-drag-handle:hover {
+  color: #6b7280;
+}
+
+/* Dragging state */
+
+.edit-card-dragging {
+  opacity: 0.4;
+}
+
+.edit-drop-above {
+  box-shadow: 0 -3px 0 0 #2563eb;
+}
+
+.edit-drop-below {
+  box-shadow: 0 3px 0 0 #2563eb;
+}
