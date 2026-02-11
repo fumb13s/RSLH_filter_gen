@@ -90,6 +90,14 @@ The Manual Generator gives full control over every rule field.
 
 Drag-and-drop any of these files onto the page — the tool automatically detects the format and opens the correct tab type.
 
+## Sharing
+
+Click the **Share** button in the Quick Generator toolbar to copy a shareable URL to your clipboard. Anyone who opens the link gets the exact same Quick Generator state — tier assignments, profiles, ore reroll, and rare accessories all included.
+
+- The state is compressed and encoded in the URL's hash fragment (`#q=...`), so nothing is sent to a server.
+- Opening a shared link automatically loads the Quick Generator with the shared configuration.
+- The hash is cleared after loading so refreshing the page gives a clean slate.
+
 ## Tips
 
 - **Start with Quick Gen** — it covers most use cases. Switch to Manual only if you need fine-grained control over individual rules.
@@ -97,3 +105,4 @@ Drag-and-drop any of these files onto the page — the tool automatically detect
 - **Verify in the Viewer** — after generating, check the Viewer tab to confirm the rules look right. Use the Test Item panel to spot-check edge cases.
 - **Sell toggle** — only enable this if you want RSL Helper to actively mark non-matching artifacts for sale. Without it, unmatched pieces are simply ignored.
 - **Save your work** — use Save .fqbl / Save .fmbl to keep your settings. You can reload them later without rebuilding from scratch.
+- **Share your config** — use the Share button to get a link you can send to friends or post in your clan's Discord.
