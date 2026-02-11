@@ -9,6 +9,8 @@ import { renderQuickGenerator, clearQuickGenerator, defaultQuickState, quickStat
 import type { QuickGenState, QuickBlock } from "./quick-generator.js";
 import { getSettings } from "./settings.js";
 import type { TabType } from "./settings.js";
+import { marked } from "marked";
+import readme from "../../../README.md?raw";
 import "./style.css";
 
 // ---------------------------------------------------------------------------
@@ -839,6 +841,39 @@ document.addEventListener("keydown", (e) => {
     if (guideOverlay.classList.contains("open")) closeGuide();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Render guide content from README.md
+// ---------------------------------------------------------------------------
+
+{
+  let html = marked.parse(readme) as string;
+
+  // Strip the first <h1> (repo title — the modal already has its own <h2>)
+  html = html.replace(/<h1[^>]*>[\s\S]*?<\/h1>/, "");
+
+  // Demote headings: h3 → h4, then h2 → h3 (order matters to avoid double-demoting)
+  html = html.replace(/<(\/?)h3(\s|>)/g, "<$1h4$2");
+  html = html.replace(/<(\/?)h2(\s|>)/g, "<$1h3$2");
+
+  // Add slugified id attributes to h3 and h4 headings
+  html = html.replace(/<(h[34])>([\s\S]*?)<\/\1>/g, (_match, tag: string, text: string) => {
+    const plain = text.replace(/<[^>]+>/g, "");
+    const slug = "guide-" + plain.toLowerCase().replace(/[^\w]+/g, "-").replace(/(^-|-$)/g, "");
+    return `<${tag} id="${slug}">${text}</${tag}>`;
+  });
+
+  // Build TOC from h3 headings only (top-level sections)
+  const tocLinks: string[] = [];
+  html.replace(/<h3 id="([^"]+)">([\s\S]*?)<\/h3>/g, (_match, id: string, text: string) => {
+    const plain = text.replace(/<[^>]+>/g, "");
+    tocLinks.push(`<a href="#${id}">${plain}</a>`);
+    return "";
+  });
+
+  document.getElementById("guide-toc")!.innerHTML = tocLinks.join("");
+  document.getElementById("guide-content")!.innerHTML = html;
+}
 
 // Fetch Aptoide promo code from the guide
 const promoCodeEl = document.getElementById("about-promo-code")!;
