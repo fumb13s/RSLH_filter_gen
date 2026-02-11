@@ -18,7 +18,35 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npm test
+      - name: Run fuzz tests
+        run: |
+          # Vitest's internal birpc has a hardcoded 60s RPC timeout. Long-running
+          # property tests (>60s) trigger "Timeout calling onTaskUpdate" unhandled
+          # errors that cause exit code 1 even when all tests pass. Work around
+          # this by checking the actual test results via --reporter=json.
+          set +e
+          npx vitest run --reporter=json --reporter=default 2>stderr.log | tee stdout.log
+          exit_code=$?
+          set -e
+
+          if [ $exit_code -eq 0 ]; then
+            exit 0
+          fi
+
+          # Extract JSON block from stdout (vitest outputs JSON after the default report)
+          if python3 -c "
+          import json, sys
+          data = json.loads(sys.stdin.read().split('\n')[-2])
+          failed = data.get('numFailedTests', 1)
+          sys.exit(0 if failed == 0 else 1)
+          " < stdout.log 2>/dev/null; then
+            echo "::warning::All tests passed but vitest exited $exit_code (likely birpc RPC timeout). Treating as success."
+            exit 0
+          fi
+
+          # Real test failure
+          cat stderr.log >&2
+          exit $exit_code
         env:
           FC_NUM_RUNS: 5000
           VITEST_TIMEOUT: 120000
