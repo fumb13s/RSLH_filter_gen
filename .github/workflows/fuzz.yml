@@ -50,7 +50,7 @@ jobs:
           cat stderr.log >&2
           exit $exit_code
         env:
-          FC_NUM_RUNS: 5000
+          FC_NUM_RUNS: 25000
           VITEST_TIMEOUT: 120000
       - if: failure()
         uses: actions/upload-artifact@v4
