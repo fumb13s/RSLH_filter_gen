@@ -1140,6 +1140,7 @@ pre {
   cursor: pointer;
   width: 100%;
   padding: 0.6rem;
+  margin-bottom: 1rem;
   border: 2px dashed #d1d5db;
   border-radius: 8px;
   background: none;

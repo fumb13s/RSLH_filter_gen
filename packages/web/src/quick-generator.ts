@@ -330,12 +330,6 @@ export function renderQuickGenerator(
     container.appendChild(card);
   }
 
-  // Rare Accessories block
-  renderRareAccessories(container, state, onChange);
-
-  // Ore Reroll Candidates block
-  renderOreReroll(container, state, onChange);
-
   // Add Block button
   const addBtn = document.createElement("button");
   addBtn.type = "button";
@@ -346,6 +340,12 @@ export function renderQuickGenerator(
     onChange(state);
   });
   container.appendChild(addBtn);
+
+  // Rare Accessories block
+  renderRareAccessories(container, state, onChange);
+
+  // Ore Reroll Candidates block
+  renderOreReroll(container, state, onChange);
 }
 
 export function clearQuickGenerator(): void {
