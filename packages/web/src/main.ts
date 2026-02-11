@@ -787,8 +787,12 @@ function formatZodError(err: Error & { issues: ZodIssue[] }): string {
 const aboutOverlay = document.getElementById("about-overlay")!;
 const aboutBtn = document.getElementById("about-btn")!;
 const aboutClose = document.getElementById("about-close")!;
+const guideOverlay = document.getElementById("guide-overlay")!;
+const guideBtn = document.getElementById("guide-btn")!;
+const guideClose = document.getElementById("guide-close")!;
 
 function openAbout(): void {
+  closeGuide();
   aboutOverlay.classList.add("open");
 }
 
@@ -796,13 +800,44 @@ function closeAbout(): void {
   aboutOverlay.classList.remove("open");
 }
 
+function openGuide(): void {
+  closeAbout();
+  guideOverlay.classList.add("open");
+}
+
+function closeGuide(): void {
+  guideOverlay.classList.remove("open");
+}
+
 aboutBtn.addEventListener("click", openAbout);
 aboutClose.addEventListener("click", closeAbout);
 aboutOverlay.addEventListener("click", (e) => {
   if (e.target === aboutOverlay) closeAbout();
 });
+
+guideBtn.addEventListener("click", openGuide);
+guideClose.addEventListener("click", closeGuide);
+guideOverlay.addEventListener("click", (e) => {
+  if (e.target === guideOverlay) closeGuide();
+});
+
+// TOC smooth-scroll within the guide modal
+guideOverlay.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement;
+  if (target.tagName === "A" && target.closest(".guide-toc")) {
+    e.preventDefault();
+    const href = target.getAttribute("href");
+    if (!href) return;
+    const el = guideOverlay.querySelector(href);
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+});
+
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && aboutOverlay.classList.contains("open")) closeAbout();
+  if (e.key === "Escape") {
+    if (aboutOverlay.classList.contains("open")) closeAbout();
+    if (guideOverlay.classList.contains("open")) closeGuide();
+  }
 });
 
 // Fetch Aptoide promo code from the guide
