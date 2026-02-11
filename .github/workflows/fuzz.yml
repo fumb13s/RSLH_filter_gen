@@ -8,6 +8,8 @@ on:
 jobs:
   fuzz:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,6 +41,7 @@ jobs:
             let body = `Scheduled fuzz run failed.\n\n`;
             body += `**Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n\n`;
             for (const dir of dirs) {
+              if (!fs.existsSync(dir)) continue;
               for (const file of fs.readdirSync(dir)) {
                 const content = JSON.parse(fs.readFileSync(`${dir}/${file}`, 'utf-8'));
                 if (Object.keys(content).length > 0) {
