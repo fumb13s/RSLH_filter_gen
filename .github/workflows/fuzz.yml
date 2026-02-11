@@ -2,14 +2,16 @@ name: Fuzz (property-based)
 
 on:
   schedule:
-    - cron: "20 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 jobs:
   fuzz:
     runs-on: ubuntu-latest
-    permissions:
-      issues: write
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,7 +20,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - name: Run fuzz tests
+      - name: Run fuzz tests (shard ${{ matrix.shard }})
         run: |
           # Vitest's internal birpc has a hardcoded 60s RPC timeout. Long-running
           # property tests (>60s) trigger "Timeout calling onTaskUpdate" unhandled
@@ -53,12 +55,23 @@ jobs:
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: regressions
+          name: regressions-shard-${{ matrix.shard }}
           path: |
             packages/core/src/__tests__/regressions/
             packages/web/src/__tests__/regressions/
-      - if: failure()
-        uses: actions/github-script@v7
+
+  report:
+    runs-on: ubuntu-latest
+    needs: fuzz
+    if: failure()
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: regressions-shard-*
+          merge-multiple: true
+      - uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
