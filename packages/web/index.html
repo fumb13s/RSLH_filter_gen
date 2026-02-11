@@ -70,6 +70,14 @@
             <input type="file" id="file-input" accept=".hsf" hidden />
           </div>
 
+          <!-- Viewer toolbar (shown when a filter is loaded) -->
+          <div id="viewer-toolbar" class="viewer-toolbar" hidden>
+            <button id="viewer-edit-btn" type="button" class="gen-toolbar-btn">Edit</button>
+            <button id="viewer-save-hsf-btn" type="button" class="gen-toolbar-btn" hidden>Save .hsf</button>
+            <button id="viewer-add-rule-btn" type="button" class="gen-toolbar-btn" hidden>+ Add Rule</button>
+            <button id="viewer-cancel-btn" type="button" class="gen-toolbar-btn" hidden>Cancel</button>
+          </div>
+
           <!-- Error banner -->
           <div id="error-banner" class="error-banner" hidden></div>
 

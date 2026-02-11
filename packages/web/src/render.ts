@@ -188,7 +188,7 @@ function minRollsNeeded(s: HsfSubstat, rank: number): number | undefined {
   return Math.ceil(s.Value / range[0]);
 }
 
-function esc(text: string): string {
+export function esc(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

@@ -1596,3 +1596,184 @@ details summary {
   border-color: #fca5a5;
   color: #b91c1c;
 }
+
+/* ---------------------------------------------------------------------------
+   Viewer toolbar & Editor
+--------------------------------------------------------------------------- */
+
+.viewer-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.edit-card {
+  background: #fffbeb;
+  border: 1px solid #fbbf24;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  border-left: 4px solid #f59e0b;
+}
+
+.edit-card.keep {
+  border-left-color: #22c55e;
+}
+
+.edit-card.sell {
+  border-left-color: #ef4444;
+}
+
+.edit-card.inactive {
+  opacity: 0.6;
+}
+
+.edit-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.edit-badge-toggle {
+  cursor: pointer;
+  border: none;
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.edit-badge-toggle:hover {
+  filter: brightness(0.9);
+}
+
+.edit-move-btn {
+  cursor: pointer;
+  background: none;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  font-size: 0.85rem;
+  color: #6b7280;
+  padding: 0.1rem 0.35rem;
+  line-height: 1;
+}
+
+.edit-move-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+  color: #374151;
+  border-color: #9ca3af;
+}
+
+.edit-move-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.edit-delete-btn {
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  color: #999;
+  padding: 0 0.3rem;
+  border-radius: 3px;
+  line-height: 1;
+  margin-left: auto;
+}
+
+.edit-delete-btn:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.edit-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.edit-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.edit-field label {
+  font-weight: 600;
+  color: #666;
+  min-width: 75px;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+}
+
+.edit-field select,
+.edit-field input[type="number"] {
+  flex: 1;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  background: #fff;
+  min-width: 0;
+}
+
+.edit-substats {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.edit-substats-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 0.35rem;
+}
+
+.edit-substat-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.edit-substat-row select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  background: #fff;
+  min-width: 0;
+}
+
+.edit-substat-row .edit-sub-stat {
+  flex: 1;
+  min-width: 80px;
+}
+
+.edit-substat-row .edit-sub-cond {
+  width: 55px;
+  flex-shrink: 0;
+}
+
+.edit-substat-row input[type="number"] {
+  width: 70px;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.edit-substat-row select:disabled,
+.edit-substat-row input:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

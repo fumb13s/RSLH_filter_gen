@@ -1,5 +1,5 @@
 import type { HsfFilter } from "@rslh/core";
-import { parseFilter, generateFilter, serializeFilter } from "@rslh/core";
+import { parseFilter, generateFilter, serializeFilter, defaultRule } from "@rslh/core";
 import { initUpload } from "./upload.js";
 import { renderSummary, renderRules, renderTestPanel, renderError, clearError, clearViewer } from "./render.js";
 import { renderGenerator, clearGenerator, defaultGroup } from "./generator.js";
@@ -10,6 +10,7 @@ import type { QuickGenState, QuickBlock } from "./quick-generator.js";
 import { getSettings } from "./settings.js";
 import type { TabType } from "./settings.js";
 import { encodeState, decodeState } from "./share.js";
+import { renderEditableRules } from "./editor.js";
 import { initSettingsModal } from "./settings-modal.js";
 import { marked } from "marked";
 import readme from "../../../README.md?raw";
@@ -41,6 +42,8 @@ interface TabEntry {
   // Viewer state
   filter: HsfFilter | null;
   fileName: string | null;
+  editing: boolean;
+  editSnapshot: HsfFilter | null;
   // Generator state
   groups: SettingGroup[];
   // Quick Generator state
@@ -263,6 +266,8 @@ function addTab(type: TabType): void {
     type,
     filter: null,
     fileName: null,
+    editing: false,
+    editSnapshot: null,
     groups: type === "generator" ? [defaultGroup()] : [],
     quickState: type === "quick" ? defaultQuickState() : null,
   };
@@ -316,14 +321,57 @@ function showViewerContent(tab: TabEntry): void {
   clearGenerator();
   clearQuickGenerator();
 
+  const toolbar = document.getElementById("viewer-toolbar")!;
+  const editBtn = document.getElementById("viewer-edit-btn")!;
+  const saveHsfBtn = document.getElementById("viewer-save-hsf-btn")!;
+  const addRuleBtn = document.getElementById("viewer-add-rule-btn")!;
+  const cancelBtn = document.getElementById("viewer-cancel-btn")!;
+
   if (tab.filter) {
     dropZone.hidden = true;
+    toolbar.hidden = false;
     clearError();
     renderSummary(tab.filter, tab.fileName!);
-    renderTestPanel(tab.filter);
-    renderRules(tab.filter);
+
+    if (tab.editing) {
+      editBtn.textContent = "Done";
+      saveHsfBtn.hidden = false;
+      addRuleBtn.hidden = false;
+      cancelBtn.hidden = false;
+      // Hide test panel and raw JSON in edit mode
+      document.getElementById("test-panel")!.hidden = true;
+      document.getElementById("raw-json")!.hidden = true;
+      renderEditableRules(tab.filter, {
+        onRuleChange(index, rule) {
+          tab.filter!.Rules[index] = rule;
+          renderSummary(tab.filter!, tab.fileName!);
+        },
+        onRuleDelete(index) {
+          tab.filter!.Rules.splice(index, 1);
+          showViewerContent(tab);
+        },
+        onRuleMove(from, to) {
+          const rules = tab.filter!.Rules;
+          const [moved] = rules.splice(from, 1);
+          rules.splice(to, 0, moved);
+          showViewerContent(tab);
+        },
+        onRuleAdd() {
+          tab.filter!.Rules.push(defaultRule());
+          showViewerContent(tab);
+        },
+      });
+    } else {
+      editBtn.textContent = "Edit";
+      saveHsfBtn.hidden = true;
+      addRuleBtn.hidden = true;
+      cancelBtn.hidden = true;
+      renderTestPanel(tab.filter);
+      renderRules(tab.filter);
+    }
   } else {
     clearViewer();
+    toolbar.hidden = true;
     dropZone.hidden = false;
   }
 }
@@ -477,6 +525,8 @@ document.getElementById("gen-generate-btn")!.addEventListener("click", () => {
     type: "viewer",
     filter,
     fileName: "Generated",
+    editing: false,
+    editSnapshot: null,
     groups: [],
     quickState: null,
   };
@@ -627,6 +677,8 @@ document.getElementById("quick-generate-btn")!.addEventListener("click", () => {
     type: "generator",
     filter: null,
     fileName: null,
+    editing: false,
+    editSnapshot: null,
     groups,
     quickState: null,
   });
@@ -638,6 +690,8 @@ document.getElementById("quick-generate-btn")!.addEventListener("click", () => {
     type: "viewer",
     filter,
     fileName: "Generated",
+    editing: false,
+    editSnapshot: null,
     groups: [],
     quickState: null,
   });
@@ -791,6 +845,59 @@ document.getElementById("gen-add-group")!.addEventListener("click", () => {
 
   tab.groups.push(defaultGroup());
   showGeneratorContent(tab);
+});
+
+// ---------------------------------------------------------------------------
+// Viewer edit mode
+// ---------------------------------------------------------------------------
+
+document.getElementById("viewer-edit-btn")!.addEventListener("click", () => {
+  const tab = getActiveTab();
+  if (!tab || tab.type !== "viewer" || !tab.filter) return;
+
+  if (tab.editing) {
+    // "Done" — exit edit mode, keep changes
+    tab.editing = false;
+    tab.editSnapshot = null;
+  } else {
+    // Enter edit mode
+    tab.editing = true;
+    tab.editSnapshot = structuredClone(tab.filter);
+  }
+  showViewerContent(tab);
+});
+
+document.getElementById("viewer-cancel-btn")!.addEventListener("click", () => {
+  const tab = getActiveTab();
+  if (!tab || tab.type !== "viewer" || !tab.editing) return;
+
+  tab.filter = tab.editSnapshot;
+  tab.editing = false;
+  tab.editSnapshot = null;
+  showViewerContent(tab);
+});
+
+document.getElementById("viewer-save-hsf-btn")!.addEventListener("click", () => {
+  const tab = getActiveTab();
+  if (!tab || tab.type !== "viewer" || !tab.filter) return;
+
+  const json = serializeFilter(tab.filter);
+  const bom = "\uFEFF";
+  const blob = new Blob([bom + json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = tab.fileName?.endsWith(".hsf") ? tab.fileName : "filter.hsf";
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById("viewer-add-rule-btn")!.addEventListener("click", () => {
+  const tab = getActiveTab();
+  if (!tab || tab.type !== "viewer" || !tab.filter || !tab.editing) return;
+
+  tab.filter.Rules.push(defaultRule());
+  showViewerContent(tab);
 });
 
 // ---------------------------------------------------------------------------
