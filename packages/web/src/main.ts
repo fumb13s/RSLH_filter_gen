@@ -9,6 +9,7 @@ import { renderQuickGenerator, clearQuickGenerator, defaultQuickState, quickStat
 import type { QuickGenState, QuickBlock } from "./quick-generator.js";
 import { getSettings } from "./settings.js";
 import type { TabType } from "./settings.js";
+import { initSettingsModal } from "./settings-modal.js";
 import { marked } from "marked";
 import readme from "../../../README.md?raw";
 import "./style.css";
@@ -793,8 +794,16 @@ const guideOverlay = document.getElementById("guide-overlay")!;
 const guideBtn = document.getElementById("guide-btn")!;
 const guideClose = document.getElementById("guide-close")!;
 
+const settingsModal = initSettingsModal(() => {
+  closeAbout();
+  closeGuide();
+});
+
+document.getElementById("settings-btn")!.addEventListener("click", () => settingsModal.open());
+
 function openAbout(): void {
   closeGuide();
+  settingsModal.close();
   aboutOverlay.classList.add("open");
 }
 
@@ -804,6 +813,7 @@ function closeAbout(): void {
 
 function openGuide(): void {
   closeAbout();
+  settingsModal.close();
   guideOverlay.classList.add("open");
 }
 

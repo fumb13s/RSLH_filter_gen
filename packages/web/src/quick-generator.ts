@@ -82,11 +82,16 @@ export function defaultRareAccessoryBlock(): RareAccessoryBlock {
   return { selections: {} };
 }
 
-const ORE_COLUMNS = [
-  { rolls: 3, label: "3 rolls", color: "#a855f7" },   // purple (Epic+)
-  { rolls: 4, label: "4 rolls", color: "#f59e0b" },   // amber (Legendary+)
-  { rolls: 5, label: "5 rolls", color: "#ef4444" },    // red (Mythical+)
-];
+const ORE_COLUMN_COLORS = ["#a855f7", "#f59e0b", "#ef4444"];
+
+function getOreColumns(): { rolls: number; label: string; color: string }[] {
+  const rolls = getSettings().oreRerollColumns;
+  return rolls.map((r, i) => ({
+    rolls: r,
+    label: `${r} rolls`,
+    color: ORE_COLUMN_COLORS[i],
+  }));
+}
 
 export function defaultOreRerollBlock(): OreRerollBlock {
   return { assignments: {} };
@@ -156,8 +161,8 @@ export function quickStateToGroups(state: QuickGenState): SettingGroup[] {
           rank: 6,
         });
 
-        // Rank 5 rules at +2 rolls (stricter to compensate for lower rank)
-        const rank5Rolls = tier.rolls + 2;
+        // Rank 5 rules at +N rolls (stricter to compensate for lower rank)
+        const rank5Rolls = tier.rolls + getSettings().rank5RollAdjustment;
         if (rank5Rolls <= 9) {
           groups.push({
             sets,
@@ -220,11 +225,13 @@ export function oreRerollToGroups(block: OreRerollBlock | undefined): SettingGro
     }
   }
 
+  const oreColumns = getOreColumns();
+
   for (let ci = 0; ci < 3; ci++) {
     const sets = columnSets[ci];
     if (sets.length === 0) continue;
 
-    const extraRolls = ci + 3; // column 0=3, 1=4, 2=5
+    const extraRolls = oreColumns[ci].rolls;
 
     for (const rank of [6, 5] as const) {
       const totalTarget = rank === 6 ? extraRolls + 1 : extraRolls + 2;
@@ -765,13 +772,14 @@ function renderOreReroll(
   const grid = document.createElement("div");
   grid.className = "quick-tier-columns ore-columns";
 
-  const totalCols = ORE_COLUMNS.length + 1; // +1 for pool
+  const oreColumns = getOreColumns();
+  const totalCols = oreColumns.length + 1; // +1 for pool
   const columns: HTMLElement[] = [];
   const chipAreas: HTMLElement[] = [];
 
   // Roll columns
-  for (let ci = 0; ci < ORE_COLUMNS.length; ci++) {
-    const colDef = ORE_COLUMNS[ci];
+  for (let ci = 0; ci < oreColumns.length; ci++) {
+    const colDef = oreColumns[ci];
 
     const col = document.createElement("div");
     col.className = "quick-tier-column";
@@ -867,7 +875,7 @@ function renderOreReroll(
     const colIdx = block.assignments[set.id] ?? ORE_POOL;
     const inPool = colIdx === ORE_POOL;
     const chipAreaIdx = inPool ? totalCols - 1 : colIdx;
-    const color = inPool ? "#e5e7eb" : ORE_COLUMNS[colIdx].color;
+    const color = inPool ? "#e5e7eb" : oreColumns[colIdx].color;
     const textColor = inPool ? "#6b7280" : "#fff";
 
     const chip = document.createElement("button");
@@ -895,7 +903,7 @@ function renderOreReroll(
       const cur = block.assignments[set.id] ?? ORE_POOL;
       if (cur === ORE_POOL) {
         block.assignments[set.id] = 0;
-      } else if (cur < ORE_COLUMNS.length - 1) {
+      } else if (cur < oreColumns.length - 1) {
         block.assignments[set.id] = cur + 1;
       } else {
         delete block.assignments[set.id];
@@ -908,7 +916,7 @@ function renderOreReroll(
       e.preventDefault();
       const cur = block.assignments[set.id] ?? ORE_POOL;
       if (cur === ORE_POOL) {
-        block.assignments[set.id] = ORE_COLUMNS.length - 1;
+        block.assignments[set.id] = oreColumns.length - 1;
       } else if (cur > 0) {
         block.assignments[set.id] = cur - 1;
       } else {

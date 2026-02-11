@@ -12,6 +12,7 @@
         <h1>RSLH Filter Tools</h1>
         <button id="guide-btn" class="guide-btn" type="button" title="User guide">Guide</button>
         <button id="about-btn" class="about-btn" type="button" title="About">About</button>
+        <button id="settings-btn" class="settings-btn" type="button" title="Settings">Settings</button>
       </div>
 
       <nav class="tab-bar" id="tab-bar">
@@ -115,6 +116,15 @@
           when spending in game. Not sure what that is?
           Here's <a href="https://github.com/fumb13s/raid-guides/blob/main/aptoide.md" target="_blank" rel="noopener">a guide</a>.
         </p>
+      </div>
+    </div>
+
+    <!-- Settings modal -->
+    <div id="settings-overlay" class="modal-overlay">
+      <div class="modal settings-modal" role="dialog" aria-labelledby="settings-title">
+        <button class="modal-close" id="settings-close" type="button" aria-label="Close">&times;</button>
+        <h2 id="settings-title">Settings</h2>
+        <div id="settings-body"></div>
       </div>
     </div>
 

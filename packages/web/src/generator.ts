@@ -605,12 +605,13 @@ function buildRankAndRollControl(group: SettingGroup, index: number, cb: Generat
   // Rank toggle logic
   rankToggle.addEventListener("click", () => {
     const curRank = group.rank ?? 6;
+    const adj = getSettings().rank5RollAdjustment;
     if (curRank === 6) {
       group.rank = 5;
-      group.rolls = Math.min(9, group.rolls + 2);
+      group.rolls = Math.min(9, group.rolls + adj);
     } else {
       group.rank = 6;
-      group.rolls = Math.max(4, group.rolls - 2);
+      group.rolls = Math.max(4, group.rolls - adj);
     }
     rankToggle.textContent = rankLabel_(group.rank!);
     slider.value = String(group.rolls);
