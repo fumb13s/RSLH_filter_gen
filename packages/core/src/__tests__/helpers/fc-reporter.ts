@@ -4,6 +4,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import type { RunDetails } from "fast-check";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -17,17 +18,6 @@ export interface RegressionEntry {
 
 /** Map of test name → list of saved regression entries. */
 export type RegressionStore = Record<string, RegressionEntry[]>;
-
-/** Subset of fast-check RunDetails used by the reporter. */
-interface RunDetails {
-  failed: boolean;
-  seed: number;
-  numRuns: number;
-  numShrinks: number;
-  counterexample: unknown | null;
-  counterexamplePath: string | null;
-  error: string | null;
-}
 
 // ---------------------------------------------------------------------------
 // Load / save
@@ -58,7 +48,8 @@ export function regressionExamples<T>(store: RegressionStore, testName: string):
  * 3. Re-throws so the test still fails
  */
 export function createReporter(filePath: string, testName: string) {
-  return function reporter(runDetails: RunDetails): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return function reporter(runDetails: RunDetails<any>): void {
     if (!runDetails.failed) return;
 
     const entry: RegressionEntry = {
@@ -105,7 +96,7 @@ export function createReporter(filePath: string, testName: string) {
       `Property failed after ${runDetails.numRuns} run(s) and ${runDetails.numShrinks} shrink(s)\n` +
       `Seed: ${entry.seed} | Path: ${entry.path}\n` +
       `Counterexample: ${JSON.stringify(entry.counterexample)}\n` +
-      (runDetails.error ? `\n${runDetails.error}` : ""),
+      (runDetails.errorInstance ? `\n${String(runDetails.errorInstance)}` : ""),
     );
   };
 }
@@ -114,15 +105,16 @@ export function createReporter(filePath: string, testName: string) {
  * Build fast-check options for a property test: wires up the reporter
  * and loads regression examples from the store.
  */
-export function propConfig<T>(
+export function propConfig(
   filePath: string,
   testName: string,
   store: RegressionStore,
   numRuns = Number(process.env.FC_NUM_RUNS) || 200,
-): { numRuns: number; reporter: ReturnType<typeof createReporter>; examples: T[] } {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): { numRuns: number; reporter: ReturnType<typeof createReporter>; examples: any[] } {
   return {
     numRuns,
     reporter: createReporter(filePath, testName),
-    examples: regressionExamples<T>(store, testName),
+    examples: regressionExamples(store, testName),
   };
 }
