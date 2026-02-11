@@ -120,7 +120,7 @@ export function propConfig<T>(
   filePath: string,
   testName: string,
   store: RegressionStore,
-  numRuns = 200,
+  numRuns = Number(process.env.FC_NUM_RUNS) || 200,
 ): { numRuns: number; reporter: ReturnType<typeof createReporter>; examples: T[] } {
   return {
     numRuns,

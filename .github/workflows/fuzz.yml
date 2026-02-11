@@ -1,0 +1,55 @@
+name: Fuzz (property-based)
+
+on:
+  schedule:
+    - cron: "20 * * * *"
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+        env:
+          FC_NUM_RUNS: 5000
+          VITEST_TIMEOUT: 120000
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regressions
+          path: |
+            packages/core/src/__tests__/regressions/
+            packages/web/src/__tests__/regressions/
+      - if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const dirs = [
+              'packages/core/src/__tests__/regressions',
+              'packages/web/src/__tests__/regressions',
+            ];
+            let body = `Scheduled fuzz run failed.\n\n`;
+            body += `**Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n\n`;
+            for (const dir of dirs) {
+              for (const file of fs.readdirSync(dir)) {
+                const content = JSON.parse(fs.readFileSync(`${dir}/${file}`, 'utf-8'));
+                if (Object.keys(content).length > 0) {
+                  body += `### ${file}\n\`\`\`json\n${JSON.stringify(content, null, 2)}\n\`\`\`\n\n`;
+                }
+              }
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Fuzz failure: ${new Date().toISOString().slice(0, 10)}`,
+              body,
+              labels: ['bug', 'fuzz'],
+            });
