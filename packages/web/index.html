@@ -148,6 +148,14 @@
       </div>
     </div>
 
+    <!-- Feedback modal (iframe fallback when Tally embed script is unavailable) -->
+    <div id="feedback-overlay" class="modal-overlay">
+      <div class="modal feedback-modal" role="dialog" aria-labelledby="feedback-title">
+        <button class="modal-close" id="feedback-close" type="button" aria-label="Close">&times;</button>
+        <iframe id="feedback-iframe" class="feedback-iframe" title="Feedback form"></iframe>
+      </div>
+    </div>
+
     <button id="back-to-top" class="back-to-top" hidden aria-label="Back to top">&uarr;</button>
     <script type="module" src="/src/main.ts"></script>
 
@@ -161,9 +169,6 @@
         document.body.appendChild(s);
       }
     </script>
-
-    <!-- Tally.so feedback form (no cookies, GDPR compliant) -->
-    <script async src="https://tally.so/widgets/embed.js"></script>
     <noscript>
       <img src="https://rslh-filter-gen.goatcounter.com/count?p=/noscript"
            alt="" style="position:absolute;left:-9999px" />

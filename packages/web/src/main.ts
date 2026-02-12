@@ -941,24 +941,37 @@ const guideClose = document.getElementById("guide-close")!;
 const settingsModal = initSettingsModal(() => {
   closeAbout();
   closeGuide();
+  closeFeedback();
 });
 
 document.getElementById("settings-btn")!.addEventListener("click", () => settingsModal.open());
 
-// Tally.so feedback popup
-document.getElementById("feedback-btn")!.addEventListener("click", () => {
-  const Tally = (window as Record<string, unknown>).Tally as
-    | { openPopup: (id: string, opts?: Record<string, unknown>) => void }
-    | undefined;
-  if (Tally) {
-    Tally.openPopup("GxdboZ", { width: 400 });
-  } else {
-    window.open("https://tally.so/r/GxdboZ", "_blank", "noopener");
-  }
+// Tally.so feedback modal (iframe)
+const feedbackOverlay = document.getElementById("feedback-overlay")!;
+const feedbackIframe = document.getElementById("feedback-iframe") as HTMLIFrameElement;
+
+function openFeedback(): void {
+  closeAbout();
+  closeGuide();
+  settingsModal.close();
+  feedbackIframe.src = "https://tally.so/r/GxdboZ";
+  feedbackOverlay.classList.add("open");
+}
+
+function closeFeedback(): void {
+  feedbackOverlay.classList.remove("open");
+  feedbackIframe.src = "";
+}
+
+document.getElementById("feedback-btn")!.addEventListener("click", openFeedback);
+document.getElementById("feedback-close")!.addEventListener("click", closeFeedback);
+feedbackOverlay.addEventListener("click", (e) => {
+  if (e.target === feedbackOverlay) closeFeedback();
 });
 
 function openAbout(): void {
   closeGuide();
+  closeFeedback();
   settingsModal.close();
   aboutOverlay.classList.add("open");
 }
@@ -969,6 +982,7 @@ function closeAbout(): void {
 
 function openGuide(): void {
   closeAbout();
+  closeFeedback();
   settingsModal.close();
   guideOverlay.classList.add("open");
 }
@@ -1005,6 +1019,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     if (aboutOverlay.classList.contains("open")) closeAbout();
     if (guideOverlay.classList.contains("open")) closeGuide();
+    if (feedbackOverlay.classList.contains("open")) closeFeedback();
   }
 });
 
