@@ -945,6 +945,18 @@ const settingsModal = initSettingsModal(() => {
 
 document.getElementById("settings-btn")!.addEventListener("click", () => settingsModal.open());
 
+// Tally.so feedback popup
+document.getElementById("feedback-btn")!.addEventListener("click", () => {
+  const Tally = (window as Record<string, unknown>).Tally as
+    | { openPopup: (id: string, opts?: Record<string, unknown>) => void }
+    | undefined;
+  if (Tally) {
+    Tally.openPopup("GxdboZ", { width: 400 });
+  } else {
+    window.open("https://tally.so/r/GxdboZ", "_blank", "noopener");
+  }
+});
+
 function openAbout(): void {
   closeGuide();
   settingsModal.close();
