@@ -5,7 +5,6 @@ import type { HsfFilter, HsfRule, HsfSubstat } from "@rslh/core";
 import {
   ARTIFACT_SET_NAMES,
   ARTIFACT_SLOT_NAMES,
-  STAT_NAMES,
   HSF_RARITY_IDS,
   FACTION_NAMES,
   emptySubstat,
@@ -259,17 +258,8 @@ function buildEditableRuleCard(
     }),
   );
 
-  // Main Stat dropdown
-  const mainStatOpts: { value: number; label: string }[] = [{ value: -1, label: "Any" }];
-  for (const [id, name] of Object.entries(STAT_NAMES)) {
-    mainStatOpts.push({ value: Number(id), label: name });
-  }
-  body.appendChild(
-    buildSelectField("Main Stat", rule.MainStatID, mainStatOpts, (val) => {
-      rule.MainStatID = val;
-      cb.onRuleChange(index, rule);
-    }),
-  );
+  // Main Stat dropdown — encodes both MainStatID and MainStatF
+  body.appendChild(buildMainStatField(rule, index, cb));
 
   // Level dropdown
   const levelOpts = Array.from({ length: 17 }, (_, i) => ({ value: i, label: String(i) }));
@@ -328,6 +318,64 @@ function buildSelectField(
   select.addEventListener("change", () => onChange(Number(select.value)));
   field.appendChild(select);
 
+  return field;
+}
+
+// ---------------------------------------------------------------------------
+// Main Stat selector — encodes MainStatID + MainStatF together
+// ---------------------------------------------------------------------------
+
+/** All main stat options: same variants as SUBSTAT_OPTIONS. */
+const MAIN_STAT_OPTIONS = SUBSTAT_OPTIONS;
+
+function encodeMainStat(rule: HsfRule): string {
+  if (rule.MainStatID === -1) return "-1";
+  // MainStatF: 0 = flat, 1 = percentage
+  const isFlat = rule.MainStatF === 0;
+  return `${rule.MainStatID}:${isFlat ? 1 : 0}`;
+}
+
+function buildMainStatField(
+  rule: HsfRule,
+  index: number,
+  cb: RuleEditorCallbacks,
+): HTMLElement {
+  const field = document.createElement("div");
+  field.className = "edit-field";
+
+  const label = document.createElement("label");
+  label.textContent = "Main Stat";
+  field.appendChild(label);
+
+  const select = document.createElement("select");
+
+  const noneOpt = document.createElement("option");
+  noneOpt.value = "-1";
+  noneOpt.textContent = "Any";
+  select.appendChild(noneOpt);
+
+  for (const opt of MAIN_STAT_OPTIONS) {
+    const option = document.createElement("option");
+    option.value = opt.value;
+    option.textContent = opt.label;
+    select.appendChild(option);
+  }
+  select.value = encodeMainStat(rule);
+
+  select.addEventListener("change", () => {
+    const val = select.value;
+    if (val === "-1") {
+      rule.MainStatID = -1;
+      rule.MainStatF = 1;
+    } else {
+      const [statId, flatFlag] = val.split(":").map(Number);
+      rule.MainStatID = statId;
+      rule.MainStatF = flatFlag === 1 ? 0 : 1; // flatFlag=1 → isFlat → MainStatF=0
+    }
+    cb.onRuleChange(index, rule);
+  });
+
+  field.appendChild(select);
   return field;
 }
 
