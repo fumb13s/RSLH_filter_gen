@@ -50,7 +50,7 @@ const ALL_SUBSTATS: readonly [number, boolean][] = [
 ];
 
 /** Substats eligible as "good stats" in the generator UI. */
-const GOOD_SUBSTATS = ALL_SUBSTATS;
+export const GOOD_SUBSTATS = ALL_SUBSTATS;
 
 /** All substats that can receive concentrated rolls — matches ALL_SUBSTATS isFlat convention. */
 export const ORE_STATS: [number, boolean][] = [

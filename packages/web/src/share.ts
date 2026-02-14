@@ -5,9 +5,9 @@
  * The encoded string is placed in the URL hash fragment: #q=<encoded>
  */
 import { ARTIFACT_SET_NAMES, ACCESSORY_SET_IDS, FACTION_NAMES } from "@rslh/core";
-import { SUBSTAT_PRESETS } from "./generator.js";
+import { SUBSTAT_PRESETS, GOOD_SUBSTATS } from "./generator.js";
 import { stripBlockColors, restoreBlockColors } from "./quick-generator.js";
-import type { QuickGenState, QuickBlock, RareAccessoryBlock, OreRerollBlock } from "./quick-generator.js";
+import type { QuickGenState, QuickBlock, RareAccessoryBlock, OreRerollBlock, CustomProfile } from "./quick-generator.js";
 
 // ---------------------------------------------------------------------------
 // Limits
@@ -22,6 +22,9 @@ const MAX_ORE_COLUMN = 2;
 const MAX_NAME_LENGTH = 100;
 const MAX_TIER_NAME_LENGTH = 50;
 const MAX_SELECTIONS_PER_SET = 16;
+const MAX_CUSTOM_PROFILES = 4;
+const MAX_CUSTOM_PROFILE_STATS = 11;
+const MAX_CUSTOM_LABEL_LENGTH = 50;
 
 // ---------------------------------------------------------------------------
 // Domain lookups
@@ -31,6 +34,7 @@ const VALID_SET_IDS = new Set(Object.keys(ARTIFACT_SET_NAMES).map(Number));
 const VALID_ACCESSORY_SET_IDS = new Set(ACCESSORY_SET_IDS);
 const VALID_FACTION_IDS = new Set(Object.keys(FACTION_NAMES).map(Number));
 const MAX_PROFILE_INDEX = SUBSTAT_PRESETS.length - 1;
+const VALID_SUBSTAT_PAIRS = new Set(GOOD_SUBSTATS.map(([s, f]) => `${s}:${f}`));
 
 const BASE64URL_RE = /^[A-Za-z0-9_-]+$/;
 
@@ -160,9 +164,9 @@ function validateTier(t: unknown): { name: string; rolls: number; sellRolls?: nu
   return { name, rolls };
 }
 
-function validateBlock(b: unknown): QuickBlock {
+function validateBlock(b: unknown, customProfileCount: number): QuickBlock {
   if (!isPlainObject(b)) fail();
-  const allowed = new Set(["name", "tiers", "assignments", "selectedProfiles"]);
+  const allowed = new Set(["name", "tiers", "assignments", "selectedProfiles", "selectedCustom"]);
   assertOnlyKeys(b, allowed);
 
   const result: QuickBlock = {} as QuickBlock;
@@ -200,6 +204,21 @@ function validateBlock(b: unknown): QuickBlock {
     profiles.push(p);
   }
   result.selectedProfiles = profiles;
+
+  // selectedCustom — indices into customProfiles (optional)
+  if (b.selectedCustom !== undefined) {
+    if (!Array.isArray(b.selectedCustom)) fail();
+    if (b.selectedCustom.length > MAX_CUSTOM_PROFILES) fail();
+    const seenCustom = new Set<number>();
+    const customs: number[] = [];
+    for (const c of b.selectedCustom) {
+      if (!isInteger(c) || c < 0 || c >= customProfileCount) fail();
+      if (seenCustom.has(c)) fail();
+      seenCustom.add(c);
+      customs.push(c);
+    }
+    result.selectedCustom = customs;
+  }
 
   return result;
 }
@@ -245,16 +264,51 @@ function validateOreReroll(v: unknown): OreRerollBlock {
   return { assignments };
 }
 
+function validateCustomProfile(v: unknown): CustomProfile {
+  if (!isPlainObject(v)) fail();
+  assertOnlyKeys(v, new Set(["label", "stats"]));
+
+  const label = sanitizeString(v.label, MAX_CUSTOM_LABEL_LENGTH);
+  if (label.length === 0) fail();
+
+  if (!Array.isArray(v.stats)) fail();
+  if (v.stats.length === 0 || v.stats.length > MAX_CUSTOM_PROFILE_STATS) fail();
+
+  const seen = new Set<string>();
+  const stats: [number, boolean][] = [];
+  for (const entry of v.stats) {
+    if (!Array.isArray(entry) || entry.length !== 2) fail();
+    const [statId, isFlat] = entry;
+    if (!isInteger(statId) || typeof isFlat !== "boolean") fail();
+    const key = `${statId}:${isFlat}`;
+    if (!VALID_SUBSTAT_PAIRS.has(key)) fail();
+    if (seen.has(key)) fail();
+    seen.add(key);
+    stats.push([statId, isFlat]);
+  }
+
+  return { label, stats };
+}
+
 function validateQuickGenState(data: unknown): QuickGenState {
   if (!isPlainObject(data)) fail();
-  assertOnlyKeys(data, new Set(["blocks", "rareAccessories", "oreReroll"]));
+  assertOnlyKeys(data, new Set(["blocks", "rareAccessories", "oreReroll", "customProfiles"]));
+
+  // Validate customProfiles first (blocks reference them)
+  let customProfileCount = 0;
+  const result: QuickGenState = {} as QuickGenState;
+
+  if (data.customProfiles !== undefined) {
+    if (!Array.isArray(data.customProfiles)) fail();
+    if (data.customProfiles.length > MAX_CUSTOM_PROFILES) fail();
+    result.customProfiles = data.customProfiles.map(validateCustomProfile);
+    customProfileCount = result.customProfiles.length;
+  }
 
   if (!Array.isArray(data.blocks)) fail();
   if (data.blocks.length < 1 || data.blocks.length > MAX_BLOCKS) fail();
 
-  const result: QuickGenState = {
-    blocks: data.blocks.map(validateBlock),
-  };
+  result.blocks = data.blocks.map((b: unknown) => validateBlock(b, customProfileCount));
 
   if (data.rareAccessories !== undefined) {
     result.rareAccessories = validateRareAccessories(data.rareAccessories);

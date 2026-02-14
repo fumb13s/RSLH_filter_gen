@@ -10,7 +10,7 @@ import {
   restoreBlockColors,
   defaultBlock,
 } from "../quick-generator.js";
-import type { QuickGenState, QuickBlock, RareAccessoryBlock, OreRerollBlock } from "../quick-generator.js";
+import type { QuickGenState, QuickBlock, RareAccessoryBlock, OreRerollBlock, CustomProfile } from "../quick-generator.js";
 import { ARTIFACT_SET_NAMES, ACCESSORY_SET_IDS, FACTION_NAMES } from "@rslh/core";
 import { SUBSTAT_PRESETS } from "../generator.js";
 import { loadRegressions, propConfig } from "./helpers/fc-reporter.js";
@@ -82,10 +82,55 @@ const arbShareOreReroll: fc.Arbitrary<OreRerollBlock> = fc
     return { assignments };
   });
 
+/** Valid substat pairs for custom profiles. */
+const SUBSTAT_PAIRS: [number, boolean][] = [
+  [1, true], [1, false], [2, true], [2, false], [3, true], [3, false],
+  [4, true], [5, false], [6, false], [7, true], [8, true],
+];
+
+const arbCustomProfile: fc.Arbitrary<CustomProfile> = fc.record({
+  label: fc.stringMatching(/^[A-Za-z0-9 -]{1,20}$/),
+  stats: fc.uniqueArray(
+    fc.constantFrom(...SUBSTAT_PAIRS),
+    { minLength: 1, maxLength: SUBSTAT_PAIRS.length, comparator: (a, b) => a[0] === b[0] && a[1] === b[1] },
+  ),
+});
+
 const arbShareState: fc.Arbitrary<QuickGenState> = fc.record({
   blocks: fc.array(arbShareBlock, { minLength: 1, maxLength: 3 }),
   rareAccessories: fc.option(arbShareRareAccessories, { nil: undefined }),
   oreReroll: fc.option(arbShareOreReroll, { nil: undefined }),
+  customProfiles: fc.option(
+    fc.array(arbCustomProfile, { minLength: 1, maxLength: 4 }),
+    { nil: undefined },
+  ),
+}).chain((state) => {
+  // selectedCustom must reference valid indices into customProfiles
+  const maxIdx = (state.customProfiles?.length ?? 0) - 1;
+  if (maxIdx < 0) return fc.constant(state);
+
+  return fc.constant(state).map((s) => ({
+    ...s,
+    blocks: s.blocks.map((b) => ({
+      ...b,
+      selectedCustom: undefined, // will be filled below
+    })),
+  })).chain((s) =>
+    fc.tuple(
+      ...s.blocks.map(() =>
+        fc.option(
+          fc.uniqueArray(fc.nat({ max: maxIdx }), { minLength: 0, maxLength: maxIdx + 1 }),
+          { nil: undefined },
+        ),
+      ),
+    ).map((customs) => ({
+      ...s,
+      blocks: s.blocks.map((b, i) => ({
+        ...b,
+        selectedCustom: customs[i],
+      })),
+    })),
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -207,6 +252,39 @@ describe("share: round-trip", () => {
     const decoded = await decodeState(await encodeState(state));
     expect(decoded.blocks[0].tiers[0].sellRolls).toBe(5);
     expect(decoded.blocks[0].tiers[1].sellRolls).toBeUndefined();
+  });
+
+  it("round-trips custom profiles", async () => {
+    const state: QuickGenState = {
+      blocks: [{
+        tiers: [
+          { name: "T1", rolls: 5 },
+          { name: "T2", rolls: 7 },
+          { name: "T3", rolls: 8 },
+          { name: "T4", rolls: 9 },
+        ],
+        assignments: {},
+        selectedProfiles: [],
+        selectedCustom: [0, 1],
+      }],
+      customProfiles: [
+        { label: "My Build", stats: [[1, false], [5, false], [6, false]] },
+        { label: "Tank", stats: [[1, false], [3, false], [4, true]] },
+      ],
+    };
+    const decoded = await decodeState(await encodeState(state));
+    expect(decoded.customProfiles).toHaveLength(2);
+    expect(decoded.customProfiles![0].label).toBe("My Build");
+    expect(decoded.customProfiles![0].stats).toEqual([[1, false], [5, false], [6, false]]);
+    expect(decoded.customProfiles![1].label).toBe("Tank");
+    expect(decoded.blocks[0].selectedCustom).toEqual([0, 1]);
+  });
+
+  it("round-trips state without custom profiles", async () => {
+    const state = defaultQuickState();
+    const decoded = await decodeState(await encodeState(state));
+    expect(decoded.customProfiles).toBeUndefined();
+    expect(decoded.blocks[0].selectedCustom).toBeUndefined();
   });
 });
 
@@ -394,6 +472,122 @@ describe("share: rejection", () => {
         selectedProfiles: [],
       }],
       rareAccessories: { selections: { 1: [1] } },
+    });
+    await expect(decodeState(encoded)).rejects.toThrow("Invalid shared state");
+  });
+
+  it("rejects custom profile with invalid stat pair", async () => {
+    const encoded = await encodeRaw({
+      blocks: [{
+        tiers: [
+          { name: "T1", rolls: 5 },
+          { name: "T2", rolls: 7 },
+          { name: "T3", rolls: 8 },
+          { name: "T4", rolls: 9 },
+        ],
+        assignments: {},
+        selectedProfiles: [],
+      }],
+      customProfiles: [
+        { label: "Bad", stats: [[99, false]] },
+      ],
+    });
+    await expect(decodeState(encoded)).rejects.toThrow("Invalid shared state");
+  });
+
+  it("rejects too many custom profiles (> 4)", async () => {
+    const encoded = await encodeRaw({
+      blocks: [{
+        tiers: [
+          { name: "T1", rolls: 5 },
+          { name: "T2", rolls: 7 },
+          { name: "T3", rolls: 8 },
+          { name: "T4", rolls: 9 },
+        ],
+        assignments: {},
+        selectedProfiles: [],
+      }],
+      customProfiles: Array.from({ length: 5 }, (_, i) => ({
+        label: `Profile ${i}`,
+        stats: [[1, false]],
+      })),
+    });
+    await expect(decodeState(encoded)).rejects.toThrow("Invalid shared state");
+  });
+
+  it("rejects selectedCustom index out of bounds", async () => {
+    const encoded = await encodeRaw({
+      blocks: [{
+        tiers: [
+          { name: "T1", rolls: 5 },
+          { name: "T2", rolls: 7 },
+          { name: "T3", rolls: 8 },
+          { name: "T4", rolls: 9 },
+        ],
+        assignments: {},
+        selectedProfiles: [],
+        selectedCustom: [0],
+      }],
+      // No customProfiles defined → index 0 is out of bounds
+    });
+    await expect(decodeState(encoded)).rejects.toThrow("Invalid shared state");
+  });
+
+  it("rejects custom profile label too long", async () => {
+    const encoded = await encodeRaw({
+      blocks: [{
+        tiers: [
+          { name: "T1", rolls: 5 },
+          { name: "T2", rolls: 7 },
+          { name: "T3", rolls: 8 },
+          { name: "T4", rolls: 9 },
+        ],
+        assignments: {},
+        selectedProfiles: [],
+      }],
+      customProfiles: [
+        { label: "A".repeat(51), stats: [[1, false]] },
+      ],
+    });
+    await expect(decodeState(encoded)).rejects.toThrow("Invalid shared state");
+  });
+
+  it("rejects custom profile label containing HTML", async () => {
+    const encoded = await encodeRaw({
+      blocks: [{
+        tiers: [
+          { name: "T1", rolls: 5 },
+          { name: "T2", rolls: 7 },
+          { name: "T3", rolls: 8 },
+          { name: "T4", rolls: 9 },
+        ],
+        assignments: {},
+        selectedProfiles: [],
+      }],
+      customProfiles: [
+        { label: '<img onerror="alert(1)">', stats: [[1, false]] },
+      ],
+    });
+    // Should decode but with HTML stripped (sanitized), not rejected
+    const decoded = await decodeState(encoded);
+    expect(decoded.customProfiles![0].label).not.toContain("<");
+  });
+
+  it("rejects custom profile with duplicate stats", async () => {
+    const encoded = await encodeRaw({
+      blocks: [{
+        tiers: [
+          { name: "T1", rolls: 5 },
+          { name: "T2", rolls: 7 },
+          { name: "T3", rolls: 8 },
+          { name: "T4", rolls: 9 },
+        ],
+        assignments: {},
+        selectedProfiles: [],
+      }],
+      customProfiles: [
+        { label: "Dupe", stats: [[1, false], [1, false]] },
+      ],
     });
     await expect(decodeState(encoded)).rejects.toThrow("Invalid shared state");
   });

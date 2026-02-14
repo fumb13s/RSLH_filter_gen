@@ -2,8 +2,9 @@
  * Quick Generator — two-axis approach: set tiers x build profiles.
  */
 import { ARTIFACT_SET_NAMES, ACCESSORY_SET_IDS, FACTION_NAMES } from "@rslh/core";
-import { SUBSTAT_PRESETS, ORE_STATS } from "./generator.js";
+import { SUBSTAT_PRESETS, ORE_STATS, GOOD_SUBSTATS } from "./generator.js";
 import type { SettingGroup } from "./generator.js";
+import { statDisplayName } from "@rslh/core";
 import { getSettings } from "./settings.js";
 
 // ---------------------------------------------------------------------------
@@ -17,11 +18,17 @@ interface SetTier {
   sellRolls?: number; // stashed rolls value while in sell mode
 }
 
+export interface CustomProfile {
+  label: string;                    // user-chosen name, max 50 chars
+  stats: [number, boolean][];       // same format as SUBSTAT_PRESETS entries
+}
+
 export interface QuickBlock {
   name?: string;
   tiers: SetTier[];
   assignments: Record<number, number>; // set ID → tier index
   selectedProfiles: number[]; // indices into SUBSTAT_PRESETS
+  selectedCustom?: number[];  // indices into QuickGenState.customProfiles
 }
 
 export interface RareAccessoryBlock {
@@ -36,6 +43,7 @@ export interface QuickGenState {
   blocks: QuickBlock[];
   rareAccessories?: RareAccessoryBlock;
   oreReroll?: OreRerollBlock;
+  customProfiles?: CustomProfile[];
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +121,7 @@ export function stripBlockColors(state: QuickGenState): QuickGenState {
     })),
     rareAccessories: state.rareAccessories,
     oreReroll: state.oreReroll,
+    customProfiles: state.customProfiles,
   };
 }
 
@@ -126,6 +135,7 @@ export function restoreBlockColors(state: QuickGenState): QuickGenState {
     })),
     rareAccessories: state.rareAccessories,
     oreReroll: state.oreReroll,
+    customProfiles: state.customProfiles,
   };
 }
 
@@ -162,6 +172,34 @@ export function quickStateToGroups(state: QuickGenState): SettingGroup[] {
         });
 
         // Rank 5 rules at +N rolls (stricter to compensate for lower rank)
+        const rank5Rolls = tier.rolls + getSettings().rank5RollAdjustment;
+        if (rank5Rolls <= 9) {
+          groups.push({
+            sets,
+            slots: [],
+            mainStats: [],
+            goodStats,
+            rolls: rank5Rolls,
+            rank: 5,
+          });
+        }
+      }
+
+      // Custom profiles
+      for (const ci of block.selectedCustom ?? []) {
+        const custom = state.customProfiles?.[ci];
+        if (!custom || custom.stats.length === 0) continue;
+        const goodStats: [number, boolean][] = custom.stats.map(([s, f]) => [s, f]);
+
+        groups.push({
+          sets,
+          slots: [],
+          mainStats: [],
+          goodStats,
+          rolls: tier.rolls,
+          rank: 6,
+        });
+
         const rank5Rolls = tier.rolls + getSettings().rank5RollAdjustment;
         if (rank5Rolls <= 9) {
           groups.push({
@@ -384,6 +422,7 @@ function renderBlockProfiles(
   const row = document.createElement("div");
   row.className = "quick-profiles-row";
 
+  // Built-in presets
   for (let i = 0; i < SUBSTAT_PRESETS.length; i++) {
     const preset = SUBSTAT_PRESETS[i];
     const lbl = document.createElement("label");
@@ -409,8 +448,205 @@ function renderBlockProfiles(
     row.appendChild(lbl);
   }
 
+  // Custom profiles
+  const customs = state.customProfiles ?? [];
+  if (!block.selectedCustom) block.selectedCustom = [];
+
+  for (let ci = 0; ci < customs.length; ci++) {
+    const custom = customs[ci];
+    const wrap = document.createElement("span");
+    wrap.className = "custom-profile-checkbox";
+
+    const lbl = document.createElement("label");
+    lbl.className = "checkbox-label";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = block.selectedCustom.includes(ci);
+    cb.addEventListener("change", () => {
+      if (!block.selectedCustom) block.selectedCustom = [];
+      if (cb.checked) {
+        block.selectedCustom.push(ci);
+      } else {
+        block.selectedCustom = block.selectedCustom.filter((p) => p !== ci);
+      }
+      onChange(state);
+    });
+    lbl.appendChild(cb);
+
+    const span = document.createElement("span");
+    span.textContent = custom.label;
+    lbl.appendChild(span);
+
+    wrap.appendChild(lbl);
+
+    // Edit button
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "custom-profile-edit-btn";
+    editBtn.textContent = "\u270E";
+    editBtn.title = "Edit profile";
+    editBtn.addEventListener("click", () => {
+      renderCustomProfileEditor(section, ci, state, onChange);
+    });
+    wrap.appendChild(editBtn);
+
+    // Delete button
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "custom-profile-delete-btn";
+    delBtn.textContent = "\u00d7";
+    delBtn.title = "Delete profile";
+    delBtn.addEventListener("click", () => {
+      if (!state.customProfiles) return;
+      state.customProfiles.splice(ci, 1);
+      if (state.customProfiles.length === 0) delete state.customProfiles;
+      // Adjust selectedCustom indices in all blocks
+      for (const b of state.blocks) {
+        if (!b.selectedCustom) continue;
+        b.selectedCustom = b.selectedCustom
+          .filter((idx) => idx !== ci)
+          .map((idx) => (idx > ci ? idx - 1 : idx));
+        if (b.selectedCustom.length === 0) delete b.selectedCustom;
+      }
+      onChange(state);
+    });
+    wrap.appendChild(delBtn);
+
+    row.appendChild(wrap);
+  }
+
+  // "+ Add" button (hidden when 4 custom profiles exist)
+  if (customs.length < 4) {
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "preset-btn custom-profile-add-btn";
+    addBtn.textContent = "+ Add";
+    addBtn.title = "Add custom profile";
+    addBtn.addEventListener("click", () => {
+      renderCustomProfileEditor(section, -1, state, onChange);
+    });
+    row.appendChild(addBtn);
+  }
+
   section.appendChild(row);
   parent.appendChild(section);
+}
+
+// ---------------------------------------------------------------------------
+// Custom profile editor (inline)
+// ---------------------------------------------------------------------------
+
+function renderCustomProfileEditor(
+  section: HTMLElement,
+  editIndex: number, // -1 = new, >= 0 = editing existing
+  state: QuickGenState,
+  onChange: (state: QuickGenState) => void,
+): void {
+  // Remove any existing editor in this section
+  const existing = section.querySelector(".custom-profile-editor");
+  if (existing) existing.remove();
+
+  const editor = document.createElement("div");
+  editor.className = "custom-profile-editor";
+
+  const isEditing = editIndex >= 0;
+  const current = isEditing ? state.customProfiles?.[editIndex] : undefined;
+
+  // Label input
+  const labelRow = document.createElement("div");
+  labelRow.className = "custom-profile-label-row";
+
+  const labelInput = document.createElement("input");
+  labelInput.type = "text";
+  labelInput.className = "custom-profile-label-input";
+  labelInput.placeholder = "Profile name";
+  labelInput.maxLength = 50;
+  const defaultLabel = `Custom ${(state.customProfiles?.length ?? 0) + 1}`;
+  labelInput.value = current?.label ?? defaultLabel;
+  labelRow.appendChild(labelInput);
+  editor.appendChild(labelRow);
+
+  // Substat checkboxes
+  const statsGrid = document.createElement("div");
+  statsGrid.className = "substat-checkboxes";
+
+  const selectedStats = new Set<string>(
+    (current?.stats ?? []).map(([s, f]) => `${s}:${f}`),
+  );
+
+  const checkboxes: { el: HTMLInputElement; statId: number; isFlat: boolean }[] = [];
+
+  for (const [statId, isFlat] of GOOD_SUBSTATS) {
+    const lbl = document.createElement("label");
+    lbl.className = "checkbox-label";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = selectedStats.has(`${statId}:${isFlat}`);
+    cb.addEventListener("change", () => {
+      const key = `${statId}:${isFlat}`;
+      if (cb.checked) selectedStats.add(key);
+      else selectedStats.delete(key);
+    });
+    lbl.appendChild(cb);
+    checkboxes.push({ el: cb, statId, isFlat });
+
+    const span = document.createElement("span");
+    span.textContent = statDisplayName(statId, isFlat);
+    lbl.appendChild(span);
+
+    statsGrid.appendChild(lbl);
+  }
+
+  editor.appendChild(statsGrid);
+
+  // Buttons
+  const btnRow = document.createElement("div");
+  btnRow.className = "custom-profile-btn-row";
+
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "gen-toolbar-btn gen-toolbar-btn-primary";
+  saveBtn.textContent = isEditing ? "Update" : "Save";
+  saveBtn.addEventListener("click", () => {
+    const name = labelInput.value.trim();
+    if (!name) {
+      labelInput.focus();
+      return;
+    }
+
+    const stats: [number, boolean][] = [];
+    for (const { el, statId, isFlat } of checkboxes) {
+      if (el.checked) stats.push([statId, isFlat]);
+    }
+    if (stats.length === 0) return;
+
+    if (!state.customProfiles) state.customProfiles = [];
+
+    if (isEditing) {
+      state.customProfiles[editIndex] = { label: name, stats };
+    } else {
+      state.customProfiles.push({ label: name, stats });
+    }
+
+    editor.remove();
+    onChange(state);
+  });
+  btnRow.appendChild(saveBtn);
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "gen-toolbar-btn";
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.addEventListener("click", () => {
+    editor.remove();
+  });
+  btnRow.appendChild(cancelBtn);
+
+  editor.appendChild(btnRow);
+  section.appendChild(editor);
+  labelInput.focus();
 }
 
 // ---------------------------------------------------------------------------

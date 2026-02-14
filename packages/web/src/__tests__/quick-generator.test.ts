@@ -172,6 +172,86 @@ describe("quickStateToGroups", () => {
     }
   });
 
+  it("custom profiles produce groups with correct goodStats", () => {
+    const state = defaultQuickState();
+    state.customProfiles = [
+      { label: "My Build", stats: [[1, false], [5, false], [6, false]] },
+    ];
+    state.blocks[0].selectedCustom = [0];
+    state.blocks[0].tiers = [{ name: "T1", rolls: 5, color: "#22c55e" }];
+    state.blocks[0].assignments = { 1: 0 };
+
+    const groups = quickStateToGroups(state);
+    expect(groups.length).toBeGreaterThan(0);
+
+    // Every group should have the custom profile's stats
+    for (const g of groups) {
+      expect(g.goodStats).toEqual([[1, false], [5, false], [6, false]]);
+    }
+  });
+
+  it("custom profiles and presets together produce cross-product", () => {
+    const state = defaultQuickState();
+    state.customProfiles = [
+      { label: "Custom", stats: [[7, true], [8, true]] },
+    ];
+    state.blocks[0].selectedProfiles = [0]; // HP Nuker
+    state.blocks[0].selectedCustom = [0];
+    state.blocks[0].tiers = [{ name: "T1", rolls: 9, color: "#22c55e" }];
+    state.blocks[0].assignments = { 1: 0 };
+
+    const groups = quickStateToGroups(state);
+    // 1 preset + 1 custom, rolls=9 → rank5Rolls=11 > 9 → rank 6 only
+    // So 2 groups total (1 preset + 1 custom)
+    expect(groups).toHaveLength(2);
+    expect(groups[0].goodStats).toEqual(SUBSTAT_PRESETS[0].stats.map(([s, f]) => [s, f]));
+    expect(groups[1].goodStats).toEqual([[7, true], [8, true]]);
+  });
+
+  it("empty selectedCustom or missing customProfiles produces no extra groups", () => {
+    const state = defaultQuickState();
+    state.blocks[0].selectedProfiles = [0];
+    state.blocks[0].selectedCustom = [];
+    state.blocks[0].tiers = [{ name: "T1", rolls: 9, color: "#22c55e" }];
+    state.blocks[0].assignments = { 1: 0 };
+
+    const groups1 = quickStateToGroups(state);
+
+    // Same state without selectedCustom
+    delete state.blocks[0].selectedCustom;
+    const groups2 = quickStateToGroups(state);
+
+    expect(groups1).toEqual(groups2);
+  });
+
+  it("invalid custom profile index is skipped", () => {
+    const state = defaultQuickState();
+    state.customProfiles = [
+      { label: "Only One", stats: [[1, false]] },
+    ];
+    state.blocks[0].selectedCustom = [0, 5]; // index 5 doesn't exist
+    state.blocks[0].tiers = [{ name: "T1", rolls: 9, color: "#22c55e" }];
+    state.blocks[0].assignments = { 1: 0 };
+
+    const groups = quickStateToGroups(state);
+    // Only the valid custom profile (index 0) should produce groups
+    expect(groups).toHaveLength(1);
+    expect(groups[0].goodStats).toEqual([[1, false]]);
+  });
+
+  it("custom profile with empty stats is skipped", () => {
+    const state = defaultQuickState();
+    state.customProfiles = [
+      { label: "Empty", stats: [] },
+    ];
+    state.blocks[0].selectedCustom = [0];
+    state.blocks[0].tiers = [{ name: "T1", rolls: 9, color: "#22c55e" }];
+    state.blocks[0].assignments = { 1: 0 };
+
+    const groups = quickStateToGroups(state);
+    expect(groups).toHaveLength(0);
+  });
+
   it("multiple blocks produce groups from both", () => {
     const state = defaultQuickState();
     // Block 0: profile 0, one tier, one set

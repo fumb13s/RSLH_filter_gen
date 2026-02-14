@@ -732,7 +732,7 @@ document.getElementById("quick-save-btn")!.addEventListener("click", () => {
 });
 
 // .fqbl migration pipeline — each step migrates one version up
-const FQBL_CURRENT_VERSION = 3;
+const FQBL_CURRENT_VERSION = 4;
 
 function migrateFqbl(data: { version: number; state: unknown }): FqblFile {
   if (!data || typeof data.version !== "number" || !data.state) {
@@ -753,7 +753,12 @@ function migrateFqbl(data: { version: number; state: unknown }): FqblFile {
     data = { version: 3, state: data.state };
   }
 
-  // V3 (current): restore colors from defaults
+  // V3 → V4: customProfiles support (optional fields, just bump version)
+  if (data.version === 3) {
+    data = { version: 4, state: data.state };
+  }
+
+  // V4 (current): restore colors from defaults
   if (data.version === FQBL_CURRENT_VERSION) {
     return { version: FQBL_CURRENT_VERSION, state: restoreBlockColors(data.state as QuickGenState) };
   }
