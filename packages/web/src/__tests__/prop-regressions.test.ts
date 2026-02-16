@@ -60,39 +60,39 @@ function allGroups(state: QuickGenState): SettingGroup[] {
 type AssertFn = (counterexample: unknown) => void;
 
 const PIPELINE_ASSERTIONS: Record<string, AssertFn> = {
-  "group match → rule match (no false positives at rule level)": (ce) => {
-    const [state, item] = ce as [QuickGenState, Item];
+  "group match → rule match (batch)": (ce) => {
+    const [[state, items]] = ce as [[QuickGenState, Item[]]];
     const groups = allGroups(state);
     const rules = generateRulesFromGroups(groups);
-    const ruleMatch = rules.some((r) => matchesRule(r, item));
-    if (ruleMatch) {
-      expect(groups.some((g) => matchesGroup(g as SettingGroupLike, item))).toBe(true);
+    for (const item of items) {
+      const ruleMatch = rules.some((r) => matchesRule(r, item));
+      if (ruleMatch) {
+        expect(groups.some((g) => matchesGroup(g as SettingGroupLike, item))).toBe(true);
+      }
     }
   },
-  "unconditional groups: group match ↔ rule match": (ce) => {
-    const [state, item] = ce as [QuickGenState, Item];
+  "unconditional groups ↔ rules (batch)": (ce) => {
+    const [[state, items]] = ce as [[QuickGenState, Item[]]];
     const groups = allGroups(state);
     const uncond = groups.filter((g) => g.goodStats.length === 0);
     const rules = generateRulesFromGroups(uncond);
-    const groupMatch = uncond.some((g) => matchesGroup(g as SettingGroupLike, item));
-    const ruleMatch = anyRuleMatches(rules, item);
-    expect(ruleMatch).toBe(groupMatch);
+    for (const item of items) {
+      const groupMatch = uncond.some((g) => matchesGroup(g as SettingGroupLike, item));
+      const ruleMatch = anyRuleMatches(rules, item);
+      expect(ruleMatch).toBe(groupMatch);
+    }
   },
-  "quickState match → group match (state level implies group level)": (ce) => {
-    const [state, item] = ce as [QuickGenState, Item];
+  "state ↔ group ↔ rule three-level (batch)": (ce) => {
+    const [[state, items]] = ce as [[QuickGenState, Item[]]];
     const groups = allGroups(state);
-    // Can't call matchesQuickState here (private to prop test), but we can
-    // verify the group-level consistency which is the core property.
-    const groupMatch = groups.some((g) => matchesGroup(g as SettingGroupLike, item));
-    const ruleMatch = anyRuleMatches(generateRulesFromGroups(groups), item);
-    if (ruleMatch) expect(groupMatch).toBe(true);
-  },
-  "group match → quickState match (group level implies state level)": (ce) => {
-    const [state, item] = ce as [QuickGenState, Item];
-    const groups = allGroups(state);
-    const groupMatch = groups.some((g) => matchesGroup(g as SettingGroupLike, item));
-    const ruleMatch = anyRuleMatches(generateRulesFromGroups(groups), item);
-    if (ruleMatch) expect(groupMatch).toBe(true);
+    const rules = generateRulesFromGroups(groups);
+    for (const item of items) {
+      // Can't call matchesQuickState here (private to prop test), but we can
+      // verify group↔rule consistency which is the core property.
+      const groupMatch = groups.some((g) => matchesGroup(g as SettingGroupLike, item));
+      const ruleMatch = anyRuleMatches(rules, item);
+      if (ruleMatch) expect(groupMatch).toBe(true);
+    }
   },
   "full round-trip: state → groups → rules → filter → serialize → parse": (ce) => {
     const [state] = ce as [QuickGenState];

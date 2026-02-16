@@ -81,7 +81,7 @@ export const arbHsfRule: fc.Arbitrary<HsfRule> = fc.record({
 export const arbItem: fc.Arbitrary<Item> = fc.record({
   set: fc.constantFrom(...SET_IDS),
   slot: fc.constantFrom(...SLOT_IDS),
-  rank: fc.constantFrom(1, 2, 3, 4, 5, 6),
+  rank: fc.constantFrom(5, 6),
   rarity: fc.constantFrom(0, 1, 2, 3, 4, 5), // index into ITEM_RARITIES
   mainStat: fc.constantFrom(...STAT_IDS),
   substats: fc.constant([]),

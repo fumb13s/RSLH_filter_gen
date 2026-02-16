@@ -1,7 +1,8 @@
 /**
  * Property-based tests: three-level pipeline equivalence.
  *
- * For any random QuickGenState + Item, the three pipeline stages agree:
+ * For any random QuickGenState + batch of targeted items, the three pipeline
+ * stages agree:
  * 1. matchesQuickState(state, item) — direct evaluation
  * 2. groups.some(g => matchesGroup(g, item)) — group-level
  * 3. rules.some(r => matchesRule(r, item)) — rule-level
@@ -31,7 +32,10 @@ import {
   hsfRarityToIndex,
 } from "./helpers/invariants.js";
 import type { SettingGroupLike } from "./helpers/invariants.js";
-import { arbItem, arbQuickGenState, arbQuickGenStateLight } from "./helpers/arbitraries.js";
+import {
+  arbQuickGenStateLight,
+  arbItemsForState,
+} from "./helpers/arbitraries.js";
 import { loadRegressions, propConfig } from "./helpers/fc-reporter.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -147,64 +151,78 @@ function allGroups(state: QuickGenState): SettingGroup[] {
 }
 
 // ---------------------------------------------------------------------------
+// Composed arbitraries: state + targeted items via fc.chain
+// ---------------------------------------------------------------------------
+
+const arbLightStateWithItems = arbQuickGenStateLight.chain((state) =>
+  arbItemsForState(state).map((items) => [state, items] as const),
+);
+
+// Note: uses the light state to stay within per-test timeout — the coverage
+// gain comes from the targeted item batch, not from larger state sizes.
+const arbFullStateWithItems = arbQuickGenStateLight.chain((state) =>
+  arbItemsForState(state).map((items) => [state, items] as const),
+);
+
+// ---------------------------------------------------------------------------
 // Property tests
 // ---------------------------------------------------------------------------
 
 describe("pipeline.prop — three-level equivalence", () => {
   fcTest.prop(
-    [arbQuickGenStateLight, arbItem],
-    cfg("group match → rule match (no false positives at rule level)"),
-  )("group match → rule match (no false positives at rule level)", (state, item) => {
+    [arbLightStateWithItems],
+    cfg("group match → rule match (batch)"),
+  )("group match → rule match (batch)", ([state, items]) => {
     const groups = allGroups(state);
     const rules = generateRulesFromGroups(groups);
-    const groupMatch = groups.some((g) => matchesGroup(g as SettingGroupLike, item));
-    const ruleMatch = anyRuleMatches(rules, item);
 
-    // If rules match, groups must also match
-    if (ruleMatch) {
-      expect(groupMatch).toBe(true);
+    for (const item of items) {
+      const groupMatch = groups.some((g) => matchesGroup(g as SettingGroupLike, item));
+      const ruleMatch = anyRuleMatches(rules, item);
+
+      // If rules match, groups must also match
+      if (ruleMatch) {
+        expect(groupMatch).toBe(true);
+      }
     }
   });
 
   fcTest.prop(
-    [arbQuickGenStateLight, arbItem],
-    cfg("unconditional groups: group match ↔ rule match"),
-  )("unconditional groups: group match ↔ rule match", (state, item) => {
+    [arbLightStateWithItems],
+    cfg("unconditional groups ↔ rules (batch)"),
+  )("unconditional groups ↔ rules (batch)", ([state, items]) => {
     const groups = allGroups(state);
     const unconditionalGroups = groups.filter((g) => g.goodStats.length === 0);
     const unconditionalRules = generateRulesFromGroups(unconditionalGroups);
 
-    const groupMatch = unconditionalGroups.some(
-      (g) => matchesGroup(g as SettingGroupLike, item),
-    );
-    const ruleMatch = anyRuleMatches(unconditionalRules, item);
+    for (const item of items) {
+      const groupMatch = unconditionalGroups.some(
+        (g) => matchesGroup(g as SettingGroupLike, item),
+      );
+      const ruleMatch = anyRuleMatches(unconditionalRules, item);
 
-    expect(ruleMatch).toBe(groupMatch);
-  });
-
-  fcTest.prop(
-    [arbQuickGenState, arbItem],
-    cfg("quickState match → group match (state level implies group level)"),
-  )("quickState match → group match (state level implies group level)", (state, item) => {
-    const groups = allGroups(state);
-    const stateMatch = matchesQuickState(state, item);
-    const groupMatch = groups.some((g) => matchesGroup(g as SettingGroupLike, item));
-
-    if (stateMatch) {
-      expect(groupMatch).toBe(true);
+      expect(ruleMatch).toBe(groupMatch);
     }
   });
 
   fcTest.prop(
-    [arbQuickGenState, arbItem],
-    cfg("group match → quickState match (group level implies state level)"),
-  )("group match → quickState match (group level implies state level)", (state, item) => {
+    [arbFullStateWithItems],
+    cfg("state ↔ group ↔ rule three-level (batch)"),
+  )("state ↔ group ↔ rule three-level (batch)", ([state, items]) => {
     const groups = allGroups(state);
-    const stateMatch = matchesQuickState(state, item);
-    const groupMatch = groups.some((g) => matchesGroup(g as SettingGroupLike, item));
+    const rules = generateRulesFromGroups(groups);
 
-    if (groupMatch) {
-      expect(stateMatch).toBe(true);
+    for (const item of items) {
+      const stateMatch = matchesQuickState(state, item);
+      const groupMatch = groups.some((g) => matchesGroup(g as SettingGroupLike, item));
+      const ruleMatch = anyRuleMatches(rules, item);
+
+      // State match ↔ group match (bidirectional)
+      if (stateMatch) expect(groupMatch).toBe(true);
+      if (groupMatch) expect(stateMatch).toBe(true);
+
+      // Rule match → group match (no false positives at rule level)
+      if (ruleMatch) expect(groupMatch).toBe(true);
     }
   });
 

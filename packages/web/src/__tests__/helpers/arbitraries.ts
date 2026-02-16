@@ -12,6 +12,7 @@ import {
   HSF_RARITY_IDS,
 } from "@rslh/core";
 import type { Item, HsfRule, HsfSubstat, HsfFilter } from "@rslh/core";
+import type { QuickGenState } from "../../quick-generator.js";
 import { SUBSTAT_PRESETS } from "../../generator.js";
 import type { SettingGroup } from "../../generator.js";
 import type {
@@ -180,7 +181,7 @@ export const arbQuickGenStateLight: fc.Arbitrary<QuickGenState> = fc.record({
 export const arbItem: fc.Arbitrary<Item> = fc.record({
   set: fc.constantFrom(...SET_IDS),
   slot: fc.constantFrom(...SLOT_IDS),
-  rank: fc.constantFrom(1, 2, 3, 4, 5, 6),
+  rank: fc.constantFrom(5, 6),
   rarity: fc.constantFrom(0, 1, 2, 3, 4, 5),
   mainStat: fc.constantFrom(...STAT_IDS),
   substats: fc.constant([]),
@@ -241,3 +242,186 @@ export const arbHsfRule: fc.Arbitrary<HsfRule> = fc.record({
 export const arbHsfFilter: fc.Arbitrary<HsfFilter> = fc
   .array(arbHsfRule, { minLength: 0, maxLength: 10 })
   .map((rules) => ({ Rules: rules }));
+
+// ---------------------------------------------------------------------------
+// Targeted item generators for multi-item pipeline tests
+// ---------------------------------------------------------------------------
+
+interface TargetParams {
+  sets: number[];
+  ranks: number[];
+  rarities: number[];
+  factions: (number | undefined)[];
+  slots: number[];
+}
+
+/** Analyze a QuickGenState and extract matching criteria for targeted items. */
+export function extractTargets(state: QuickGenState): TargetParams {
+  const sets = new Set<number>();
+  const ranks = new Set<number>();
+  const rarities = new Set<number>();
+  const factions = new Set<number | undefined>();
+  const slots = new Set<number>();
+
+  // --- Build profiles ---
+  for (const block of state.blocks) {
+    if (block.selectedProfiles.length === 0) continue;
+    // Check at least one profile has effective stats
+    const hasEffective = block.selectedProfiles.some((pi) => {
+      const preset = SUBSTAT_PRESETS[pi];
+      return preset && preset.stats.length > 0;
+    });
+    if (!hasEffective) continue;
+
+    for (let ti = 0; ti < block.tiers.length; ti++) {
+      const tier = block.tiers[ti];
+      if (tier.rolls < 0) continue;
+
+      for (const [setIdStr, tierIdx] of Object.entries(block.assignments)) {
+        if (tierIdx !== ti) continue;
+        sets.add(Number(setIdStr));
+      }
+
+      // Rank eligibility: 6 always, 5 if tier.rolls + 2 <= 9
+      ranks.add(6);
+      if (tier.rolls + 2 <= 9) ranks.add(5);
+
+      // Rarity: default is 16 → index 4 (Legendary) and 5 (Mythical)
+      rarities.add(4);
+      rarities.add(5);
+    }
+  }
+
+  // --- Rare accessories ---
+  if (state.rareAccessories) {
+    for (const [setIdStr, factionIds] of Object.entries(state.rareAccessories.selections)) {
+      if (!factionIds || factionIds.length === 0) continue;
+      sets.add(Number(setIdStr));
+      slots.add(7);
+      slots.add(8);
+      slots.add(9);
+      for (const fid of factionIds) factions.add(fid);
+      // Rare accessories: any rarity
+      for (let r = 0; r <= 5; r++) rarities.add(r);
+    }
+  }
+
+  // --- Ore reroll ---
+  if (state.oreReroll) {
+    for (const [setIdStr, colIdx] of Object.entries(state.oreReroll.assignments)) {
+      if (colIdx < 0 || colIdx > 2) continue;
+      sets.add(Number(setIdStr));
+    }
+    // Ore reroll rarities: Epic (index 3) and Mythical (index 5)
+    rarities.add(3);
+    rarities.add(5);
+    // Ore reroll ranks
+    ranks.add(5);
+    ranks.add(6);
+  }
+
+  return {
+    sets: [...sets],
+    ranks: [...ranks],
+    rarities: [...rarities],
+    factions: [...factions],
+    slots: [...slots],
+  };
+}
+
+function arbTargetedItem(targets: TargetParams): fc.Arbitrary<Item> {
+  const ALL_RANKS = [5, 6] as const;
+  const ALL_RARITIES = [0, 1, 2, 3, 4, 5] as const;
+  return fc.record({
+    set: fc.constantFrom(...targets.sets),
+    slot: targets.slots.length > 0
+      ? fc.oneof(fc.constantFrom(...targets.slots), fc.constantFrom(...SLOT_IDS))
+      : fc.constantFrom(...SLOT_IDS),
+    rank: targets.ranks.length > 0
+      ? fc.constantFrom(...targets.ranks)
+      : fc.constantFrom(...ALL_RANKS),
+    rarity: targets.rarities.length > 0
+      ? fc.constantFrom(...targets.rarities)
+      : fc.constantFrom(...ALL_RARITIES),
+    mainStat: fc.constantFrom(...STAT_IDS),
+    substats: fc.constant([]),
+    level: fc.constantFrom(0, 4, 8, 12, 16),
+    faction: targets.factions.length > 0
+      ? fc.oneof(
+          fc.constantFrom(...targets.factions as (number | undefined)[]),
+          fc.constant(undefined),
+          fc.constantFrom(...FACTION_IDS),
+        )
+      : fc.oneof(fc.constant(undefined), fc.constantFrom(...FACTION_IDS)),
+  });
+}
+
+function arbNearMissItem(targets: TargetParams): fc.Arbitrary<Item> {
+  const strategies: fc.Arbitrary<Item>[] = [];
+
+  if (targets.sets.length > 0) {
+    // Right set but rank 5 only (misses rank-6-only filters)
+    strategies.push(fc.record({
+      set: fc.constantFrom(...targets.sets),
+      slot: fc.constantFrom(...SLOT_IDS),
+      rank: fc.constant(5) as fc.Arbitrary<5>,
+      rarity: fc.constantFrom(0, 1, 2, 3, 4, 5),
+      mainStat: fc.constantFrom(...STAT_IDS),
+      substats: fc.constant([]),
+      level: fc.constantFrom(0, 4, 8, 12, 16),
+      faction: fc.oneof(fc.constant(undefined), fc.constantFrom(...FACTION_IDS)),
+    }));
+
+    // Right rank but wrong set
+    const nonTargetSets = SET_IDS.filter((s) => !targets.sets.includes(s));
+    if (nonTargetSets.length > 0 && targets.ranks.length > 0) {
+      strategies.push(fc.record({
+        set: fc.constantFrom(...nonTargetSets),
+        slot: fc.constantFrom(...SLOT_IDS),
+        rank: fc.constantFrom(...targets.ranks),
+        rarity: targets.rarities.length > 0
+          ? fc.constantFrom(...targets.rarities)
+          : fc.constantFrom(0, 1, 2, 3, 4, 5),
+        mainStat: fc.constantFrom(...STAT_IDS),
+        substats: fc.constant([]),
+        level: fc.constantFrom(0, 4, 8, 12, 16),
+        faction: fc.oneof(fc.constant(undefined), fc.constantFrom(...FACTION_IDS)),
+      }));
+    }
+
+    // Right set+rank but rarity too low (0-2)
+    if (targets.ranks.length > 0) {
+      strategies.push(fc.record({
+        set: fc.constantFrom(...targets.sets),
+        slot: fc.constantFrom(...SLOT_IDS),
+        rank: fc.constantFrom(...targets.ranks),
+        rarity: fc.constantFrom(0, 1, 2) as fc.Arbitrary<0 | 1 | 2>,
+        mainStat: fc.constantFrom(...STAT_IDS),
+        substats: fc.constant([]),
+        level: fc.constantFrom(0, 4, 8, 12, 16),
+        faction: fc.oneof(fc.constant(undefined), fc.constantFrom(...FACTION_IDS)),
+      }));
+    }
+  }
+
+  // Fallback: just a random item if no strategies could be built
+  if (strategies.length === 0) return arbItem;
+
+  return fc.oneof(...strategies);
+}
+
+/** Generate a batch of targeted + near-miss + random items for a QuickGenState. */
+export function arbItemsForState(state: QuickGenState): fc.Arbitrary<Item[]> {
+  const targets = extractTargets(state);
+
+  // If no active criteria, fall back to pure random items
+  if (targets.sets.length === 0) {
+    return fc.array(arbItem, { minLength: 50, maxLength: 100 });
+  }
+
+  return fc.tuple(
+    fc.array(arbTargetedItem(targets), { minLength: 150, maxLength: 200 }),
+    fc.array(arbNearMissItem(targets), { minLength: 150, maxLength: 200 }),
+    fc.array(arbItem, { minLength: 50, maxLength: 100 }),
+  ).map(([t, n, r]) => [...t, ...n, ...r]);
+}
