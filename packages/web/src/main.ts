@@ -386,8 +386,7 @@ function showQuickContent(tab: TabEntry): void {
   if (!tab.quickState) tab.quickState = defaultQuickState();
 
   // Sync strict button to current state
-  const strictBtn = document.getElementById("quick-strict-btn")!;
-  strictBtn.classList.toggle("gen-toolbar-btn-strict", !!tab.quickState.strict);
+  syncStrictButton(!!tab.quickState.strict);
 
   const onQuickChange = (state: QuickGenState): void => {
     tab.quickState = state;
@@ -814,11 +813,19 @@ fqblInput.addEventListener("change", () => {
 wireDropZone("quick-load-drop", ".fqbl", loadFqblFile);
 
 // Strict button — toggle strict mode on the active quick tab
+function syncStrictButton(active: boolean): void {
+  const btn = document.getElementById("quick-strict-btn")!;
+  btn.classList.toggle("gen-toolbar-btn-strict", active);
+  btn.title = active
+    ? "Strict mode ON — items not matching any keep rule will be sold. Click to disable."
+    : "Strict mode OFF — unmatched items are kept by default. Click to enable.";
+}
+
 document.getElementById("quick-strict-btn")!.addEventListener("click", () => {
   const tab = getActiveTab();
   if (!tab || tab.type !== "quick" || !tab.quickState) return;
   tab.quickState.strict = !tab.quickState.strict || undefined;
-  document.getElementById("quick-strict-btn")!.classList.toggle("gen-toolbar-btn-strict", !!tab.quickState.strict);
+  syncStrictButton(!!tab.quickState.strict);
 });
 
 // Share button — encode quick state into URL and copy to clipboard
