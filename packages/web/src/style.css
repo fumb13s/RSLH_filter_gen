@@ -887,6 +887,10 @@ pre {
   border-color: #1d4ed8;
 }
 
+#quick-strict-btn {
+  margin-left: auto;
+}
+
 .gen-toolbar-btn-strict {
   background: #ef4444;
   color: #fff;
