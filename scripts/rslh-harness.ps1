@@ -96,26 +96,25 @@ public class RslhHelper {
     const int DD_ITEM_HEIGHT   = 32;
     const int DD_VISIBLE_COUNT = 7;
 
-    public static void SetCombo(int comboX, int comboY, int itemIndex, int maxItems) {
-        // Click to open dropdown
+    public static void SetCombo(int comboX, int comboY, int itemIndex) {
+        // Click to open dropdown.
+        // Assumes selection starts at index 0 (after Reset), so items 0..(VISIBLE-1)
+        // are visible immediately — no scroll-to-top needed.
         Click(comboX, comboY);
         Thread.Sleep(300);
 
-        if (maxItems <= DD_VISIBLE_COUNT) {
-            // Small dropdown: all items visible, click directly at the row
+        if (itemIndex < DD_VISIBLE_COUNT) {
+            // Target is visible without scrolling — click directly
             int clickY = comboY + DD_FIRST_OFFSET + itemIndex * DD_ITEM_HEIGHT;
             Click(comboX, clickY);
         } else {
-            // Large dropdown: scroll to top, then scroll down to desired index
-            for (int i = 0; i < maxItems; i++) { ScrollUp(1); }
-            Thread.Sleep(200);
-
+            // Scroll down from index 0 to target
             for (int i = 0; i < itemIndex; i++) { ScrollDown(1); }
             Thread.Sleep(200);
 
-            // Highlighted item is at row min(index, visibleCount-1) from dropdown top
-            int row = Math.Min(itemIndex, DD_VISIBLE_COUNT - 1);
-            int clickY = comboY + DD_FIRST_OFFSET + row * DD_ITEM_HEIGHT;
+            // After scrolling past visible area, highlighted item is always
+            // at the bottom row (row VISIBLE-1)
+            int clickY = comboY + DD_FIRST_OFFSET + (DD_VISIBLE_COUNT - 1) * DD_ITEM_HEIGHT;
             Click(comboX, clickY);
         }
         Thread.Sleep(300);
@@ -179,18 +178,6 @@ $ST = @{
     Value4       = @(1028, 794)
     # Status area
     StatusLabel  = @(780, 816)
-}
-
-# Max items per dropdown (for scroll-to-top)
-$ComboMax = @{
-    ArtifactSet  = 68
-    ArtifactType = 9
-    Rank         = 6
-    Rarity       = 6
-    Faction      = 17
-    MainStat     = 12
-    Level        = 5
-    SubStat      = 12
 }
 
 # Window origin — resolved at startup or on demand
@@ -330,10 +317,8 @@ function Take-Screenshot([string]$filename, [int]$x, [int]$y, [int]$w = 900, [in
 
 function Set-SellTestCombo([string]$field, [int]$index) {
     $pos = ST-Pos $field
-    $maxItems = $ComboMax[$field]
-    if (-not $maxItems) { $maxItems = 30 }
     Write-Host "  $field -> index $index (at $($pos[0]),$($pos[1]))"
-    [RslhHelper]::SetCombo($pos[0], $pos[1], $index, $maxItems)
+    [RslhHelper]::SetCombo($pos[0], $pos[1], $index)
 }
 
 function Set-SellTestItem($item) {
@@ -446,8 +431,7 @@ function Invoke-HarnessCommand($cmd) {
                 $result.message = "Scrolled up $notches"
             }
             "set_combo" {
-                $maxScroll = if ($cmd.maxScroll) { $cmd.maxScroll } else { 30 }
-                [RslhHelper]::SetCombo($cmd.x, $cmd.y, $cmd.index, $maxScroll)
+                [RslhHelper]::SetCombo($cmd.x, $cmd.y, $cmd.index)
                 $result.message = "Set combo at $($cmd.x),$($cmd.y) to index $($cmd.index)"
             }
             "set_text" {
