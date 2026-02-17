@@ -90,21 +90,34 @@ public class RslhHelper {
     }
 
     // Open combo, scroll to top, scroll down to desired index, click to select.
-    public static void SetCombo(int comboX, int comboY, int itemIndex, int maxScroll) {
+    // Dropdown geometry (calibrated via click tests on Rarity combo):
+    //   first item center 18px below combo center, 32px per row, ~7 visible rows.
+    const int DD_FIRST_OFFSET  = 18;
+    const int DD_ITEM_HEIGHT   = 32;
+    const int DD_VISIBLE_COUNT = 7;
+
+    public static void SetCombo(int comboX, int comboY, int itemIndex, int maxItems) {
         // Click to open dropdown
         Click(comboX, comboY);
         Thread.Sleep(300);
 
-        // Scroll up to reach the top
-        for (int i = 0; i < maxScroll; i++) { ScrollUp(1); }
-        Thread.Sleep(200);
+        if (maxItems <= DD_VISIBLE_COUNT) {
+            // Small dropdown: all items visible, click directly at the row
+            int clickY = comboY + DD_FIRST_OFFSET + itemIndex * DD_ITEM_HEIGHT;
+            Click(comboX, clickY);
+        } else {
+            // Large dropdown: scroll to top, then scroll down to desired index
+            for (int i = 0; i < maxItems; i++) { ScrollUp(1); }
+            Thread.Sleep(200);
 
-        // Scroll down to desired item
-        for (int i = 0; i < itemIndex; i++) { ScrollDown(1); }
-        Thread.Sleep(200);
+            for (int i = 0; i < itemIndex; i++) { ScrollDown(1); }
+            Thread.Sleep(200);
 
-        // Click the highlighted item (dropdown appears just below combo)
-        Click(comboX, comboY + 30);
+            // Highlighted item is at row min(index, visibleCount-1) from dropdown top
+            int row = Math.Min(itemIndex, DD_VISIBLE_COUNT - 1);
+            int clickY = comboY + DD_FIRST_OFFSET + row * DD_ITEM_HEIGHT;
+            Click(comboX, clickY);
+        }
         Thread.Sleep(300);
     }
 
@@ -134,9 +147,96 @@ public class RslhHelper {
 
 [RslhHelper]::EnsureDpi()
 
-# ── UIAutomation helper (calls find-ui.ps1 as a non-elevated child) ──────────
+# ── Window position + Sell Test layout offsets ───────────────────────────────
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# Sell Test combo/value offsets from main window origin (dX, dY)
+$ST = @{
+    # Buttons (also findable via UIAutomation)
+    SellSetup    = @(186, 506)
+    LoadSetup    = @(1090, 364)
+    SellTestOpen = @(1208, 670)
+    Reset        = @(1078, 816)
+    # Col1 combos
+    ArtifactSet  = @(513, 707)
+    Rank         = @(513, 736)
+    Rarity       = @(513, 765)
+    Faction      = @(513, 794)
+    # Col2 combos
+    ArtifactType = @(708, 707)
+    MainStat     = @(708, 736)
+    Level        = @(708, 765)
+    # Col3 combos
+    SubStat1     = @(893, 707)
+    SubStat2     = @(893, 736)
+    SubStat3     = @(893, 765)
+    SubStat4     = @(893, 794)
+    # Col4 numeric values
+    Value1       = @(1028, 707)
+    Value2       = @(1028, 736)
+    Value3       = @(1028, 765)
+    Value4       = @(1028, 794)
+    # Status area
+    StatusLabel  = @(780, 816)
+}
+
+# Max items per dropdown (for scroll-to-top)
+$ComboMax = @{
+    ArtifactSet  = 68
+    ArtifactType = 9
+    Rank         = 6
+    Rarity       = 6
+    Faction      = 17
+    MainStat     = 12
+    Level        = 5
+    SubStat      = 12
+}
+
+# Window origin — resolved at startup or on demand
+$script:WinX = 0
+$script:WinY = 0
+
+function Get-WindowPos {
+    # Calls find-ui.ps1 to get the main window bounding rect
+    $findArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', @"
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+`$root = [System.Windows.Automation.AutomationElement]::RootElement
+`$cond = New-Object System.Windows.Automation.PropertyCondition(
+    [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $targetPid)
+`$win = `$root.FindFirst([System.Windows.Automation.TreeScope]::Children, `$cond)
+if (`$win) {
+    `$r = `$win.Current.BoundingRectangle
+    Write-Output ('{{"ok":true,"x":{0},"y":{1},"w":{2},"h":{3}}}' -f [int]`$r.X, [int]`$r.Y, [int]`$r.Width, [int]`$r.Height)
+} else {
+    Write-Output '{"ok":false,"error":"Window not found"}'
+}
+"@)
+    $output = & powershell.exe @findArgs 2>&1
+    $json = $output | Where-Object { $_ -match '^\{' } | Select-Object -First 1
+    if ($json) {
+        $result = $json | ConvertFrom-Json
+        if ($result.ok) {
+            $script:WinX = [int]$result.x
+            $script:WinY = [int]$result.y
+            Write-Host "Window position: $($result.x),$($result.y) ($($result.w)x$($result.h))"
+            return $true
+        }
+    }
+    Write-Warning "Failed to get window position"
+    return $false
+}
+
+# Resolve absolute screen coordinates from offset name
+function ST-Pos([string]$name) {
+    $off = $ST[$name]
+    $x = [int]$script:WinX + [int]$off[0]
+    $y = [int]$script:WinY + [int]$off[1]
+    return @($x, $y)
+}
+
+# ── UIAutomation helper (calls find-ui.ps1 as a non-elevated child) ──────────
 
 function Find-Element {
     param(
@@ -228,6 +328,67 @@ function Take-Screenshot([string]$filename, [int]$x, [int]$y, [int]$w = 900, [in
     return $path
 }
 
+function Set-SellTestCombo([string]$field, [int]$index) {
+    $pos = ST-Pos $field
+    $maxItems = $ComboMax[$field]
+    if (-not $maxItems) { $maxItems = 30 }
+    Write-Host "  $field -> index $index (at $($pos[0]),$($pos[1]))"
+    [RslhHelper]::SetCombo($pos[0], $pos[1], $index, $maxItems)
+}
+
+function Set-SellTestItem($item) {
+    # item is a hashtable/PSObject with optional fields:
+    #   artifactSet, artifactType, rank, rarity, faction, mainStat, level,
+    #   subStat1..4 (dropdown index), value1..4 (numeric)
+    Write-Host "Setting Sell Test item..."
+
+    # Reset first
+    $resetPos = ST-Pos 'Reset'
+    [RslhHelper]::Click($resetPos[0], $resetPos[1])
+    Start-Sleep -Milliseconds 500
+
+    # Set combos (only if specified)
+    if ($null -ne $item.artifactSet)  { Set-SellTestCombo 'ArtifactSet'  $item.artifactSet }
+    if ($null -ne $item.artifactType) { Set-SellTestCombo 'ArtifactType' $item.artifactType }
+    if ($null -ne $item.rank)         { Set-SellTestCombo 'Rank'         $item.rank }
+    if ($null -ne $item.rarity)       { Set-SellTestCombo 'Rarity'       $item.rarity }
+    if ($null -ne $item.faction)      { Set-SellTestCombo 'Faction'      $item.faction }
+    if ($null -ne $item.mainStat)     { Set-SellTestCombo 'MainStat'     $item.mainStat }
+    if ($null -ne $item.level)        { Set-SellTestCombo 'Level'        $item.level }
+    if ($null -ne $item.subStat1)     { Set-SellTestCombo 'SubStat1'     $item.subStat1 }
+    if ($null -ne $item.subStat2)     { Set-SellTestCombo 'SubStat2'     $item.subStat2 }
+    if ($null -ne $item.subStat3)     { Set-SellTestCombo 'SubStat3'     $item.subStat3 }
+    if ($null -ne $item.subStat4)     { Set-SellTestCombo 'SubStat4'     $item.subStat4 }
+
+    # Set numeric values via triple-click (select all) + type
+    $valuePairs = @(
+        @('Value1', $item.value1),
+        @('Value2', $item.value2),
+        @('Value3', $item.value3),
+        @('Value4', $item.value4)
+    )
+    foreach ($pair in $valuePairs) {
+        if ($null -ne $pair[1]) {
+            $pos = ST-Pos $pair[0]
+            Write-Host "  $($pair[0]) -> $($pair[1])"
+            # Triple-click to select all text in the numeric field
+            [RslhHelper]::Click($pos[0], $pos[1])
+            Start-Sleep -Milliseconds 100
+            [RslhHelper]::Click($pos[0], $pos[1])
+            Start-Sleep -Milliseconds 50
+            [RslhHelper]::Click($pos[0], $pos[1])
+            Start-Sleep -Milliseconds 200
+            # Type the value (SendKeys via .NET)
+            Add-Type -AssemblyName System.Windows.Forms
+            [System.Windows.Forms.SendKeys]::SendWait("$($pair[1])")
+            Start-Sleep -Milliseconds 200
+        }
+    }
+
+    Start-Sleep -Milliseconds 300
+    Write-Host "Item configured."
+}
+
 # ── Command dispatch (for server mode) ───────────────────────────────────────
 
 function Invoke-HarnessCommand($cmd) {
@@ -238,6 +399,27 @@ function Invoke-HarnessCommand($cmd) {
         switch ($action) {
             "ping" {
                 $result.message = "pong"
+            }
+            "get_window_pos" {
+                if (Get-WindowPos) {
+                    $result.x = $script:WinX
+                    $result.y = $script:WinY
+                    $result.message = "Window at $($script:WinX),$($script:WinY)"
+                } else {
+                    $result.ok = $false
+                    $result.error = "Failed to get window position"
+                }
+            }
+            "set_sell_test_item" {
+                if ($script:WinX -eq 0 -and $script:WinY -eq 0) {
+                    if (-not (Get-WindowPos)) {
+                        $result.ok = $false
+                        $result.error = "Cannot determine window position"
+                        break
+                    }
+                }
+                Set-SellTestItem $cmd.item
+                $result.message = "Item configured"
             }
             "find" {
                 $el = Find-Element -name $cmd.name -className $cmd.className `
@@ -252,6 +434,16 @@ function Invoke-HarnessCommand($cmd) {
             "click" {
                 [RslhHelper]::Click($cmd.x, $cmd.y)
                 $result.message = "Clicked $($cmd.x),$($cmd.y)"
+            }
+            "scroll_down" {
+                $notches = if ($cmd.notches) { $cmd.notches } else { 1 }
+                for ($i = 0; $i -lt $notches; $i++) { [RslhHelper]::ScrollDown(1) }
+                $result.message = "Scrolled down $notches"
+            }
+            "scroll_up" {
+                $notches = if ($cmd.notches) { $cmd.notches } else { 1 }
+                for ($i = 0; $i -lt $notches; $i++) { [RslhHelper]::ScrollUp(1) }
+                $result.message = "Scrolled up $notches"
             }
             "set_combo" {
                 $maxScroll = if ($cmd.maxScroll) { $cmd.maxScroll } else { 30 }

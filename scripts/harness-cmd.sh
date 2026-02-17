@@ -15,7 +15,7 @@ TEST_DIR="${RSLH_TEST_DIR:-/mnt/e/downloads/browser/rslh-test}"
 CMD_FILE="$TEST_DIR/harness-cmd.json"
 RESULT_FILE="$TEST_DIR/harness-result.json"
 READY_FILE="$TEST_DIR/harness-ready"
-TIMEOUT="${HARNESS_TIMEOUT:-30}"
+TIMEOUT="${HARNESS_TIMEOUT:-120}"
 
 if [[ $# -lt 1 ]]; then
     echo "Usage: harness-cmd.sh '<json command>'" >&2
