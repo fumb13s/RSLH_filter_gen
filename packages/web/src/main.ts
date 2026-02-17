@@ -385,9 +385,9 @@ function showQuickContent(tab: TabEntry): void {
 
   if (!tab.quickState) tab.quickState = defaultQuickState();
 
-  // Sync strict checkbox to current state
-  const strictCb = document.getElementById("quick-strict-cb") as HTMLInputElement;
-  strictCb.checked = !!tab.quickState.strict;
+  // Sync strict button to current state
+  const strictBtn = document.getElementById("quick-strict-btn")!;
+  strictBtn.classList.toggle("gen-toolbar-btn-strict", !!tab.quickState.strict);
 
   const onQuickChange = (state: QuickGenState): void => {
     tab.quickState = state;
@@ -813,11 +813,12 @@ fqblInput.addEventListener("change", () => {
 
 wireDropZone("quick-load-drop", ".fqbl", loadFqblFile);
 
-// Strict checkbox — toggle strict mode on the active quick tab
-document.getElementById("quick-strict-cb")!.addEventListener("change", () => {
+// Strict button — toggle strict mode on the active quick tab
+document.getElementById("quick-strict-btn")!.addEventListener("click", () => {
   const tab = getActiveTab();
   if (!tab || tab.type !== "quick" || !tab.quickState) return;
-  tab.quickState.strict = (document.getElementById("quick-strict-cb") as HTMLInputElement).checked || undefined;
+  tab.quickState.strict = !tab.quickState.strict || undefined;
+  document.getElementById("quick-strict-btn")!.classList.toggle("gen-toolbar-btn-strict", !!tab.quickState.strict);
 });
 
 // Share button — encode quick state into URL and copy to clipboard
