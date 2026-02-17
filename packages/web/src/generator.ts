@@ -14,6 +14,7 @@ import { getSettings } from "./settings.js";
 
 export interface SettingGroup {
   name?: string;
+  keep?: boolean;                      // true (default) = keep, false = sell
   sets: number[];
   slots: number[];
   mainStats: [number, boolean][];       // [statId, isFlat]

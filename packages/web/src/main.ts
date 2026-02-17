@@ -385,6 +385,10 @@ function showQuickContent(tab: TabEntry): void {
 
   if (!tab.quickState) tab.quickState = defaultQuickState();
 
+  // Sync strict checkbox to current state
+  const strictCb = document.getElementById("quick-strict-cb") as HTMLInputElement;
+  strictCb.checked = !!tab.quickState.strict;
+
   const onQuickChange = (state: QuickGenState): void => {
     tab.quickState = state;
     renderQuickGenerator(state, onQuickChange);
@@ -629,6 +633,11 @@ function groupsFromQuickTab(): SettingGroup[] | null {
     return null;
   }
 
+  // Strict mode: append a catchall sell-all rule at the end
+  if (tab.quickState.strict) {
+    groups.push({ keep: false, sets: [], slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 });
+  }
+
   tabBarError.hidden = true;
   return groups;
 }
@@ -803,6 +812,13 @@ fqblInput.addEventListener("change", () => {
 });
 
 wireDropZone("quick-load-drop", ".fqbl", loadFqblFile);
+
+// Strict checkbox — toggle strict mode on the active quick tab
+document.getElementById("quick-strict-cb")!.addEventListener("change", () => {
+  const tab = getActiveTab();
+  if (!tab || tab.type !== "quick" || !tab.quickState) return;
+  tab.quickState.strict = (document.getElementById("quick-strict-cb") as HTMLInputElement).checked || undefined;
+});
 
 // Share button — encode quick state into URL and copy to clipboard
 const shareBtn = document.getElementById("quick-share-btn")!;

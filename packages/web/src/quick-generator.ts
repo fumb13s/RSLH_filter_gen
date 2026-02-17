@@ -44,6 +44,7 @@ export interface QuickGenState {
   rareAccessories?: RareAccessoryBlock;
   oreReroll?: OreRerollBlock;
   customProfiles?: CustomProfile[];
+  strict?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,6 +123,7 @@ export function stripBlockColors(state: QuickGenState): QuickGenState {
     rareAccessories: state.rareAccessories,
     oreReroll: state.oreReroll,
     customProfiles: state.customProfiles,
+    ...(state.strict ? { strict: true } : {}),
   };
 }
 
@@ -136,6 +138,7 @@ export function restoreBlockColors(state: QuickGenState): QuickGenState {
     rareAccessories: state.rareAccessories,
     oreReroll: state.oreReroll,
     customProfiles: state.customProfiles,
+    ...(state.strict ? { strict: true } : {}),
   };
 }
 

@@ -49,6 +49,7 @@ const ALL_STAT_VARIANTS: [number, boolean][] = [
 // ---------------------------------------------------------------------------
 
 export const arbSettingGroup: fc.Arbitrary<SettingGroup> = fc.record({
+  keep: fc.boolean(),
   sets: fc.uniqueArray(fc.constantFrom(...SET_IDS), { minLength: 0, maxLength: 6 }),
   slots: fc.uniqueArray(fc.constantFrom(...SLOT_IDS), { minLength: 0, maxLength: 4 }),
   mainStats: fc.uniqueArray(
@@ -142,6 +143,7 @@ export const arbQuickGenState: fc.Arbitrary<QuickGenState> = fc.record({
   blocks: fc.array(arbQuickBlock, { minLength: 1, maxLength: 2 }),
   rareAccessories: fc.option(arbRareAccessoryBlock, { nil: undefined }),
   oreReroll: fc.option(arbOreRerollBlock, { nil: undefined }),
+  strict: fc.boolean(),
 });
 
 // Light variant: single block, at most 1 profile, fewer sets — keeps
@@ -172,6 +174,7 @@ export const arbQuickGenStateLight: fc.Arbitrary<QuickGenState> = fc.record({
   blocks: fc.array(arbQuickBlockLight, { minLength: 1, maxLength: 1 }),
   rareAccessories: fc.option(arbRareAccessoryBlock, { nil: undefined }),
   oreReroll: fc.option(arbOreRerollBlock, { nil: undefined }),
+  strict: fc.boolean(),
 });
 
 // ---------------------------------------------------------------------------

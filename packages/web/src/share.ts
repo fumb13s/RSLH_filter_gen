@@ -292,7 +292,7 @@ function validateCustomProfile(v: unknown): CustomProfile {
 
 function validateQuickGenState(data: unknown): QuickGenState {
   if (!isPlainObject(data)) fail();
-  assertOnlyKeys(data, new Set(["blocks", "rareAccessories", "oreReroll", "customProfiles"]));
+  assertOnlyKeys(data, new Set(["blocks", "rareAccessories", "oreReroll", "customProfiles", "strict"]));
 
   // Validate customProfiles first (blocks reference them)
   let customProfileCount = 0;
@@ -316,6 +316,11 @@ function validateQuickGenState(data: unknown): QuickGenState {
 
   if (data.oreReroll !== undefined) {
     result.oreReroll = validateOreReroll(data.oreReroll);
+  }
+
+  if (data.strict !== undefined) {
+    if (typeof data.strict !== "boolean") fail();
+    result.strict = data.strict;
   }
 
   return result;

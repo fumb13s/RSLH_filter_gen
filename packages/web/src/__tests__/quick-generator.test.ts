@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { generateFilter, getRollRange, ARTIFACT_SET_NAMES } from "@rslh/core";
-import type { HsfRule } from "@rslh/core";
+import { generateFilter, evaluateFilter, getRollRange, ARTIFACT_SET_NAMES } from "@rslh/core";
+import type { HsfRule, Item } from "@rslh/core";
 import {
   generateOreRerollRules,
   generateRulesFromGroups,
@@ -732,6 +732,109 @@ describe("full quick-gen flow", () => {
     const rules2 = generateRulesFromGroups(groups2);
 
     expect(rules2.length).toBe(rules1.length);
+    assertRuleInvariants(rules2);
+  });
+
+  it("strict mode appends catchall sell rule", () => {
+    const state = defaultQuickState();
+    state.blocks[0].selectedProfiles = [0];
+    state.strict = true;
+
+    const groups = [
+      ...rareAccessoriesToGroups(state.rareAccessories),
+      ...quickStateToGroups(state),
+      ...oreRerollToGroups(state.oreReroll),
+    ];
+    // Append catchall — mirrors groupsFromQuickTab logic
+    groups.push({ keep: false, sets: [], slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 });
+
+    const rules = generateRulesFromGroups(groups);
+    expect(rules.length).toBeGreaterThan(1);
+
+    const lastRule = rules[rules.length - 1];
+    expect(lastRule.Keep).toBe(false);
+    expect(lastRule.Rank).toBe(0);
+    expect(lastRule.Rarity).toBe(0);
+    expect(lastRule).not.toHaveProperty("ArtifactSet");
+    expect(lastRule).not.toHaveProperty("ArtifactType");
+    assertRuleInvariants(rules);
+  });
+
+  it("strict mode sell verdict for unmatched item", () => {
+    const state = defaultQuickState();
+    // Only keep set 1 with HP Nuker profile
+    state.blocks[0].selectedProfiles = [0];
+    state.blocks[0].tiers = [{ name: "Keep", rolls: 9, color: "#22c55e" }];
+    state.blocks[0].assignments = { 1: 0 };
+    state.strict = true;
+
+    const groups = [
+      ...quickStateToGroups(state),
+    ];
+    groups.push({ keep: false, sets: [], slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 });
+
+    const rules = generateRulesFromGroups(groups);
+    const filter = generateFilter(rules);
+
+    // Item with a completely different set should be sold
+    const item: Item = {
+      set: 999, slot: 1, rank: 6, rarity: 5,
+      mainStat: 1, substats: [], level: 16,
+    };
+    expect(evaluateFilter(filter, item)).toBe("sell");
+  });
+
+  it("non-strict mode has no sell rules", () => {
+    const state = defaultQuickState();
+    state.blocks[0].selectedProfiles = [0];
+    state.strict = false;
+
+    const groups = [
+      ...rareAccessoriesToGroups(state.rareAccessories),
+      ...quickStateToGroups(state),
+      ...oreRerollToGroups(state.oreReroll),
+    ];
+    // No catchall appended
+
+    const rules = generateRulesFromGroups(groups);
+    for (const rule of rules) {
+      expect(rule.Keep).toBe(true);
+    }
+  });
+
+  it("strict strip/restore round-trip produces same rules", () => {
+    const state = defaultQuickState();
+    state.blocks[0].selectedProfiles = [0, 1];
+    state.strict = true;
+
+    // Generate rules from original state
+    const groups1 = [
+      ...rareAccessoriesToGroups(state.rareAccessories),
+      ...quickStateToGroups(state),
+      ...oreRerollToGroups(state.oreReroll),
+    ];
+    groups1.push({ keep: false, sets: [], slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 });
+    const rules1 = generateRulesFromGroups(groups1);
+
+    // Strip → JSON → parse → restore
+    const stripped = stripBlockColors(state);
+    expect(stripped.strict).toBe(true);
+    const json = JSON.stringify(stripped);
+    const parsed = JSON.parse(json);
+    const restored = restoreBlockColors(parsed);
+    expect(restored.strict).toBe(true);
+
+    // Generate rules from restored state
+    const groups2 = [
+      ...rareAccessoriesToGroups(restored.rareAccessories),
+      ...quickStateToGroups(restored),
+      ...oreRerollToGroups(restored.oreReroll),
+    ];
+    groups2.push({ keep: false, sets: [], slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 });
+    const rules2 = generateRulesFromGroups(groups2);
+
+    expect(rules2.length).toBe(rules1.length);
+    expect(rules2[rules2.length - 1].Keep).toBe(false);
     assertRuleInvariants(rules2);
   });
 });

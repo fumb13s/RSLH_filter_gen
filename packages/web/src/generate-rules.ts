@@ -69,6 +69,7 @@ export function generateRulesFromGroups(groups: SettingGroup[]): HsfRule[] {
     // Unconditional keep: empty goodStats → single rule with empty substats
     if (group.goodStats.length === 0) {
       const rule = defaultRule({
+        Keep: group.keep ?? true,
         ...(group.sets.length > 0 ? { ArtifactSet: [...group.sets] } : { ArtifactSet: undefined }),
         ...(group.slots.length > 0 ? { ArtifactType: [...group.slots] } : { ArtifactType: undefined }),
         MainStatID: -1,
@@ -142,6 +143,7 @@ export function generateRulesFromGroups(groups: SettingGroup[]): HsfRule[] {
           while (substats.length < 4) substats.push(emptySubstat());
 
           const rule = defaultRule({
+            Keep: group.keep ?? true,
             ...(group.sets.length > 0 ? { ArtifactSet: [...group.sets] } : { ArtifactSet: undefined }),
             ...(group.slots.length > 0 ? { ArtifactType: [...group.slots] } : { ArtifactType: undefined }),
             MainStatID: mainStat.MainStatID,
