@@ -108,12 +108,17 @@ public class RslhHelper {
             int clickY = comboY + DD_FIRST_OFFSET + itemIndex * DD_ITEM_HEIGHT;
             Click(comboX, clickY);
         } else {
-            // Scroll down from index 0 to target
-            for (int i = 0; i < itemIndex; i++) { ScrollDown(1); }
+            // Move cursor into dropdown so scroll moves the viewport (not highlight)
+            SetCursorPos(comboX, comboY + DD_FIRST_OFFSET);
+            Thread.Sleep(100);
+
+            // Scroll viewport down just enough to make target the bottom visible item.
+            // Each tick shifts the viewport by 1 item.
+            int scrollCount = itemIndex - (DD_VISIBLE_COUNT - 1);
+            for (int i = 0; i < scrollCount; i++) { ScrollDown(1); }
             Thread.Sleep(200);
 
-            // After scrolling past visible area, highlighted item is always
-            // at the bottom row (row VISIBLE-1)
+            // Target is now at the bottom row
             int clickY = comboY + DD_FIRST_OFFSET + (DD_VISIBLE_COUNT - 1) * DD_ITEM_HEIGHT;
             Click(comboX, clickY);
         }
@@ -345,28 +350,42 @@ function Set-SellTestItem($item) {
     if ($null -ne $item.subStat3)     { Set-SellTestCombo 'SubStat3'     $item.subStat3 }
     if ($null -ne $item.subStat4)     { Set-SellTestCombo 'SubStat4'     $item.subStat4 }
 
-    # Set numeric values via triple-click (select all) + type
+    # Set numeric values.
+    # The value fields shrink when the item preview appears, so find the
+    # actual X position dynamically via UIAutomation, then use known Y offsets.
     $valuePairs = @(
         @('Value1', $item.value1),
         @('Value2', $item.value2),
         @('Value3', $item.value3),
         @('Value4', $item.value4)
     )
-    foreach ($pair in $valuePairs) {
-        if ($null -ne $pair[1]) {
-            $pos = ST-Pos $pair[0]
-            Write-Host "  $($pair[0]) -> $($pair[1])"
-            # Triple-click to select all text in the numeric field
-            [RslhHelper]::Click($pos[0], $pos[1])
-            Start-Sleep -Milliseconds 100
-            [RslhHelper]::Click($pos[0], $pos[1])
-            Start-Sleep -Milliseconds 50
-            [RslhHelper]::Click($pos[0], $pos[1])
-            Start-Sleep -Milliseconds 200
-            # Type the value (SendKeys via .NET)
-            Add-Type -AssemblyName System.Windows.Forms
-            [System.Windows.Forms.SendKeys]::SendWait("$($pair[1])")
-            Start-Sleep -Milliseconds 200
+    $hasValues = $false
+    foreach ($pair in $valuePairs) { if ($null -ne $pair[1]) { $hasValues = $true; break } }
+
+    if ($hasValues) {
+        # Find one NumericEdit to get the actual column X center
+        $numEdit = Find-Element -className 'TscGPNumericEdit'
+        if ($numEdit) {
+            $valX = [int]$numEdit.cx
+            Write-Host "  Value field X center: $valX (found via UIAutomation)"
+        } else {
+            $valX = (ST-Pos 'Value1')[0]
+            Write-Warning "  NumericEdit not found, using hardcoded X: $valX"
+        }
+
+        Add-Type -AssemblyName System.Windows.Forms
+        foreach ($pair in $valuePairs) {
+            if ($null -ne $pair[1]) {
+                $valY = (ST-Pos $pair[0])[1]
+                Write-Host "  $($pair[0]) -> $($pair[1]) (at $valX,$valY)"
+                # Click to focus, Ctrl+A to select all, then type the value
+                [RslhHelper]::Click($valX, $valY)
+                Start-Sleep -Milliseconds 100
+                [System.Windows.Forms.SendKeys]::SendWait("^a")
+                Start-Sleep -Milliseconds 100
+                [System.Windows.Forms.SendKeys]::SendWait("$($pair[1])")
+                Start-Sleep -Milliseconds 200
+            }
         }
     }
 
