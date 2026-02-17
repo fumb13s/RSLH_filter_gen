@@ -435,8 +435,8 @@ function Invoke-HarnessCommand($cmd) {
                 }
                 $statusPos = ST-Pos 'StatusLabel'
                 $path = Join-Path $testDir "status.png"
-                # Capture a region around the status text
-                [RslhHelper]::Screenshot($statusPos[0] - 180, $statusPos[1] - 10, 360, 20, $path)
+                # Capture the full status bar (wide enough for OCR)
+                [RslhHelper]::Screenshot($script:WinX + 430, $statusPos[1] - 5, 600, 25, $path)
                 $result.path = $path
                 $result.message = "Status screenshot saved"
             }
