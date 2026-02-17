@@ -11,7 +11,8 @@
     "test": "vitest run",
     "lint": "eslint .",
     "dev": "npm run dev --workspace=packages/web",
-    "clean": "rm -rf packages/*/dist packages/*/*.tsbuildinfo"
+    "clean": "rm -rf packages/*/dist packages/*/*.tsbuildinfo",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

@@ -1,4 +1,4 @@
-# RSL Helper test harness — run this ELEVATED (one UAC prompt).
+﻿# RSL Helper test harness — run this ELEVATED (one UAC prompt).
 # Provides click, scroll, screenshot, combo-set, and find-element functions.
 # UIAutomation is never loaded in this process to avoid DPI corruption.
 #
@@ -160,7 +160,7 @@ $ST = @{
     # Buttons (also findable via UIAutomation)
     SellSetup    = @(186, 506)
     LoadSetup    = @(1090, 364)
-    SellTestOpen = @(1208, 670)
+    SellTestOpen = @(1217, 816)
     Reset        = @(1078, 816)
     # Col1 combos
     ArtifactSet  = @(513, 707)
@@ -260,9 +260,27 @@ function Find-Element {
     return $result
 }
 
+# ── Abort sentinel ────────────────────────────────────────────────────────────
+
+$script:StopFile = Join-Path $testDir "harness-stop"
+
+function Check-Abort {
+    if (Test-Path $script:StopFile) {
+        Write-Host "[ABORT] Stop sentinel detected — aborting operation"
+        Remove-Item $script:StopFile -ErrorAction SilentlyContinue
+        throw "ABORT: harness-stop sentinel"
+    }
+}
+
 # ── High-level actions ───────────────────────────────────────────────────────
 
 function Open-SellSetup {
+    # Idempotent: check if already open by looking for Load Setup button
+    $check = Find-Element -name 'Load Setup'
+    if ($check) {
+        Write-Host "Sell Setup already open."
+        return $true
+    }
     Write-Host "Opening Sell Setup..."
     $el = Find-Element -name 'Sell Setup'
     if (-not $el) { Write-Error "Sell Setup button not found"; return $false }
@@ -337,18 +355,18 @@ function Set-SellTestItem($item) {
     [RslhHelper]::Click($resetPos[0], $resetPos[1])
     Start-Sleep -Milliseconds 500
 
-    # Set combos (only if specified)
-    if ($null -ne $item.artifactSet)  { Set-SellTestCombo 'ArtifactSet'  $item.artifactSet }
-    if ($null -ne $item.artifactType) { Set-SellTestCombo 'ArtifactType' $item.artifactType }
-    if ($null -ne $item.rank)         { Set-SellTestCombo 'Rank'         $item.rank }
-    if ($null -ne $item.rarity)       { Set-SellTestCombo 'Rarity'       $item.rarity }
-    if ($null -ne $item.faction)      { Set-SellTestCombo 'Faction'      $item.faction }
-    if ($null -ne $item.mainStat)     { Set-SellTestCombo 'MainStat'     $item.mainStat }
-    if ($null -ne $item.level)        { Set-SellTestCombo 'Level'        $item.level }
-    if ($null -ne $item.subStat1)     { Set-SellTestCombo 'SubStat1'     $item.subStat1 }
-    if ($null -ne $item.subStat2)     { Set-SellTestCombo 'SubStat2'     $item.subStat2 }
-    if ($null -ne $item.subStat3)     { Set-SellTestCombo 'SubStat3'     $item.subStat3 }
-    if ($null -ne $item.subStat4)     { Set-SellTestCombo 'SubStat4'     $item.subStat4 }
+    # Set combos (only if specified), checking abort sentinel between each
+    if ($null -ne $item.artifactSet)  { Check-Abort; Set-SellTestCombo 'ArtifactSet'  $item.artifactSet }
+    if ($null -ne $item.artifactType) { Check-Abort; Set-SellTestCombo 'ArtifactType' $item.artifactType }
+    if ($null -ne $item.rank)         { Check-Abort; Set-SellTestCombo 'Rank'         $item.rank }
+    if ($null -ne $item.rarity)       { Check-Abort; Set-SellTestCombo 'Rarity'       $item.rarity }
+    if ($null -ne $item.faction)      { Check-Abort; Set-SellTestCombo 'Faction'      $item.faction }
+    if ($null -ne $item.mainStat)     { Check-Abort; Set-SellTestCombo 'MainStat'     $item.mainStat }
+    if ($null -ne $item.level)        { Check-Abort; Set-SellTestCombo 'Level'        $item.level }
+    if ($null -ne $item.subStat1)     { Check-Abort; Set-SellTestCombo 'SubStat1'     $item.subStat1 }
+    if ($null -ne $item.subStat2)     { Check-Abort; Set-SellTestCombo 'SubStat2'     $item.subStat2 }
+    if ($null -ne $item.subStat3)     { Check-Abort; Set-SellTestCombo 'SubStat3'     $item.subStat3 }
+    if ($null -ne $item.subStat4)     { Check-Abort; Set-SellTestCombo 'SubStat4'     $item.subStat4 }
 
     # Set numeric values.
     # The value fields shrink when the item preview appears, so find the
@@ -484,6 +502,49 @@ function Invoke-HarnessCommand($cmd) {
             "open_sell_setup" {
                 $result.ok = Open-SellSetup
             }
+            "open_sell_test" {
+                if ($script:WinX -eq 0 -and $script:WinY -eq 0) {
+                    if (-not (Get-WindowPos)) {
+                        $result.ok = $false
+                        $result.error = "Cannot determine window position"
+                        break
+                    }
+                }
+                # The Sell Test toggle is the arrow at SellTestOpen offset (when closed).
+                # When the panel opens, the "Sell Test" label moves up (~816 -> ~676 relative Y).
+                # RSL Helper bug: may need two clicks if Sell Setup was reopened.
+                $closedRelY = 816
+                for ($attempt = 0; $attempt -lt 3; $attempt++) {
+                    $label = Find-Element -name 'Sell Test'
+                    if (-not $label) {
+                        $result.ok = $false
+                        $result.error = "Sell Test label not found"
+                        break
+                    }
+                    $relY = $label.cy - $script:WinY
+                    if ($relY -lt ($closedRelY - 50)) {
+                        # Label moved up — panel is open
+                        $result.message = "Sell Test panel open (label at relY=$relY)"
+                        break
+                    }
+                    # Panel is closed — click the arrow (same Y as label, X from offset)
+                    $arrowX = $script:WinX + ($ST['SellTestOpen'])[0]
+                    [RslhHelper]::Click($arrowX, $label.cy)
+                    Start-Sleep -Milliseconds 800
+                    Write-Host "  Sell Test click $($attempt + 1) at $arrowX,$($label.cy)"
+                }
+                # Final check
+                if ($result.ok -ne $false -and -not $result.message) {
+                    $label = Find-Element -name 'Sell Test'
+                    $relY = if ($label) { $label.cy - $script:WinY } else { $closedRelY }
+                    if ($relY -lt ($closedRelY - 50)) {
+                        $result.message = "Sell Test panel opened after retries"
+                    } else {
+                        $result.ok = $false
+                        $result.error = "Sell Test panel did not open after 3 attempts"
+                    }
+                }
+            }
             "click_load_setup" {
                 $result.ok = Click-LoadSetup
             }
@@ -558,6 +619,13 @@ if (-not $interactive) {
     Write-Host ""
 
     while ($true) {
+        # Check abort sentinel
+        if (Test-Path $script:StopFile) {
+            Write-Host "[ABORT] Stop sentinel detected — shutting down"
+            Remove-Item $script:StopFile -ErrorAction SilentlyContinue
+            if (Test-Path $readyFile) { Remove-Item $readyFile }
+            break
+        }
         if (Test-Path $cmdFile) {
             try {
                 $raw = Get-Content $cmdFile -Raw -Encoding UTF8
@@ -580,6 +648,12 @@ if (-not $interactive) {
                 $errResult = @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
                 $errResult | Out-File -FilePath $resultFile -Encoding utf8
                 Write-Host "[$(Get-Date -Format 'HH:mm:ss')] ERROR: $($_.Exception.Message)"
+                # If aborted, shut down
+                if ($_.Exception.Message -like "*harness-stop sentinel*") {
+                    Write-Host "Shutting down after abort."
+                    if (Test-Path $readyFile) { Remove-Item $readyFile }
+                    break
+                }
             }
         }
         Start-Sleep -Milliseconds 200
