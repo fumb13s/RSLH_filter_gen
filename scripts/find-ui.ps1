@@ -24,29 +24,12 @@ function Make-Result($ok, $data) {
 $root = [System.Windows.Automation.AutomationElement]::RootElement
 $pidCond = New-Object System.Windows.Automation.PropertyCondition(
     [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $targetPid)
-$window = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $pidCond)
+# FindAll: a process can have multiple top-level windows (e.g. main window + file dialog)
+$windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, $pidCond)
 
-if (-not $window) {
+if (-not $windows -or $windows.Count -eq 0) {
     Write-Output (Make-Result $false @{ error = "Window not found for PID $targetPid" })
     exit 1
-}
-
-# Determine search root: main window or a named parent element
-$searchRoot = $window
-if ($parentName) {
-    $parentCond = New-Object System.Windows.Automation.PropertyCondition(
-        [System.Windows.Automation.AutomationElement]::NameProperty, $parentName)
-    $searchRoot = $window.FindFirst(
-        [System.Windows.Automation.TreeScope]::Descendants, $parentCond)
-    if (-not $searchRoot) {
-        # Also check direct children (for dialogs that are direct children of the main window)
-        $searchRoot = $window.FindFirst(
-            [System.Windows.Automation.TreeScope]::Children, $parentCond)
-    }
-    if (-not $searchRoot) {
-        Write-Output (Make-Result $false @{ error = "Parent '$parentName' not found" })
-        exit 1
-    }
 }
 
 # Build search condition
@@ -75,7 +58,24 @@ if ($conditions.Count -eq 1) {
     $searchCond = New-Object System.Windows.Automation.AndCondition($conditions)
 }
 
-$el = $searchRoot.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $searchCond)
+# Search all top-level windows for this PID (handles dialogs as separate windows)
+$el = $null
+foreach ($window in $windows) {
+    $searchRoot = $window
+    if ($parentName) {
+        $parentCond = New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::NameProperty, $parentName)
+        $searchRoot = $window.FindFirst(
+            [System.Windows.Automation.TreeScope]::Descendants, $parentCond)
+        if (-not $searchRoot) {
+            $searchRoot = $window.FindFirst(
+                [System.Windows.Automation.TreeScope]::Children, $parentCond)
+        }
+        if (-not $searchRoot) { continue }
+    }
+    $el = $searchRoot.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $searchCond)
+    if ($el) { break }
+}
 
 if (-not $el) {
     $desc = @()

@@ -274,25 +274,25 @@ function Open-SellSetup {
 function Click-LoadSetup {
     Write-Host "Clicking Load Setup..."
     $el = Find-Element -name 'Load Setup'
-    if (-not $el) { Write-Error "Load Setup button not found"; return $false }
+    if (-not $el) { Write-Host "  FAIL: Load Setup button not found"; return $false }
     [RslhHelper]::Click($el.cx, $el.cy)
-    Start-Sleep -Milliseconds 800
+    Start-Sleep -Milliseconds 1500  # file dialog needs time to fully render
     return $true
 }
 
 function Load-HsfFile([string]$filePath) {
     Write-Host "Loading .hsf file: $filePath"
 
-    # Find the Edit control inside the Open dialog
-    $edit = Find-Element -className 'Edit' -parentName 'Open'
-    if (-not $edit) { Write-Error "File dialog Edit control not found"; return $false }
+    # Find the Edit control in the file dialog
+    # Note: skip parentName — #32770 dialogs don't resolve reliably and it's slow
+    $edit = Find-Element -className 'Edit'
+    if (-not $edit) { Write-Host "  FAIL: Edit control not found"; return $false }
+    Write-Host "  Found Edit at hwnd=$($edit.hwnd)"
 
-    # Find the Open button inside the Open dialog
-    $btn = Find-Element -name 'Open' -className 'Button' -parentName 'Open'
-    if (-not $btn) {
-        $btn = Find-Element -name '&Open' -className 'Button' -parentName 'Open'
-    }
-    if (-not $btn) { Write-Error "Open button not found in file dialog"; return $false }
+    # Find the Open button
+    $btn = Find-Element -name 'Open' -className 'Button'
+    if (-not $btn) { Write-Host "  FAIL: Open button not found"; return $false }
+    Write-Host "  Found Open at cx=$($btn.cx), cy=$($btn.cy)"
 
     # Set filename and click Open
     [RslhHelper]::SetText($edit.hwnd, $filePath)
@@ -425,6 +425,21 @@ function Invoke-HarnessCommand($cmd) {
                 Set-SellTestItem $cmd.item
                 $result.message = "Item configured"
             }
+            "read_status" {
+                if ($script:WinX -eq 0 -and $script:WinY -eq 0) {
+                    if (-not (Get-WindowPos)) {
+                        $result.ok = $false
+                        $result.error = "Cannot determine window position"
+                        break
+                    }
+                }
+                $statusPos = ST-Pos 'StatusLabel'
+                $path = Join-Path $testDir "status.png"
+                # Capture a region around the status text
+                [RslhHelper]::Screenshot($statusPos[0] - 180, $statusPos[1] - 10, 360, 20, $path)
+                $result.path = $path
+                $result.message = "Status screenshot saved"
+            }
             "find" {
                 $el = Find-Element -name $cmd.name -className $cmd.className `
                     -parentName $cmd.parentName -automationId $cmd.automationId
@@ -473,7 +488,31 @@ function Invoke-HarnessCommand($cmd) {
                 $result.ok = Click-LoadSetup
             }
             "load_hsf" {
-                $result.ok = Load-HsfFile $cmd.filePath
+                $fp = $cmd.filePath
+                if (-not $fp) { $fp = $cmd.path }
+                if (-not $fp) {
+                    $result.ok = $false
+                    $result.error = "No filePath or path specified"
+                } else {
+                    # Click Load Setup to open the file dialog
+                    $null = Click-LoadSetup
+                    # Find Edit and Open button
+                    $edit = Find-Element -className 'Edit'
+                    $btn  = Find-Element -name 'Open' -className 'Button'
+                    if (-not $edit) {
+                        $result.ok = $false
+                        $result.error = "Edit control not found in file dialog"
+                    } elseif (-not $btn) {
+                        $result.ok = $false
+                        $result.error = "Open button not found in file dialog"
+                    } else {
+                        [RslhHelper]::SetText($edit.hwnd, $fp)
+                        Start-Sleep -Milliseconds 300
+                        [RslhHelper]::Click($btn.cx, $btn.cy)
+                        Start-Sleep -Milliseconds 500
+                        $result.ok = $true
+                    }
+                }
             }
             "click_reset" {
                 Click-Reset
