@@ -266,3 +266,125 @@ describe("matchesRule — combined conditions", () => {
     }))).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// matchesRule — LVLForCheck
+// ---------------------------------------------------------------------------
+
+describe("matchesRule — LVLForCheck", () => {
+  it("LVLForCheck 0 matches any level", () => {
+    const rule = defaultRule({ Rank: 0, Rarity: 0, MainStatID: -1, LVLForCheck: 0 });
+    expect(matchesRule(rule, makeItem({ level: 0 }))).toBe(true);
+    expect(matchesRule(rule, makeItem({ level: 16 }))).toBe(true);
+  });
+
+  it("matches when item level meets checkpoint", () => {
+    const rule = defaultRule({ Rank: 0, Rarity: 0, MainStatID: -1, LVLForCheck: 8 });
+    expect(matchesRule(rule, makeItem({ level: 8 }))).toBe(true);
+    expect(matchesRule(rule, makeItem({ level: 16 }))).toBe(true);
+  });
+
+  it("does not match when item level is below checkpoint", () => {
+    const rule = defaultRule({ Rank: 0, Rarity: 0, MainStatID: -1, LVLForCheck: 8 });
+    expect(matchesRule(rule, makeItem({ level: 4 }))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// matchesRule — Substats
+// ---------------------------------------------------------------------------
+
+describe("matchesRule — Substats", () => {
+  it("empty rule substats match any item", () => {
+    const rule = defaultRule({ Rank: 0, Rarity: 0, MainStatID: -1 });
+    expect(matchesRule(rule, makeItem())).toBe(true);
+  });
+
+  it("matches when item meets substat threshold", () => {
+    const rule = defaultRule({
+      Rank: 0, Rarity: 0, MainStatID: -1,
+      Substats: [
+        { ID: 4, Value: 10, IsFlat: false, NotAvailable: false, Condition: ">=" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+      ],
+    });
+    const item = makeItem({
+      substats: [{ statId: 4, isFlat: false, rolls: 3, value: 15 }],
+    });
+    expect(matchesRule(rule, item)).toBe(true);
+  });
+
+  it("does not match when item substat value is below threshold", () => {
+    const rule = defaultRule({
+      Rank: 0, Rarity: 0, MainStatID: -1,
+      Substats: [
+        { ID: 4, Value: 20, IsFlat: false, NotAvailable: false, Condition: ">=" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+      ],
+    });
+    const item = makeItem({
+      substats: [{ statId: 4, isFlat: false, rolls: 2, value: 10 }],
+    });
+    expect(matchesRule(rule, item)).toBe(false);
+  });
+
+  it("does not match when item lacks required substat", () => {
+    const rule = defaultRule({
+      Rank: 0, Rarity: 0, MainStatID: -1,
+      Substats: [
+        { ID: 4, Value: 10, IsFlat: false, NotAvailable: false, Condition: ">=" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+      ],
+    });
+    const item = makeItem({ substats: [] });
+    expect(matchesRule(rule, item)).toBe(false);
+  });
+
+  it("IsFlat distinguishes flat from percent variants", () => {
+    const rule = defaultRule({
+      Rank: 0, Rarity: 0, MainStatID: -1,
+      Substats: [
+        { ID: 1, Value: 5, IsFlat: false, NotAvailable: false, Condition: ">=" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+      ],
+    });
+    const item = makeItem({
+      substats: [{ statId: 1, isFlat: true, rolls: 1, value: 200 }],
+    });
+    expect(matchesRule(rule, item)).toBe(false);
+  });
+
+  it("multiple active substats require ALL to be satisfied (AND)", () => {
+    const rule = defaultRule({
+      Rank: 0, Rarity: 0, MainStatID: -1,
+      Substats: [
+        { ID: 4, Value: 10, IsFlat: false, NotAvailable: false, Condition: ">=" },
+        { ID: 5, Value: 8, IsFlat: false, NotAvailable: false, Condition: ">=" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+      ],
+    });
+    const itemBoth = makeItem({
+      substats: [
+        { statId: 4, isFlat: false, rolls: 3, value: 15 },
+        { statId: 5, isFlat: false, rolls: 2, value: 10 },
+      ],
+    });
+    expect(matchesRule(rule, itemBoth)).toBe(true);
+
+    const itemOne = makeItem({
+      substats: [
+        { statId: 4, isFlat: false, rolls: 3, value: 15 },
+      ],
+    });
+    expect(matchesRule(rule, itemOne)).toBe(false);
+  });
+});
