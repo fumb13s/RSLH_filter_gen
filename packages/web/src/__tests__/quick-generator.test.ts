@@ -746,7 +746,8 @@ describe("full quick-gen flow", () => {
       ...oreRerollToGroups(state.oreReroll),
     ];
     // Append catchall — mirrors groupsFromQuickTab logic
-    groups.push({ keep: false, sets: [], slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 });
+    const allSets = Object.keys(ARTIFACT_SET_NAMES).map(Number);
+    groups.push({ keep: false, sets: allSets, slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 });
 
     const rules = generateRulesFromGroups(groups);
     expect(rules.length).toBeGreaterThan(1);
@@ -755,7 +756,7 @@ describe("full quick-gen flow", () => {
     expect(lastRule.Keep).toBe(false);
     expect(lastRule.Rank).toBe(0);
     expect(lastRule.Rarity).toBe(0);
-    expect(lastRule).not.toHaveProperty("ArtifactSet");
+    expect(lastRule.ArtifactSet).toEqual(allSets);
     expect(lastRule).not.toHaveProperty("ArtifactType");
     assertRuleInvariants(rules);
   });
@@ -771,17 +772,26 @@ describe("full quick-gen flow", () => {
     const groups = [
       ...quickStateToGroups(state),
     ];
-    groups.push({ keep: false, sets: [], slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 });
+    const allSets = Object.keys(ARTIFACT_SET_NAMES).map(Number);
+    groups.push({ keep: false, sets: allSets, slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 });
 
     const rules = generateRulesFromGroups(groups);
     const filter = generateFilter(rules);
 
-    // Item with a completely different set should be sold
-    const item: Item = {
+    // Item with a known set not assigned to any block should be sold
+    const knownSet = allSets.find(s => s !== 1)!;
+    const soldItem: Item = {
+      set: knownSet, slot: 1, rank: 6, rarity: 5,
+      mainStat: 1, substats: [], level: 16,
+    };
+    expect(evaluateFilter(filter, soldItem)).toBe("sell");
+
+    // Item with an unknown set should NOT be sold (not in the explicit set list)
+    const unknownItem: Item = {
       set: 999, slot: 1, rank: 6, rarity: 5,
       mainStat: 1, substats: [], level: 16,
     };
-    expect(evaluateFilter(filter, item)).toBe("sell");
+    expect(evaluateFilter(filter, unknownItem)).toBe("keep");
   });
 
   it("non-strict mode has no sell rules", () => {
@@ -813,7 +823,8 @@ describe("full quick-gen flow", () => {
       ...quickStateToGroups(state),
       ...oreRerollToGroups(state.oreReroll),
     ];
-    groups1.push({ keep: false, sets: [], slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 });
+    const allSets = Object.keys(ARTIFACT_SET_NAMES).map(Number);
+    groups1.push({ keep: false, sets: allSets, slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 });
     const rules1 = generateRulesFromGroups(groups1);
 
     // Strip → JSON → parse → restore
@@ -830,7 +841,7 @@ describe("full quick-gen flow", () => {
       ...quickStateToGroups(restored),
       ...oreRerollToGroups(restored.oreReroll),
     ];
-    groups2.push({ keep: false, sets: [], slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 });
+    groups2.push({ keep: false, sets: allSets, slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 });
     const rules2 = generateRulesFromGroups(groups2);
 
     expect(rules2.length).toBe(rules1.length);

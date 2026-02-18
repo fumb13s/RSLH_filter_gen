@@ -1,5 +1,5 @@
 import type { HsfFilter } from "@rslh/core";
-import { parseFilter, generateFilter, serializeFilter, defaultRule } from "@rslh/core";
+import { parseFilter, generateFilter, serializeFilter, defaultRule, ARTIFACT_SET_NAMES } from "@rslh/core";
 import { initUpload } from "./upload.js";
 import { renderSummary, renderRules, renderTestPanel, renderError, clearError, clearViewer } from "./render.js";
 import { renderGenerator, clearGenerator, defaultGroup } from "./generator.js";
@@ -634,7 +634,8 @@ function groupsFromQuickTab(): SettingGroup[] | null {
 
   // Strict mode: append a catchall sell-all rule at the end
   if (tab.quickState.strict) {
-    groups.push({ keep: false, sets: [], slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 });
+    const allSets = Object.keys(ARTIFACT_SET_NAMES).map(Number);
+    groups.push({ keep: false, sets: allSets, slots: [], mainStats: [], goodStats: [], rolls: 0, rank: 0, rarity: 0 });
   }
 
   tabBarError.hidden = true;
