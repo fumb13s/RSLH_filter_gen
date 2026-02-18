@@ -6,7 +6,7 @@ import { test as fcTest } from "@fast-check/vitest";
 import fc from "fast-check";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { evaluateFilter, matchesRule, defaultRule } from "../index.js";
+import { evaluateFilter, matchesRule, defaultRule, MAX_SUBSTATS } from "../index.js";
 import type { HsfFilter } from "../index.js";
 import { arbHsfRule, arbItem, arbHsfFilter } from "./helpers/arbitraries.js";
 import { loadRegressions, propConfig } from "./helpers/fc-reporter.js";
@@ -70,5 +70,28 @@ describe("evaluate.prop — evaluateFilter", () => {
 
     const filter: HsfFilter = { Rules: [wildcardRule] };
     expect(evaluateFilter(filter, item)).toBe("keep");
+  });
+
+  fcTest.prop(
+    [arbItem],
+    cfg("generated items have valid substats"),
+  )("generated items have valid substats", (item) => {
+    // Substat count is within bounds
+    expect(item.substats.length).toBeLessThanOrEqual(MAX_SUBSTATS);
+
+    // No duplicate stat IDs
+    const statIds = item.substats.map((s) => s.statId);
+    expect(new Set(statIds).size).toBe(statIds.length);
+
+    // No substat shares mainStat ID
+    for (const s of item.substats) {
+      expect(s.statId).not.toBe(item.mainStat);
+    }
+
+    // Each substat has valid rolls and value
+    for (const s of item.substats) {
+      expect(s.rolls).toBeGreaterThanOrEqual(1);
+      expect(s.value).toBeGreaterThanOrEqual(1);
+    }
   });
 });
