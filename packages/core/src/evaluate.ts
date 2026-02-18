@@ -52,7 +52,9 @@ export function matchesRule(rule: HsfRule, item: Item): boolean {
     if (item.level < rule.LVLForCheck) return false;
   }
 
-  // Substats: every active rule substat must be satisfied by an item substat
+  // Substats: every active rule substat must be satisfied by an item substat.
+  // Condition is always ">=" in real-world .hsf files; NotAvailable is always
+  // false for active substats. Both are ignored here — we hardcode >= semantics.
   for (const rs of rule.Substats) {
     if (rs.ID <= 0) continue; // empty slot
     const match = item.substats.find(

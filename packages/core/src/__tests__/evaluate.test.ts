@@ -362,6 +362,22 @@ describe("matchesRule — Substats", () => {
     expect(matchesRule(rule, item)).toBe(false);
   });
 
+  it("matches when item substat value exactly equals threshold", () => {
+    const rule = defaultRule({
+      Rank: 0, Rarity: 0, MainStatID: -1,
+      Substats: [
+        { ID: 4, Value: 10, IsFlat: false, NotAvailable: false, Condition: ">=" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+      ],
+    });
+    const item = makeItem({
+      substats: [{ statId: 4, isFlat: false, rolls: 2, value: 10 }],
+    });
+    expect(matchesRule(rule, item)).toBe(true);
+  });
+
   it("multiple active substats require ALL to be satisfied (AND)", () => {
     const rule = defaultRule({
       Rank: 0, Rarity: 0, MainStatID: -1,
@@ -386,5 +402,29 @@ describe("matchesRule — Substats", () => {
       ],
     });
     expect(matchesRule(rule, itemOne)).toBe(false);
+  });
+
+  it("LVLForCheck and substats are both enforced", () => {
+    const rule = defaultRule({
+      Rank: 0, Rarity: 0, MainStatID: -1, LVLForCheck: 8,
+      Substats: [
+        { ID: 4, Value: 5, IsFlat: false, NotAvailable: false, Condition: ">=" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+        { ID: -1, Value: 0, IsFlat: true, NotAvailable: false, Condition: "" },
+      ],
+    });
+    // Level OK, substats OK
+    expect(matchesRule(rule, makeItem({
+      level: 8, substats: [{ statId: 4, isFlat: false, rolls: 1, value: 5 }],
+    }))).toBe(true);
+    // Level too low, substats OK
+    expect(matchesRule(rule, makeItem({
+      level: 4, substats: [{ statId: 4, isFlat: false, rolls: 1, value: 5 }],
+    }))).toBe(false);
+    // Level OK, substats insufficient
+    expect(matchesRule(rule, makeItem({
+      level: 8, substats: [{ statId: 4, isFlat: false, rolls: 1, value: 3 }],
+    }))).toBe(false);
   });
 });
