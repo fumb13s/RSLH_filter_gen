@@ -22,6 +22,7 @@ import type {
   RareAccessoryBlock,
   OreRerollBlock,
 } from "../../quick-generator.js";
+import { hsfRarityToIndex } from "./invariants.js";
 
 // ---------------------------------------------------------------------------
 // Domain constants
@@ -293,6 +294,102 @@ function arbItemSubstats(
 
         return fc.tuple(...substatArbs) as fc.Arbitrary<ItemSubstat[]>;
       });
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Near-threshold item generation (substat-aware)
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate items that match a rule's structural criteria with substats
+ * near the rule's thresholds (within one roll's max of the threshold).
+ * Produces ~50/50 pass/fail per substat, exercising both evaluation paths.
+ *
+ * Substats are NOT game-accurate — values are constructed directly near
+ * the threshold rather than via roll mechanics.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- wired in by arbItemsForState (Task 3)
+function arbNearThresholdItem(rules: HsfRule[]): fc.Arbitrary<Item> {
+  // Filter to rules that have active substat checks
+  const rulesWithSubstats = rules.filter((r) =>
+    r.Use && r.Substats.some((s) => s.ID > 0),
+  );
+
+  if (rulesWithSubstats.length === 0) return arbItem;
+
+  return fc.constantFrom(...rulesWithSubstats).chain((rule) => {
+    // --- Structural field arbitraries matching the rule ---
+
+    const setArb = rule.ArtifactSet && rule.ArtifactSet.length > 0
+      ? fc.constantFrom(...rule.ArtifactSet)
+      : fc.constantFrom(...SET_IDS);
+
+    const slotArb = rule.ArtifactType && rule.ArtifactType.length > 0
+      ? fc.constantFrom(...rule.ArtifactType)
+      : fc.constantFrom(...SLOT_IDS);
+
+    const rankArb = rule.Rank <= 5
+      ? fc.constantFrom(5, 6)
+      : fc.constant(6 as const);
+
+    const rarityThreshold = hsfRarityToIndex(rule.Rarity);
+    const validRarities = ([0, 1, 2, 3, 4, 5] as const).filter(
+      (r) => r >= rarityThreshold,
+    );
+    const rarityArb = validRarities.length > 0
+      ? fc.constantFrom(...validRarities)
+      : fc.constant(5 as const);
+
+    const mainStatArb = rule.MainStatID !== -1
+      ? fc.constant(rule.MainStatID)
+      : fc.constantFrom(...STAT_IDS);
+
+    const validLevels = ([0, 4, 8, 12, 16] as const).filter(
+      (l) => l >= rule.LVLForCheck,
+    );
+    const levelArb = validLevels.length > 0
+      ? fc.constantFrom(...validLevels)
+      : fc.constant(16 as const);
+
+    const factionArb = rule.Faction !== 0
+      ? fc.constant(rule.Faction as number | undefined)
+      : fc.oneof(
+          fc.constant(undefined as number | undefined),
+          fc.constantFrom(...FACTION_IDS) as fc.Arbitrary<number | undefined>,
+        );
+
+    return fc.record({
+      set: setArb,
+      slot: slotArb,
+      rank: rankArb,
+      rarity: rarityArb,
+      mainStat: mainStatArb,
+      level: levelArb,
+      faction: factionArb,
+    }).chain((base) => {
+      // --- Generate substats near thresholds ---
+      const activeSubstats = rule.Substats.filter((s) => s.ID > 0);
+
+      const substatArbs = activeSubstats.map((rs) => {
+        const range = getRollRange(rs.ID, base.rank, rs.IsFlat);
+        const maxDelta = range ? range[1] : 5;
+        return fc.integer({
+          min: Math.max(1, rs.Value - maxDelta),
+          max: rs.Value + maxDelta,
+        }).map((value) => ({
+          statId: rs.ID,
+          isFlat: rs.IsFlat,
+          rolls: 1,
+          value,
+        }));
+      });
+
+      return fc.tuple(...substatArbs).map((substats) => ({
+        ...base,
+        substats: substats as ItemSubstat[],
+      }));
     });
   });
 }
