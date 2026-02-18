@@ -13,9 +13,13 @@ import {
   MAX_SUBSTATS, STARTING_SUBSTATS, UPGRADE_LEVELS, getRollRange,
 } from "@rslh/core";
 import type { Item, ItemSubstat, HsfRule, HsfSubstat, HsfFilter } from "@rslh/core";
-import type { QuickGenState } from "../../quick-generator.js";
 import { SUBSTAT_PRESETS } from "../../generator.js";
 import type { SettingGroup } from "../../generator.js";
+import {
+  quickStateToGroups,
+  oreRerollToGroups,
+  rareAccessoriesToGroups,
+} from "../../quick-generator.js";
 import type {
   QuickBlock,
   QuickGenState,
@@ -23,11 +27,6 @@ import type {
   OreRerollBlock,
 } from "../../quick-generator.js";
 import { generateRulesFromGroups } from "../../generate-rules.js";
-import {
-  quickStateToGroups,
-  oreRerollToGroups,
-  rareAccessoriesToGroups,
-} from "../../quick-generator.js";
 import { hsfRarityToIndex } from "./invariants.js";
 
 // ---------------------------------------------------------------------------
