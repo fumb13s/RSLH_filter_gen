@@ -632,6 +632,27 @@ function arbNearMissItem(targets: TargetParams): fc.Arbitrary<Item> {
           .map((substats) => ({ ...base, substats })),
       ));
     }
+
+    // Right structure but wrong substats: match set/rank/rarity but have
+    // substats with statIds that DON'T match any active rule substat
+    if (targets.ranks.length > 0) {
+      strategies.push(fc.record({
+        set: fc.constantFrom(...targets.sets),
+        slot: fc.constantFrom(...SLOT_IDS),
+        rank: fc.constantFrom(...targets.ranks),
+        rarity: targets.rarities.length > 0
+          ? fc.constantFrom(...targets.rarities)
+          : fc.constantFrom(0, 1, 2, 3, 4, 5),
+        mainStat: fc.constantFrom(...STAT_IDS),
+        level: fc.constantFrom(0, 4, 8, 12, 16),
+        faction: fc.oneof(fc.constant(undefined), fc.constantFrom(...FACTION_IDS)),
+      }).chain((base) =>
+        // Use game-accurate substat generation — the mismatch comes from
+        // random stat IDs being unlikely to match specific rule requirements
+        arbItemSubstats(base.rank, base.rarity, base.level, base.mainStat)
+          .map((substats) => ({ ...base, substats })),
+      ));
+    }
   }
 
   // Fallback: just a random item if no strategies could be built
