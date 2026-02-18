@@ -185,6 +185,7 @@ function arbItemSubstats(
             ),
           ).map((values) => ({
             statId,
+            isFlat,
             rolls,
             value: (values as number[]).reduce((a, b) => a + b, 0),
           }));

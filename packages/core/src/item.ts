@@ -19,6 +19,7 @@ export const UPGRADE_LEVELS = [4, 8, 12, 16] as const;
 /** A single substat on an artifact. */
 export interface ItemSubstat {
   statId: number;   // stat ID (from STAT_NAMES)
+  isFlat: boolean;  // true for flat HP/ATK/DEF; false for percent/SPD/C.RATE/C.DMG/RES/ACC
   rolls: number;    // roll counter, 1–6 (default 1)
   value: number;    // total value, at least 1
 }

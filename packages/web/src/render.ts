@@ -398,10 +398,11 @@ function readSubstats(): ItemSubstat[] {
   for (let i = 0; i < 4; i++) {
     const statVal = (document.getElementById(`test-sub-stat-${i}`) as HTMLSelectElement).value;
     if (!statVal) continue;
-    const [statId] = statVal.split(":").map(Number);
+    const [statId, flatFlag] = statVal.split(":").map(Number);
+    const isFlat = flatFlag === 1;
     const rolls = Number((document.getElementById(`test-sub-rolls-${i}`) as HTMLInputElement).value);
     const value = Number((document.getElementById(`test-sub-value-${i}`) as HTMLInputElement).value) || 1;
-    result.push({ statId, rolls, value });
+    result.push({ statId, isFlat, rolls, value });
   }
   return result;
 }

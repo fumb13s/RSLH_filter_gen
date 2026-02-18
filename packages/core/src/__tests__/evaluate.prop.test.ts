@@ -93,5 +93,10 @@ describe("evaluate.prop — evaluateFilter", () => {
       expect(s.rolls).toBeGreaterThanOrEqual(1);
       expect(s.value).toBeGreaterThanOrEqual(1);
     }
+
+    // Each substat has a boolean isFlat
+    for (const s of item.substats) {
+      expect(typeof s.isFlat).toBe("boolean");
+    }
   });
 });
