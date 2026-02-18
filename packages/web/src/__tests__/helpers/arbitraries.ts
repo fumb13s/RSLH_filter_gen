@@ -22,6 +22,12 @@ import type {
   RareAccessoryBlock,
   OreRerollBlock,
 } from "../../quick-generator.js";
+import { generateRulesFromGroups } from "../../generate-rules.js";
+import {
+  quickStateToGroups,
+  oreRerollToGroups,
+  rareAccessoriesToGroups,
+} from "../../quick-generator.js";
 import { hsfRarityToIndex } from "./invariants.js";
 
 // ---------------------------------------------------------------------------
@@ -310,7 +316,6 @@ function arbItemSubstats(
  * Substats are NOT game-accurate — values are constructed directly near
  * the threshold rather than via roll mechanics.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- wired in by arbItemsForState (Task 3)
 function arbNearThresholdItem(rules: HsfRule[]): fc.Arbitrary<Item> {
   // Filter to rules that have active substat checks
   const rulesWithSubstats = rules.filter((r) =>
@@ -551,35 +556,6 @@ export function extractTargets(state: QuickGenState): TargetParams {
   };
 }
 
-function arbTargetedItem(targets: TargetParams): fc.Arbitrary<Item> {
-  const ALL_RANKS = [5, 6] as const;
-  const ALL_RARITIES = [0, 1, 2, 3, 4, 5] as const;
-  return fc.record({
-    set: fc.constantFrom(...targets.sets),
-    slot: targets.slots.length > 0
-      ? fc.oneof(fc.constantFrom(...targets.slots), fc.constantFrom(...SLOT_IDS))
-      : fc.constantFrom(...SLOT_IDS),
-    rank: targets.ranks.length > 0
-      ? fc.constantFrom(...targets.ranks)
-      : fc.constantFrom(...ALL_RANKS),
-    rarity: targets.rarities.length > 0
-      ? fc.constantFrom(...targets.rarities)
-      : fc.constantFrom(...ALL_RARITIES),
-    mainStat: fc.constantFrom(...STAT_IDS),
-    level: fc.constantFrom(0, 4, 8, 12, 16),
-    faction: targets.factions.length > 0
-      ? fc.oneof(
-          fc.constantFrom(...targets.factions as (number | undefined)[]),
-          fc.constant(undefined),
-          fc.constantFrom(...FACTION_IDS),
-        )
-      : fc.oneof(fc.constant(undefined), fc.constantFrom(...FACTION_IDS)),
-  }).chain((base) =>
-    arbItemSubstats(base.rank, base.rarity, base.level, base.mainStat)
-      .map((substats) => ({ ...base, substats })),
-  );
-}
-
 function arbNearMissItem(targets: TargetParams): fc.Arbitrary<Item> {
   const strategies: fc.Arbitrary<Item>[] = [];
 
@@ -661,7 +637,7 @@ function arbNearMissItem(targets: TargetParams): fc.Arbitrary<Item> {
   return fc.oneof(...strategies);
 }
 
-/** Generate a batch of targeted + near-miss + random items for a QuickGenState. */
+/** Generate a batch of near-threshold + near-miss + random items for a QuickGenState. */
 export function arbItemsForState(state: QuickGenState): fc.Arbitrary<Item[]> {
   const targets = extractTargets(state);
 
@@ -670,9 +646,19 @@ export function arbItemsForState(state: QuickGenState): fc.Arbitrary<Item[]> {
     return fc.array(arbItem, { minLength: 50, maxLength: 100 });
   }
 
+  // Compute rules from state to enable substat-aware generation
+  const groups = [
+    ...quickStateToGroups(state),
+    ...rareAccessoriesToGroups(state.rareAccessories),
+    ...oreRerollToGroups(state.oreReroll),
+  ];
+  const rules = generateRulesFromGroups(groups);
+
+  const nearThresholdArb = arbNearThresholdItem(rules);
+
   return fc.tuple(
-    fc.array(arbTargetedItem(targets), { minLength: 150, maxLength: 200 }),
-    fc.array(arbNearMissItem(targets), { minLength: 150, maxLength: 200 }),
+    fc.array(nearThresholdArb, { minLength: 150, maxLength: 200 }),
+    fc.array(arbNearMissItem(targets), { minLength: 100, maxLength: 150 }),
     fc.array(arbItem, { minLength: 50, maxLength: 100 }),
   ).map(([t, n, r]) => [...t, ...n, ...r]);
 }
