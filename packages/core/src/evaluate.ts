@@ -47,6 +47,20 @@ export function matchesRule(rule: HsfRule, item: Item): boolean {
     if (item.faction !== rule.Faction) return false;
   }
 
+  // LVLForCheck: 0 = any level, otherwise item must be at or above checkpoint
+  if (rule.LVLForCheck !== 0) {
+    if (item.level < rule.LVLForCheck) return false;
+  }
+
+  // Substats: every active rule substat must be satisfied by an item substat
+  for (const rs of rule.Substats) {
+    if (rs.ID <= 0) continue; // empty slot
+    const match = item.substats.find(
+      (s) => s.statId === rs.ID && s.isFlat === rs.IsFlat,
+    );
+    if (!match || match.value < rs.Value) return false;
+  }
+
   return true;
 }
 
