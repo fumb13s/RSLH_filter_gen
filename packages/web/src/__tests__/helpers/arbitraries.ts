@@ -470,6 +470,15 @@ export const arbHsfFilter: fc.Arbitrary<HsfFilter> = fc
   .map((rules) => ({ Rules: rules }));
 
 // ---------------------------------------------------------------------------
+// Tagged items for pipeline instrumentation
+// ---------------------------------------------------------------------------
+
+export interface TaggedItem {
+  item: Item;
+  strategy: "near-threshold" | "near-miss" | "random";
+}
+
+// ---------------------------------------------------------------------------
 // Targeted item generators for multi-item pipeline tests
 // ---------------------------------------------------------------------------
 
@@ -637,12 +646,13 @@ function arbNearMissItem(targets: TargetParams): fc.Arbitrary<Item> {
 }
 
 /** Generate a batch of near-threshold + near-miss + random items for a QuickGenState. */
-export function arbItemsForState(state: QuickGenState): fc.Arbitrary<Item[]> {
+export function arbItemsForState(state: QuickGenState): fc.Arbitrary<TaggedItem[]> {
   const targets = extractTargets(state);
 
   // If no active criteria, fall back to pure random items
   if (targets.sets.length === 0) {
-    return fc.array(arbItem, { minLength: 50, maxLength: 100 });
+    return fc.array(arbItem, { minLength: 50, maxLength: 100 })
+      .map((items) => items.map((item) => ({ item, strategy: "random" as const })));
   }
 
   // Compute rules from state to enable substat-aware generation
@@ -659,5 +669,9 @@ export function arbItemsForState(state: QuickGenState): fc.Arbitrary<Item[]> {
     fc.array(nearThresholdArb, { minLength: 150, maxLength: 200 }),
     fc.array(arbNearMissItem(targets), { minLength: 100, maxLength: 150 }),
     fc.array(arbItem, { minLength: 50, maxLength: 100 }),
-  ).map(([t, n, r]) => [...t, ...n, ...r]);
+  ).map(([t, n, r]) => [
+    ...t.map((item) => ({ item, strategy: "near-threshold" as const })),
+    ...n.map((item) => ({ item, strategy: "near-miss" as const })),
+    ...r.map((item) => ({ item, strategy: "random" as const })),
+  ]);
 }

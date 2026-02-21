@@ -7,8 +7,9 @@
  * 2. groups.some(g => matchesGroup(g, item)) — group-level
  * 3. rules.some(r => matchesRule(r, item)) — rule-level
  */
-import { describe, expect } from "vitest";
+import { describe, expect, afterAll } from "vitest";
 import { test as fcTest } from "@fast-check/vitest";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -36,6 +37,7 @@ import {
   arbQuickGenStateLight,
   arbItemsForState,
 } from "./helpers/arbitraries.js";
+import type { TaggedItem } from "./helpers/arbitraries.js";
 import { loadRegressions, propConfig } from "./helpers/fc-reporter.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -151,17 +153,53 @@ function allGroups(state: QuickGenState): SettingGroup[] {
 }
 
 // ---------------------------------------------------------------------------
-// Composed arbitraries: state + targeted items via fc.chain
+// Instrumentation: keep/sell stats by test × strategy
+// ---------------------------------------------------------------------------
+
+type Strategy = TaggedItem["strategy"];
+
+interface StrategyStats {
+  total: number;
+  keep: number;
+  sell: number;
+}
+
+const statsBy: Record<string, StrategyStats> = {};
+const perItemLog: string[] = [];
+let globalRun = 0;
+
+function ensureStats(key: string): StrategyStats {
+  if (!statsBy[key]) statsBy[key] = { total: 0, keep: 0, sell: 0 };
+  return statsBy[key];
+}
+
+function logItem(
+  test: string,
+  run: number,
+  idx: number,
+  strategy: Strategy,
+  item: Item,
+  ruleMatch: boolean,
+): void {
+  const s = ensureStats(`${test}::${strategy}`);
+  s.total++;
+  if (ruleMatch) s.keep++;
+  else s.sell++;
+  perItemLog.push(JSON.stringify({ test, run, idx, strategy, ruleMatch, item }));
+}
+
+// ---------------------------------------------------------------------------
+// Composed arbitraries: state + tagged items via fc.chain
 // ---------------------------------------------------------------------------
 
 const arbLightStateWithItems = arbQuickGenStateLight.chain((state) =>
-  arbItemsForState(state).map((items) => [state, items] as const),
+  arbItemsForState(state).map((taggedItems) => [state, taggedItems] as const),
 );
 
 // Note: uses the light state to stay within per-test timeout — the coverage
 // gain comes from the targeted item batch, not from larger state sizes.
 const arbFullStateWithItems = arbQuickGenStateLight.chain((state) =>
-  arbItemsForState(state).map((items) => [state, items] as const),
+  arbItemsForState(state).map((taggedItems) => [state, taggedItems] as const),
 );
 
 // ---------------------------------------------------------------------------
@@ -172,13 +210,17 @@ describe("pipeline.prop — three-level equivalence", () => {
   fcTest.prop(
     [arbLightStateWithItems],
     cfg("group match → rule match (batch)"),
-  )("group match → rule match (batch)", ([state, items]) => {
+  )("group match → rule match (batch)", ([state, taggedItems]) => {
     const groups = allGroups(state);
     const rules = generateRulesFromGroups(groups);
+    const run = globalRun++;
 
-    for (const item of items) {
+    for (let i = 0; i < taggedItems.length; i++) {
+      const { item, strategy } = taggedItems[i];
       const groupMatch = groups.some((g) => matchesGroup(g as SettingGroupLike, item));
       const ruleMatch = anyRuleMatches(rules, item);
+
+      logItem("group→rule", run, i, strategy, item, ruleMatch);
 
       // If rules match, groups must also match
       if (ruleMatch) {
@@ -190,16 +232,20 @@ describe("pipeline.prop — three-level equivalence", () => {
   fcTest.prop(
     [arbLightStateWithItems],
     cfg("unconditional groups ↔ rules (batch)"),
-  )("unconditional groups ↔ rules (batch)", ([state, items]) => {
+  )("unconditional groups ↔ rules (batch)", ([state, taggedItems]) => {
     const groups = allGroups(state);
     const unconditionalGroups = groups.filter((g) => g.goodStats.length === 0);
     const unconditionalRules = generateRulesFromGroups(unconditionalGroups);
+    const run = globalRun++;
 
-    for (const item of items) {
+    for (let i = 0; i < taggedItems.length; i++) {
+      const { item, strategy } = taggedItems[i];
       const groupMatch = unconditionalGroups.some(
         (g) => matchesGroup(g as SettingGroupLike, item),
       );
       const ruleMatch = anyRuleMatches(unconditionalRules, item);
+
+      logItem("uncond", run, i, strategy, item, ruleMatch);
 
       expect(ruleMatch).toBe(groupMatch);
     }
@@ -208,14 +254,18 @@ describe("pipeline.prop — three-level equivalence", () => {
   fcTest.prop(
     [arbFullStateWithItems],
     cfg("state ↔ group ↔ rule three-level (batch)"),
-  )("state ↔ group ↔ rule three-level (batch)", ([state, items]) => {
+  )("state ↔ group ↔ rule three-level (batch)", ([state, taggedItems]) => {
     const groups = allGroups(state);
     const rules = generateRulesFromGroups(groups);
+    const run = globalRun++;
 
-    for (const item of items) {
+    for (let i = 0; i < taggedItems.length; i++) {
+      const { item, strategy } = taggedItems[i];
       const stateMatch = matchesQuickState(state, item);
       const groupMatch = groups.some((g) => matchesGroup(g as SettingGroupLike, item));
       const ruleMatch = anyRuleMatches(rules, item);
+
+      logItem("three-level", run, i, strategy, item, ruleMatch);
 
       // State match ↔ group match (bidirectional)
       if (stateMatch) expect(groupMatch).toBe(true);
@@ -252,5 +302,42 @@ describe("pipeline.prop — three-level equivalence", () => {
     const rules2 = generateRulesFromGroups(groups2);
 
     expect(rules1).toEqual(rules2);
+  });
+
+  // -------------------------------------------------------------------------
+  // Print aggregate stats and write per-item log
+  // -------------------------------------------------------------------------
+
+  afterAll(() => {
+    const LINE = "=".repeat(70);
+    const lines: string[] = [LINE, "PIPELINE PROPERTY TEST — ITEM MATCH STATS", LINE];
+
+    let totalKeep = 0;
+    let totalAll = 0;
+
+    // Sort keys for stable output: test::strategy
+    const keys = Object.keys(statsBy).sort();
+    for (const key of keys) {
+      const s = statsBy[key];
+      totalKeep += s.keep;
+      totalAll += s.total;
+      const pct = s.total > 0 ? ((s.keep / s.total) * 100).toFixed(1) : "0.0";
+      lines.push(
+        `  ${key.padEnd(38)} : ${String(s.keep).padStart(5)}/${String(s.total).padStart(5)} keep (${pct.padStart(5)}%), ${String(s.sell).padStart(5)} sell`,
+      );
+    }
+
+    const totalPct = totalAll > 0 ? ((totalKeep / totalAll) * 100).toFixed(1) : "0.0";
+    lines.push(
+      `  ${"TOTAL".padEnd(38)} : ${String(totalKeep).padStart(5)}/${String(totalAll).padStart(5)} keep (${totalPct.padStart(5)}%), ${String(totalAll - totalKeep).padStart(5)} sell`,
+    );
+    lines.push(LINE);
+
+    console.log(lines.join("\n"));
+
+    // Write per-item JSONL log
+    const logPath = path.join(__dirname, "pipeline-item-log.jsonl");
+    fs.writeFileSync(logPath, perItemLog.join("\n") + "\n");
+    console.log(`Per-item log written to: ${logPath}`);
   });
 });
