@@ -2,4 +2,3 @@ node_modules/
 dist/
 *.tsbuildinfo
 .dev.pid
-pipeline-item-log.jsonl

@@ -9,7 +9,6 @@
  */
 import { describe, expect, afterAll } from "vitest";
 import { test as fcTest } from "@fast-check/vitest";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -165,7 +164,6 @@ interface StrategyStats {
 }
 
 const statsBy: Record<string, StrategyStats> = {};
-const perItemLog: string[] = [];
 let globalRun = 0;
 
 function ensureStats(key: string): StrategyStats {
@@ -185,7 +183,6 @@ function logItem(
   s.total++;
   if (ruleMatch) s.keep++;
   else s.sell++;
-  perItemLog.push(JSON.stringify({ test, run, idx, strategy, ruleMatch, item }));
 }
 
 // ---------------------------------------------------------------------------
@@ -334,10 +331,5 @@ describe("pipeline.prop — three-level equivalence", () => {
     lines.push(LINE);
 
     console.log(lines.join("\n"));
-
-    // Write per-item JSONL log
-    const logPath = path.join(__dirname, "pipeline-item-log.jsonl");
-    fs.writeFileSync(logPath, perItemLog.join("\n") + "\n");
-    console.log(`Per-item log written to: ${logPath}`);
   });
 });
