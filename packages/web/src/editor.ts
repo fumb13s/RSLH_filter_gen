@@ -475,10 +475,11 @@ function buildSetField(
 function summariseSets(ids: number[]): string {
   const filtered = ids.filter((id) => id !== 0);
   if (filtered.length === 0) return "Any set";
-  if (filtered.length <= 3) {
-    return filtered.map((id) => ARTIFACT_SET_NAMES[id] ?? `Unknown(${id})`).join(", ");
-  }
-  return `${filtered.length} sets selected`;
+  const names = filtered
+    .map((id) => ARTIFACT_SET_NAMES[id] ?? `Unknown(${id})`)
+    .sort((a, b) => a.localeCompare(b));
+  if (names.length <= 4) return names.join(", ");
+  return `${names.slice(0, 4).join(", ")}, \u2026 (${names.length} sets)`;
 }
 
 // ---------------------------------------------------------------------------
