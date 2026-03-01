@@ -53,6 +53,8 @@ Each `<option>` is 1 element + 1 text node = 2 DOM nodes. Total: **24,400 DOM no
 
 10. **Lazy initialization.** Shared dropdowns are created once and survive across re-renders. Only `clearEditor()` destroys them. This avoids unnecessary create/destroy churn on every delete/move/add action (which each trigger a re-render).
 
+11. **Close on page switch via `beforePageRender` callback.** Pagination controls in `render.ts` call `renderCurrentPage()` directly (prev/next, page-size change, `goToRule`). Since `render.ts` cannot import from `editor.ts` (circular dependency), `renderPaginatedCards` accepts an optional `beforePageRender` callback that `renderCurrentPage` invokes before clearing `container.innerHTML`. The editor passes `closeAllDropdowns` as this callback, ensuring open panels are closed before their trigger buttons are destroyed.
+
 ### Savings (excluding condition selects)
 
 | Field | Options saved/card | x 100 | Nodes saved (x2) |
@@ -366,7 +368,7 @@ Key design notes:
 - **`open()` takes `onSelect` as third parameter** instead of mutable `onSelect` property
 - **Panel uses delegated click handler** (`handlePanelClick` reads `data-value`) instead of per-item `addEventListener`
 - **`e.stopPropagation()`** in panel click prevents `handleClickOutside` from also firing
-- **`select()` calls `close()` before invoking callback** so the panel is gone if the callback triggers re-rendering
+- **`select()` calls `close()` before invoking callback** so the panel is gone if the callback triggers re-rendering. **Note:** `close()` calls `focus()` on the trigger, which is safe as long as callbacks only fire `onRuleChange` (trigger persists). If a future callback triggers a full re-render (e.g. `onRuleDelete`), the focused trigger would be a detached node — harmless but worth noting if extending this pattern
 - **ARIA attributes:** `role="listbox"` on panel, `role="option"` on items, `aria-expanded` toggled on trigger
 - **Keyboard and scroll listeners registered only while open** — avoids 6 document-level keydown checks per keystroke when all panels are closed
 - **Viewport-aware positioning:** flips panel above trigger when insufficient space below
@@ -482,7 +484,9 @@ Add `destroyDropdowns();` at the start of `clearEditor`.
 
 ### Step 6: Close open dropdowns on page switch and re-render
 
-If a dropdown panel is open when the user switches pages or triggers a re-render (delete, move, add), the trigger button it was positioned next to is destroyed but the floating panel remains. Wire `closeAllDropdowns()` into `main.ts` — call it before every `renderEditableRules()` and `showViewerContent()` call that re-renders cards:
+Open dropdowns must close in two scenarios: (a) when `main.ts` triggers a full re-render (delete, move, add), and (b) when the user switches pages via pagination controls inside `render.ts`. Scenario (b) is the tricky one — `renderCurrentPage()` is called directly by pagination (prev/next, page-size, `goToRule`) and destroys all trigger buttons via `container.innerHTML = ""`, but the floating panel (on `<body>`) would remain as an orphan.
+
+**Scenario (a) — full re-render from main.ts:**
 
 ```ts
 // In main.ts, import closeAllDropdowns from editor:
@@ -493,7 +497,46 @@ closeAllDropdowns();
 renderEditableRules(tab.filter, { ... });
 ```
 
-This avoids a circular dependency (`editor.ts` already imports from `render.ts`, so `render.ts` must not import from `editor.ts`). Since `main.ts` already imports from both modules, it's the natural place for this wiring.
+**Scenario (b) — pagination page switches in render.ts:**
+
+Since `render.ts` cannot import from `editor.ts` (circular dependency), add a `beforePageRender` callback to `renderPaginatedCards`:
+
+```ts
+// In render.ts, add module-level state:
+let beforePageRender: (() => void) | null = null;
+
+// Update renderPaginatedCards signature:
+export function renderPaginatedCards(
+  filter: HsfFilter,
+  cardBuilder: (rule: HsfRule, index: number) => HTMLElement,
+  resetPage = false,
+  onBeforePageRender?: () => void,
+): void {
+  // ...existing code...
+  beforePageRender = onBeforePageRender ?? null;
+  renderCurrentPage();
+}
+
+// At the top of renderCurrentPage, before container.innerHTML = "":
+function renderCurrentPage(): void {
+  if (!currentFilter) return;
+  beforePageRender?.();
+  // ...existing abort + render logic...
+}
+```
+
+In `editor.ts`, pass `closeAllDropdowns` as the callback:
+
+```ts
+renderPaginatedCards(
+  filter,
+  (rule, i) => buildEditableRuleCard(rule, i, total),
+  false,
+  closeAllDropdowns,
+);
+```
+
+This keeps the dependency direction clean: `editor.ts → render.ts` (no reverse import).
 
 ### Step 7: Run tests, build, lint, commit
 
@@ -763,23 +806,70 @@ Remove the `data-field` block (lines 127-150) from `handleContainerChange`. This
 
 Also remove the `edit-sub-stat` branch (lines 156-178) from the substat section of `handleContainerChange`. Keep the `edit-sub-cond` branch (lines 179-184) since condition selects remain native.
 
-After removing the `edit-sub-stat` branch, the remaining substat block unconditionally calls `currentCallbacks.onRuleChange(index, rule)` (line 185) even when no branch matched. Guard it so `onRuleChange` only fires when `edit-sub-cond` actually handled the event:
+After removing the `edit-sub-stat` branch, the remaining substat block unconditionally calls `currentCallbacks.onRuleChange(index, rule)` (line 185) even when no branch matched. Guard it so `onRuleChange` only fires when `edit-sub-cond` actually handled the event.
+
+The complete `handleContainerChange` after all removals:
 
 ```ts
-if (row) {
-  const subIndex = Number(row.dataset.subIndex);
-  if (target.classList.contains("edit-sub-cond")) {
-    rule.Substats[subIndex] = {
-      ...rule.Substats[subIndex],
-      Condition: (target as HTMLSelectElement).value,
-    };
-    currentCallbacks.onRuleChange(index, rule);
+function handleContainerChange(e: Event): void {
+  const target = e.target as HTMLElement;
+  const card = target.closest(".edit-card") as HTMLElement | null;
+  if (!card) return;
+  const index = Number(card.dataset.ruleIndex);
+  const filter = getCurrentFilter();
+  if (!filter || !currentCallbacks) return;
+  const rule = filter.Rules[index];
+
+  // Substat condition changes (native <select>, kept as-is)
+  const row = target.closest(".edit-substat-row") as HTMLElement | null;
+  if (row) {
+    const subIndex = Number(row.dataset.subIndex);
+    if (target.classList.contains("edit-sub-cond")) {
+      rule.Substats[subIndex] = {
+        ...rule.Substats[subIndex],
+        Condition: (target as HTMLSelectElement).value,
+      };
+      currentCallbacks.onRuleChange(index, rule);
+    }
+    return;
   }
-  return;
+
+  // Set checkboxes
+  const actionAttr = (target as HTMLElement).dataset.action;
+  if (actionAttr === "set-check") {
+    const checkbox = target as HTMLInputElement;
+    const setId = Number(checkbox.dataset.setId);
+    let sets = rule.ArtifactSet ?? [];
+    if (checkbox.checked) {
+      sets.push(setId);
+    } else {
+      sets = sets.filter((s) => s !== setId);
+    }
+    rule.ArtifactSet = sets.length > 0 ? sets : undefined;
+    const toggle = card.querySelector("[data-action='set-toggle']") as HTMLElement;
+    toggle.textContent = summariseSets(sets);
+    currentCallbacks.onRuleChange(index, rule);
+    return;
+  }
+
+  // Slot checkboxes
+  if (actionAttr === "slot-check") {
+    const checkbox = target as HTMLInputElement;
+    const slotId = Number(checkbox.dataset.slotId);
+    let slots = rule.ArtifactType ?? [];
+    if (checkbox.checked) {
+      slots.push(slotId);
+    } else {
+      slots = slots.filter((s) => s !== slotId);
+    }
+    rule.ArtifactType = slots.length > 0 ? slots : undefined;
+    currentCallbacks.onRuleChange(index, rule);
+    return;
+  }
 }
 ```
 
-After removal, `handleContainerChange` handles: substat condition changes, set checkboxes, and slot checkboxes.
+After removal, `handleContainerChange` handles: substat condition changes, set checkboxes, and slot checkboxes. The `data-field` block and `edit-sub-stat` branch are gone — those mutations are now handled by `handleDropdownSelection`.
 
 ### Step 4: Run build to verify compilation
 
@@ -796,7 +886,21 @@ Do NOT commit yet — tests will fail until test updates in Task 5. Tasks 3–5 
 
 ### Step 0: Add `afterEach` cleanup to prevent listener leaks
 
-The existing tests use `beforeEach(setupDOM)` which resets `document.body.innerHTML` — this removes dropdown panel elements from the DOM but does NOT clean up document-level event listeners from `SharedDropdown` instances. Add an `afterEach` to the top-level `describe("editor", ...)` block:
+The existing tests use `beforeEach(setupDOM)` which resets `document.body.innerHTML` — this removes dropdown panel elements from the DOM but does NOT clean up document-level event listeners from `SharedDropdown` instances.
+
+First, add `clearEditor` to the imports at the top of the file:
+
+```ts
+// Before:
+import { renderEditableRules } from "../editor.js";
+import type { RuleEditorCallbacks } from "../editor.js";
+
+// After:
+import { renderEditableRules, clearEditor } from "../editor.js";
+import type { RuleEditorCallbacks } from "../editor.js";
+```
+
+Then add an `afterEach` to the top-level `describe("editor", ...)` block:
 
 ```ts
 afterEach(() => {
