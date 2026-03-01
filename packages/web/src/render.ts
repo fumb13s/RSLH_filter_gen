@@ -42,6 +42,7 @@ export function clearError(): void {
 export function clearViewer(): void {
   clearError();
   abortPageListeners();
+  document.getElementById("rules-container")!.removeEventListener("click", handleViewerClick);
   currentFilter = null;
   document.getElementById("filter-summary")!.hidden = true;
   document.getElementById("test-panel")!.hidden = true;
@@ -103,8 +104,8 @@ export function getCurrentFilter(): HsfFilter | null {
 // Aborted before each page render so detached DOM nodes become collectible.
 let pageController = new AbortController();
 
-/** Abort all event listeners registered on the current page's DOM nodes. */
-export function abortPageListeners(): void {
+/** Abort all event listeners registered on the current page's pagination controls. */
+function abortPageListeners(): void {
   pageController.abort();
 }
 
@@ -113,6 +114,10 @@ export function abortPageListeners(): void {
 let rawJsonToggleHandler: (() => void) | null = null;
 
 export function renderRules(filter: HsfFilter): void {
+  const container = document.getElementById("rules-container")!;
+  container.removeEventListener("click", handleViewerClick);
+  container.addEventListener("click", handleViewerClick);
+
   renderPaginatedCards(filter, buildRuleCard, true);
 
   // Raw JSON collapsible — lazy-populate on first open
@@ -312,6 +317,28 @@ function scrollToRulesTop(): void {
 }
 
 // ---------------------------------------------------------------------------
+// View-mode delegation — single click handler for raw toggle buttons
+// ---------------------------------------------------------------------------
+
+function handleViewerClick(e: MouseEvent): void {
+  const target = e.target as HTMLElement;
+  const rawBtn = target.closest<HTMLElement>('[data-action="raw-toggle"]');
+  if (!rawBtn) return;
+  const card = rawBtn.closest<HTMLElement>(".rule-card");
+  if (!card) return;
+  const rawPre = card.querySelector<HTMLPreElement>(".rule-raw");
+  if (!rawPre) return;
+  rawPre.hidden = !rawPre.hidden;
+  if (!rawPre.hidden && !rawPre.textContent) {
+    const idx = Number(rawBtn.dataset.ruleIndex);
+    if (currentFilter && idx >= 0 && idx < currentFilter.Rules.length) {
+      rawPre.textContent = JSON.stringify(currentFilter.Rules[idx], null, 2);
+    }
+  }
+  rawBtn.classList.toggle("badge-raw-active", !rawPre.hidden);
+}
+
+// ---------------------------------------------------------------------------
 // Card builder
 // ---------------------------------------------------------------------------
 
@@ -368,7 +395,7 @@ function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
     card.appendChild(substatsEl);
   }
 
-  // Raw JSON toggle — lazy-populate on first click
+  // Raw JSON toggle — lazy-populate on first click (delegated via handleViewerClick)
   const rawPre = document.createElement("pre");
   rawPre.className = "rule-raw";
   rawPre.hidden = true;
@@ -377,13 +404,8 @@ function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
   const rawBtn = document.createElement("button");
   rawBtn.className = "badge badge-raw";
   rawBtn.textContent = "Raw";
-  rawBtn.addEventListener("click", () => {
-    rawPre.hidden = !rawPre.hidden;
-    if (!rawPre.hidden && !rawPre.textContent) {
-      rawPre.textContent = JSON.stringify(rule, null, 2);
-    }
-    rawBtn.classList.toggle("badge-raw-active", !rawPre.hidden);
-  });
+  rawBtn.dataset.action = "raw-toggle";
+  rawBtn.dataset.ruleIndex = String(index);
   header.appendChild(rawBtn);
 
   return card;
