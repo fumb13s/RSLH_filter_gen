@@ -1997,3 +1997,45 @@ details summary {
 .edit-drop-below {
   box-shadow: 0 3px 0 0 #2563eb;
 }
+
+/* ---------------------------------------------------------------------------
+   Shared dropdown triggers & floating panels
+--------------------------------------------------------------------------- */
+
+/* Shared dropdown trigger buttons — match existing .edit-field select styling */
+.edit-dropdown-trigger {
+  flex: 1;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  border-radius: 4px;
+  text-align: left;
+  min-width: 0;
+}
+
+.edit-dropdown-trigger:hover { background-color: #f3f4f6; }
+.edit-dropdown-trigger:focus { outline: 2px solid #0066cc; outline-offset: -1px; }
+
+/* Shared dropdown floating panel */
+.shared-dropdown-panel {
+  position: fixed;
+  display: none;
+  background: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  z-index: 50;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.shared-dropdown-panel.open { display: flex; flex-direction: column; }
+
+.shared-dropdown-item {
+  padding: 0.5rem;
+  cursor: pointer;
+  background: white;
+}
+.shared-dropdown-item:hover { background-color: #f0f0f0; }
+.shared-dropdown-item.active { background-color: #e3f2fd; font-weight: bold; }
