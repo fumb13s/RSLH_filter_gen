@@ -39,13 +39,19 @@ Each `<option>` is 1 element + 1 text node = 2 DOM nodes. Total: **24,400 DOM no
 
 3. **Panels use `position: fixed` + `getBoundingClientRect()`** for positioning.
 
-4. **Keyboard accessibility.** Trigger buttons are focusable `<button>` elements. Panel supports arrow keys, Enter, Escape.
+4. **Keyboard and screen-reader accessibility.** Trigger buttons are focusable `<button>` elements with `aria-haspopup="listbox"` and `aria-expanded`. Panel has `role="listbox"`, items have `role="option"`. Panel supports arrow keys, Enter, Escape. Arrow-key navigation scrolls the active item into view for long option lists.
 
 5. **Click-outside is owned by `SharedDropdown` class.** Each instance registers its own `document` click listener. No changes needed to the existing global handler in `main.ts` (which handles `.set-selector-panel` only).
 
 6. **Substat stat selects share one panel.** All 4 per card have identical options.
 
 7. **Callback passed to `open()`, not mutated on the instance.** Avoids fragile `onSelect` property reassignment.
+
+8. **Viewport-aware positioning.** Panel flips above the trigger when there's insufficient space below (trigger near bottom of viewport).
+
+9. **Close on scroll.** If the page scrolls while a panel is open, the panel closes to avoid visual disconnect between the fixed-position panel and the scrolled-away trigger.
+
+10. **Lazy initialization.** Shared dropdowns are created once and survive across re-renders. Only `clearEditor()` destroys them. This avoids unnecessary create/destroy churn on every delete/move/add action (which each trigger a re-render).
 
 ### Savings (excluding condition selects)
 
@@ -111,6 +117,25 @@ describe("SharedDropdown", () => {
     dd.destroy();
   });
 
+  it("has correct ARIA attributes", () => {
+    const dd = new SharedDropdown("test-rank", OPTIONS);
+    const panel = document.querySelector(".shared-dropdown-panel") as HTMLElement;
+    expect(panel.getAttribute("role")).toBe("listbox");
+
+    const trigger = document.getElementById("trigger")!;
+    dd.open(trigger, "5", vi.fn());
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+
+    const items = panel.querySelectorAll(".shared-dropdown-item");
+    for (const item of items) {
+      expect(item.getAttribute("role")).toBe("option");
+    }
+
+    dd.close();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    dd.destroy();
+  });
+
   it("highlights the current value", () => {
     const dd = new SharedDropdown("test-rank", OPTIONS);
     dd.open(document.getElementById("trigger")!, "5", vi.fn());
@@ -164,6 +189,15 @@ describe("SharedDropdown", () => {
     dd.destroy();
   });
 
+  it("closes on scroll", () => {
+    const dd = new SharedDropdown("test-rank", OPTIONS);
+    dd.open(document.getElementById("trigger")!, "0", vi.fn());
+    expect(document.querySelector(".shared-dropdown-panel.open")).not.toBeNull();
+    window.dispatchEvent(new Event("scroll"));
+    expect(document.querySelector(".shared-dropdown-panel.open")).toBeNull();
+    dd.destroy();
+  });
+
   it("destroys and removes panel from DOM", () => {
     const dd = new SharedDropdown("test-rank", OPTIONS);
     dd.destroy();
@@ -197,10 +231,10 @@ export class SharedDropdown {
     this.panel = document.createElement("div");
     this.panel.className = "shared-dropdown-panel";
     this.panel.dataset.fieldType = fieldType;
+    this.panel.setAttribute("role", "listbox");
     // Delegation: single click handler on panel, reads data-value
     this.panel.addEventListener("click", this.handlePanelClick);
     document.body.appendChild(this.panel);
-    document.addEventListener("keydown", this.handleKeyDown);
     document.addEventListener("click", this.handleClickOutside);
   }
 
@@ -222,22 +256,41 @@ export class SharedDropdown {
         "shared-dropdown-item" + (idx === this.activeIndex ? " active" : "");
       item.textContent = opt.label;
       item.dataset.value = opt.value;
+      item.setAttribute("role", "option");
       this.panel.appendChild(item);
     }
+    // Viewport-aware positioning: flip above trigger if insufficient space below
     const rect = trigger.getBoundingClientRect();
+    const maxPanelHeight = 300; // matches CSS max-height
+    const spaceBelow = window.innerHeight - rect.bottom - 4;
+    const flipAbove = spaceBelow < maxPanelHeight && rect.top > spaceBelow;
     this.panel.style.position = "fixed";
     this.panel.style.left = `${rect.left}px`;
-    this.panel.style.top = `${rect.bottom + 4}px`;
     this.panel.style.minWidth = `${rect.width}px`;
+    if (flipAbove) {
+      this.panel.style.top = "";
+      this.panel.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+    } else {
+      this.panel.style.bottom = "";
+      this.panel.style.top = `${rect.bottom + 4}px`;
+    }
     this.panel.classList.add("open");
+    trigger.setAttribute("aria-expanded", "true");
+    // Register keyboard and scroll listeners only while open
+    document.addEventListener("keydown", this.handleKeyDown);
+    window.addEventListener("scroll", this.handleScroll, true);
   }
 
   close(): void {
     this.panel.classList.remove("open");
     this.panel.innerHTML = "";
+    this.currentTrigger?.setAttribute("aria-expanded", "false");
     this.currentTrigger?.focus();
     this.currentTrigger = null;
     this.currentCallback = null;
+    // Remove listeners that are only needed while open
+    document.removeEventListener("keydown", this.handleKeyDown);
+    window.removeEventListener("scroll", this.handleScroll, true);
   }
 
   private select(value: string): void {
@@ -254,8 +307,8 @@ export class SharedDropdown {
     }
   };
 
+  // Registered on document only while the panel is open (in open/close)
   private handleKeyDown = (e: KeyboardEvent): void => {
-    if (!this.panel.classList.contains("open")) return;
     if (e.key === "Escape") {
       e.preventDefault();
       this.close();
@@ -274,11 +327,18 @@ export class SharedDropdown {
     }
   };
 
+  private handleScroll = (): void => {
+    this.close();
+  };
+
   private updateActive(): void {
     this.panel
       .querySelectorAll(".shared-dropdown-item")
       .forEach((item, idx) => {
         item.classList.toggle("active", idx === this.activeIndex);
+        if (idx === this.activeIndex) {
+          (item as HTMLElement).scrollIntoView({ block: "nearest" });
+        }
       });
   }
 
@@ -293,19 +353,25 @@ export class SharedDropdown {
   };
 
   destroy(): void {
+    // Close first to clean up keyboard/scroll listeners if open
+    if (this.panel.classList.contains("open")) this.close();
     this.panel.removeEventListener("click", this.handlePanelClick);
-    document.removeEventListener("keydown", this.handleKeyDown);
     document.removeEventListener("click", this.handleClickOutside);
     this.panel.remove();
   }
 }
 ```
 
-Key differences from original plan:
+Key design notes:
 - **`open()` takes `onSelect` as third parameter** instead of mutable `onSelect` property
 - **Panel uses delegated click handler** (`handlePanelClick` reads `data-value`) instead of per-item `addEventListener`
 - **`e.stopPropagation()`** in panel click prevents `handleClickOutside` from also firing
 - **`select()` calls `close()` before invoking callback** so the panel is gone if the callback triggers re-rendering
+- **ARIA attributes:** `role="listbox"` on panel, `role="option"` on items, `aria-expanded` toggled on trigger
+- **Keyboard and scroll listeners registered only while open** — avoids 6 document-level keydown checks per keystroke when all panels are closed
+- **Viewport-aware positioning:** flips panel above trigger when insufficient space below
+- **Scroll closes panel:** prevents fixed-position panel from floating away from scrolled-away trigger
+- **`scrollIntoView({ block: "nearest" })`** on arrow-key navigation for long option lists (faction has 20+ entries)
 
 ### Step 4: Run tests, build, lint, commit
 
@@ -382,9 +448,9 @@ const SUBSTAT_STAT_DROPDOWN_OPTIONS: DropdownOption[] = [
 ```ts
 let sharedDropdowns: Record<string, SharedDropdown> = {};
 
+/** Lazy-init: create shared dropdowns once, survive across re-renders. */
 function initDropdowns(): void {
-  // Destroy any existing instances (safety for re-init)
-  destroyDropdowns();
+  if (Object.keys(sharedDropdowns).length > 0) return; // already initialized
   sharedDropdowns = {
     rank: new SharedDropdown("rank", RANK_OPTIONS),
     rarity: new SharedDropdown("rarity", RARITY_OPTIONS),
@@ -408,7 +474,7 @@ function destroyDropdowns(): void {
 
 ### Step 4: Call `initDropdowns()` from `renderEditableRules`
 
-Add `initDropdowns();` at the start of `renderEditableRules`, before `renderPaginatedCards`.
+Add `initDropdowns();` at the start of `renderEditableRules`, before `renderPaginatedCards`. This is a lazy init — the first call creates the 6 instances, subsequent calls (from delete/move/add re-renders) are no-ops.
 
 ### Step 5: Call `destroyDropdowns()` from `clearEditor`
 
@@ -463,6 +529,8 @@ function buildTriggerButton(
   btn.dataset.field = fieldName;
   btn.dataset.value = currentValue;
   btn.textContent = label;
+  btn.setAttribute("aria-haspopup", "listbox");
+  btn.setAttribute("aria-expanded", "false");
   return btn;
 }
 ```
@@ -578,6 +646,7 @@ Remove these functions and constants, which are replaced by the new trigger-base
 - `encodeSubstatValue` (line 685) — replaced by new version in Step 2
 - `MAIN_STAT_OPTIONS` (line 506) — replaced by `MAIN_STAT_DROPDOWN_OPTIONS`
 - `rarityOpts`, `levelOpts`, `factionOpts` local variables in `buildEditableRuleCard`
+- Remove `esc` from the import `{ esc, getCurrentFilter, renderPaginatedCards }` if `buildSelectField` was its only caller in `editor.ts` (lint will flag unused imports, but clean it up here)
 
 ### Step 6: Run build to verify compilation
 
@@ -941,7 +1010,7 @@ for open-dropdown action and update existing editor tests.
   border: 1px solid #ccc;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  z-index: 200;
+  z-index: 50;
   max-height: 300px;
   overflow-y: auto;
 }
@@ -1141,6 +1210,45 @@ describe("shared dropdown integration", () => {
     expect(rule.Rank).toBe(5); // unchanged
   });
 
+  it("switching triggers closes previous panel and opens new one", () => {
+    const rule = defaultRule({ Rank: 0, Rarity: 0 });
+    const filter = makeFilter([rule]);
+    renderEditableRules(filter, noopCallbacks());
+
+    const rankTrigger = document.querySelector("[data-field='rank']") as HTMLElement;
+    const rarityTrigger = document.querySelector("[data-field='rarity']") as HTMLElement;
+
+    // Open rank dropdown
+    rankTrigger.click();
+    expect(document.querySelector(".shared-dropdown-panel.open[data-field-type='rank']")).not.toBeNull();
+
+    // Click rarity trigger — rank panel should close, rarity panel should open
+    rarityTrigger.click();
+    expect(document.querySelector(".shared-dropdown-panel.open[data-field-type='rank']")).toBeNull();
+    expect(document.querySelector(".shared-dropdown-panel.open[data-field-type='rarity']")).not.toBeNull();
+  });
+
+  it("dropdown on second card updates correct rule", () => {
+    const rule0 = defaultRule({ Rank: 0 });
+    const rule1 = defaultRule({ Rank: 5 });
+    const filter = makeFilter([rule0, rule1]);
+    const changes: number[] = [];
+    renderEditableRules(filter, noopCallbacks({
+      onRuleChange(index) { changes.push(index); },
+    }));
+
+    // Find the rank trigger on the second card (rule-index="1")
+    const cards = document.querySelectorAll("[data-rule-index]");
+    const card1 = cards[1];
+    const trigger = card1.querySelector("[data-field='rank']") as HTMLElement;
+    expect(trigger.dataset.value).toBe("5");
+
+    selectDropdownValue(trigger, "6");
+    expect(rule1.Rank).toBe(6);
+    expect(rule0.Rank).toBe(0); // first rule unchanged
+    expect(changes).toEqual([1]); // callback fired with index 1
+  });
+
   it("clearEditor destroys dropdown panels", () => {
     const filter = makeFilter([defaultRule()]);
     renderEditableRules(filter, noopCallbacks());
@@ -1179,6 +1287,10 @@ Run: `npm run build && npm test && npm run lint`
 5. Click outside closes panel
 6. Condition selects still work as native `<select>` elements
 7. DevTools: confirm ~20K fewer DOM nodes per page
+8. Click trigger near bottom of viewport — panel flips above trigger
+9. Scroll page while panel is open — panel closes
+10. Click rank trigger, then click rarity trigger — rank panel closes, rarity opens
+11. Screen reader audit: trigger announces "listbox", items announce as options
 
 ### Expected improvement
 
