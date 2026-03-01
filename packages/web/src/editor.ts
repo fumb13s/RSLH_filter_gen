@@ -90,6 +90,7 @@ function buildEditableRuleCard(
 ): HTMLElement {
   const card = document.createElement("div");
   card.className = "edit-card";
+  card.id = `rule-${index + 1}`;
   card.dataset.ruleIndex = String(index);
   card.draggable = true;
   if (!rule.Use) card.classList.add("inactive");
