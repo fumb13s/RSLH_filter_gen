@@ -41,6 +41,7 @@ export function clearError(): void {
 /** Reset all viewer content areas to their initial hidden/empty state. */
 export function clearViewer(): void {
   clearError();
+  abortPageListeners();
   currentFilter = null;
   document.getElementById("filter-summary")!.hidden = true;
   document.getElementById("test-panel")!.hidden = true;
@@ -91,7 +92,16 @@ const PAGE_SIZES = [50, 100, 250, 500, 1000];
 let currentPage = 0;
 let pageSize = 100;
 let currentFilter: HsfFilter | null = null;
-let currentCardBuilder: (rule: HsfRule, index: number) => HTMLElement = buildRuleCard;
+let currentCardBuilder: (rule: HsfRule, index: number, signal: AbortSignal) => HTMLElement = buildRuleCard;
+
+// AbortController for tearing down event listeners when pages change.
+// Aborted before each page render so detached DOM nodes become collectible.
+let pageController = new AbortController();
+
+/** Abort all event listeners registered on the current page's DOM nodes. */
+export function abortPageListeners(): void {
+  pageController.abort();
+}
 
 // Track the raw-json toggle handler so we can remove it before re-adding
 // (the <details> element persists across tab switches).
@@ -127,7 +137,7 @@ export function renderRules(filter: HsfFilter): void {
  */
 export function renderPaginatedCards(
   filter: HsfFilter,
-  cardBuilder: (rule: HsfRule, index: number) => HTMLElement,
+  cardBuilder: (rule: HsfRule, index: number, signal: AbortSignal) => HTMLElement,
   resetPage = false,
 ): void {
   if (resetPage || filter !== currentFilter) {
@@ -161,6 +171,12 @@ export function goToRule(ruleIndex: number): void {
 function renderCurrentPage(): void {
   if (!currentFilter) return;
 
+  // Tear down all event listeners from the previous page so that
+  // detached DOM nodes become eligible for garbage collection.
+  pageController.abort();
+  pageController = new AbortController();
+  const { signal } = pageController;
+
   const rules = currentFilter.Rules;
   const total = rules.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -173,7 +189,7 @@ function renderCurrentPage(): void {
   const container = document.getElementById("rules-container")!;
   container.innerHTML = "";
   for (let i = start; i < end; i++) {
-    container.appendChild(currentCardBuilder(rules[i], i));
+    container.appendChild(currentCardBuilder(rules[i], i, signal));
   }
 
   // Render pagination controls (top and bottom)
@@ -182,7 +198,7 @@ function renderCurrentPage(): void {
     el.hidden = total <= pageSize; // hide if everything fits on one page
     el.innerHTML = "";
     if (!el.hidden) {
-      renderPaginationControls(el, total, totalPages, id === "rules-pagination");
+      renderPaginationControls(el, total, totalPages, id === "rules-pagination", signal);
     }
   }
 }
@@ -192,6 +208,7 @@ function renderPaginationControls(
   totalRules: number,
   totalPages: number,
   includeGoTo: boolean,
+  signal: AbortSignal,
 ): void {
   container.className = "rules-pagination";
 
@@ -207,7 +224,7 @@ function renderPaginationControls(
       renderCurrentPage();
       scrollToRulesTop();
     }
-  });
+  }, { signal });
   container.appendChild(prevBtn);
 
   // Page indicator
@@ -230,7 +247,7 @@ function renderPaginationControls(
       renderCurrentPage();
       scrollToRulesTop();
     }
-  });
+  }, { signal });
   container.appendChild(nextBtn);
 
   // Page size selector
@@ -250,7 +267,7 @@ function renderPaginationControls(
     currentPage = 0;
     renderCurrentPage();
     scrollToRulesTop();
-  });
+  }, { signal });
   sizeLabel.appendChild(sizeSelect);
   container.appendChild(sizeLabel);
 
@@ -274,10 +291,10 @@ function renderPaginationControls(
       const num = Number(goInput.value);
       if (num >= 1 && num <= totalRules) goToRule(num - 1);
     };
-    goBtn.addEventListener("click", doGo);
+    goBtn.addEventListener("click", doGo, { signal });
     goInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") doGo();
-    });
+    }, { signal });
 
     goWrap.appendChild(goInput);
     goWrap.appendChild(goBtn);
@@ -293,7 +310,7 @@ function scrollToRulesTop(): void {
 // Card builder
 // ---------------------------------------------------------------------------
 
-function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
+function buildRuleCard(rule: HsfRule, index: number, signal: AbortSignal): HTMLElement {
   const card = document.createElement("div");
   card.className = "rule-card";
   card.id = `rule-${index + 1}`;
@@ -361,7 +378,7 @@ function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
       rawPre.textContent = JSON.stringify(rule, null, 2);
     }
     rawBtn.classList.toggle("badge-raw-active", !rawPre.hidden);
-  });
+  }, { signal });
   header.appendChild(rawBtn);
 
   return card;

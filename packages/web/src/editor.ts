@@ -9,7 +9,7 @@ import {
   FACTION_NAMES,
   emptySubstat,
 } from "@rslh/core";
-import { esc, renderPaginatedCards } from "./render.js";
+import { abortPageListeners, esc, renderPaginatedCards } from "./render.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -71,7 +71,7 @@ export function renderEditableRules(
   const total = filter.Rules.length;
   renderPaginatedCards(
     filter,
-    (rule, i) => buildEditableRuleCard(rule, i, total, callbacks),
+    (rule, i, signal) => buildEditableRuleCard(rule, i, total, callbacks, signal),
   );
 
   // Container-level drop indicator cleanup — same function reference so
@@ -81,6 +81,7 @@ export function renderEditableRules(
 }
 
 export function clearEditor(): void {
+  abortPageListeners();
   document.getElementById("rules-container")!.innerHTML = "";
 }
 
@@ -93,6 +94,7 @@ function buildEditableRuleCard(
   index: number,
   total: number,
   cb: RuleEditorCallbacks,
+  signal: AbortSignal,
 ): HTMLElement {
   const card = document.createElement("div");
   card.className = "edit-card";
@@ -108,14 +110,14 @@ function buildEditableRuleCard(
     e.dataTransfer!.effectAllowed = "move";
     e.dataTransfer!.setData("text/plain", String(index));
     card.classList.add("edit-card-dragging");
-  });
+  }, { signal });
 
   card.addEventListener("dragend", () => {
     card.classList.remove("edit-card-dragging");
     dragSourceIndex = -1;
     const container = card.parentElement;
     if (container) clearDropIndicators(container);
-  });
+  }, { signal });
 
   card.addEventListener("dragover", (e) => {
     if (dragSourceIndex === -1) return;
@@ -135,7 +137,7 @@ function buildEditableRuleCard(
     } else {
       card.classList.add("edit-drop-below");
     }
-  });
+  }, { signal });
 
   card.addEventListener("drop", (e) => {
     e.preventDefault();
@@ -152,7 +154,7 @@ function buildEditableRuleCard(
     // removes the source first, shifting indices down by 1
     if (from < to) to--;
     if (from !== to) cb.onRuleMove(from, to);
-  });
+  }, { signal });
 
   // --- Header ---
   const header = document.createElement("div");
@@ -182,7 +184,7 @@ function buildEditableRuleCard(
     card.classList.toggle("keep", rule.Keep);
     card.classList.toggle("sell", !rule.Keep);
     cb.onRuleChange(index, rule);
-  });
+  }, { signal });
   header.appendChild(keepBtn);
 
   // Active/Inactive toggle
@@ -196,7 +198,7 @@ function buildEditableRuleCard(
     useBtn.className = `edit-badge-toggle ${rule.Use ? "badge-active" : "badge-inactive"}`;
     card.classList.toggle("inactive", !rule.Use);
     cb.onRuleChange(index, rule);
-  });
+  }, { signal });
   header.appendChild(useBtn);
 
   // Move up
@@ -206,7 +208,7 @@ function buildEditableRuleCard(
   upBtn.textContent = "\u25b2";
   upBtn.title = "Move up";
   upBtn.disabled = index === 0;
-  upBtn.addEventListener("click", () => cb.onRuleMove(index, index - 1));
+  upBtn.addEventListener("click", () => cb.onRuleMove(index, index - 1), { signal });
   header.appendChild(upBtn);
 
   // Move down
@@ -216,7 +218,7 @@ function buildEditableRuleCard(
   downBtn.textContent = "\u25bc";
   downBtn.title = "Move down";
   downBtn.disabled = index === total - 1;
-  downBtn.addEventListener("click", () => cb.onRuleMove(index, index + 1));
+  downBtn.addEventListener("click", () => cb.onRuleMove(index, index + 1), { signal });
   header.appendChild(downBtn);
 
   // Delete
@@ -225,7 +227,7 @@ function buildEditableRuleCard(
   delBtn.className = "edit-delete-btn";
   delBtn.textContent = "\u00d7";
   delBtn.title = "Delete rule";
-  delBtn.addEventListener("click", () => cb.onRuleDelete(index));
+  delBtn.addEventListener("click", () => cb.onRuleDelete(index), { signal });
   header.appendChild(delBtn);
 
   card.appendChild(header);
@@ -235,10 +237,10 @@ function buildEditableRuleCard(
   body.className = "edit-body";
 
   // Sets — searchable multi-select dropdown (reuse pattern from generator)
-  body.appendChild(buildSetField(rule, index, cb));
+  body.appendChild(buildSetField(rule, index, cb, signal));
 
   // Slots — checkbox grid
-  body.appendChild(buildSlotField(rule, index, cb));
+  body.appendChild(buildSlotField(rule, index, cb, signal));
 
   // Rank dropdown
   body.appendChild(
@@ -249,7 +251,7 @@ function buildEditableRuleCard(
     ], (val) => {
       rule.Rank = val;
       cb.onRuleChange(index, rule);
-    }),
+    }, signal),
   );
 
   // Rarity dropdown
@@ -261,11 +263,11 @@ function buildEditableRuleCard(
     buildSelectField("Rarity", rule.Rarity, rarityOpts, (val) => {
       rule.Rarity = val;
       cb.onRuleChange(index, rule);
-    }),
+    }, signal),
   );
 
   // Main Stat dropdown — encodes both MainStatID and MainStatF
-  body.appendChild(buildMainStatField(rule, index, cb));
+  body.appendChild(buildMainStatField(rule, index, cb, signal));
 
   // Level dropdown
   const levelOpts = Array.from({ length: 17 }, (_, i) => ({ value: i, label: String(i) }));
@@ -273,7 +275,7 @@ function buildEditableRuleCard(
     buildSelectField("Level", rule.LVLForCheck, levelOpts, (val) => {
       rule.LVLForCheck = val;
       cb.onRuleChange(index, rule);
-    }),
+    }, signal),
   );
 
   // Faction dropdown
@@ -285,13 +287,13 @@ function buildEditableRuleCard(
     buildSelectField("Faction", rule.Faction, factionOpts, (val) => {
       rule.Faction = val;
       cb.onRuleChange(index, rule);
-    }),
+    }, signal),
   );
 
   card.appendChild(body);
 
   // --- Substats ---
-  card.appendChild(buildSubstatsSection(rule, index, cb));
+  card.appendChild(buildSubstatsSection(rule, index, cb, signal));
 
   return card;
 }
@@ -305,6 +307,7 @@ function buildSelectField(
   current: number,
   options: { value: number; label: string }[],
   onChange: (value: number) => void,
+  signal: AbortSignal,
 ): HTMLElement {
   const field = document.createElement("div");
   field.className = "edit-field";
@@ -321,7 +324,7 @@ function buildSelectField(
     if (opt.value === current) option.selected = true;
     select.appendChild(option);
   }
-  select.addEventListener("change", () => onChange(Number(select.value)));
+  select.addEventListener("change", () => onChange(Number(select.value)), { signal });
   field.appendChild(select);
 
   return field;
@@ -345,6 +348,7 @@ function buildMainStatField(
   rule: HsfRule,
   index: number,
   cb: RuleEditorCallbacks,
+  signal: AbortSignal,
 ): HTMLElement {
   const field = document.createElement("div");
   field.className = "edit-field";
@@ -379,7 +383,7 @@ function buildMainStatField(
       rule.MainStatF = flatFlag === 1 ? 0 : 1; // flatFlag=1 → isFlat → MainStatF=0
     }
     cb.onRuleChange(index, rule);
-  });
+  }, { signal });
 
   field.appendChild(select);
   return field;
@@ -398,6 +402,7 @@ function buildSetField(
   rule: HsfRule,
   index: number,
   cb: RuleEditorCallbacks,
+  signal: AbortSignal,
 ): HTMLElement {
   const field = document.createElement("div");
   field.className = "edit-field";
@@ -427,7 +432,7 @@ function buildSetField(
 
   toggle.addEventListener("click", () => {
     if (!populated) {
-      populateSetPanel(panel, rule, index, toggle, cb);
+      populateSetPanel(panel, rule, index, toggle, cb, signal);
       populated = true;
     }
     panel.classList.toggle("open");
@@ -435,7 +440,7 @@ function buildSetField(
       const search = panel.querySelector<HTMLInputElement>(".set-selector-search");
       if (search) search.focus();
     }
-  });
+  }, { signal });
 
   field.appendChild(dropdown);
   return field;
@@ -447,6 +452,7 @@ function populateSetPanel(
   index: number,
   toggle: HTMLElement,
   cb: RuleEditorCallbacks,
+  signal: AbortSignal,
 ): void {
   const search = document.createElement("input");
   search.type = "text";
@@ -477,7 +483,7 @@ function populateSetPanel(
       rule.ArtifactSet = sets.length > 0 ? sets : undefined;
       toggle.textContent = summariseSets(sets);
       cb.onRuleChange(index, rule);
-    });
+    }, { signal });
     row.appendChild(checkbox);
 
     const span = document.createElement("span");
@@ -495,7 +501,7 @@ function populateSetPanel(
       const text = (item as HTMLElement).textContent!.toLowerCase();
       (item as HTMLElement).hidden = !text.includes(q);
     }
-  });
+  }, { signal });
 }
 
 function summariseSets(ids: number[]): string {
@@ -516,6 +522,7 @@ function buildSlotField(
   rule: HsfRule,
   index: number,
   cb: RuleEditorCallbacks,
+  signal: AbortSignal,
 ): HTMLElement {
   const field = document.createElement("div");
   field.className = "edit-field";
@@ -550,7 +557,7 @@ function buildSlotField(
       }
       rule.ArtifactType = slots.length > 0 ? slots : undefined;
       cb.onRuleChange(index, rule);
-    });
+    }, { signal });
     lbl.appendChild(checkbox);
 
     const span = document.createElement("span");
@@ -572,6 +579,7 @@ function buildSubstatsSection(
   rule: HsfRule,
   index: number,
   cb: RuleEditorCallbacks,
+  signal: AbortSignal,
 ): HTMLElement {
   const section = document.createElement("div");
   section.className = "edit-substats";
@@ -582,7 +590,7 @@ function buildSubstatsSection(
   section.appendChild(title);
 
   for (let i = 0; i < 4; i++) {
-    section.appendChild(buildSubstatRow(rule, i, index, cb));
+    section.appendChild(buildSubstatRow(rule, i, index, cb, signal));
   }
 
   return section;
@@ -598,6 +606,7 @@ function buildSubstatRow(
   subIndex: number,
   ruleIndex: number,
   cb: RuleEditorCallbacks,
+  signal: AbortSignal,
 ): HTMLElement {
   const row = document.createElement("div");
   row.className = "edit-substat-row";
@@ -665,7 +674,7 @@ function buildSubstatRow(
       valueInput.disabled = false;
     }
     cb.onRuleChange(ruleIndex, rule);
-  });
+  }, { signal });
 
   condSelect.addEventListener("change", () => {
     rule.Substats[subIndex] = {
@@ -673,7 +682,7 @@ function buildSubstatRow(
       Condition: condSelect.value,
     };
     cb.onRuleChange(ruleIndex, rule);
-  });
+  }, { signal });
 
   valueInput.addEventListener("input", () => {
     rule.Substats[subIndex] = {
@@ -681,7 +690,7 @@ function buildSubstatRow(
       Value: Number(valueInput.value) || 0,
     };
     cb.onRuleChange(ruleIndex, rule);
-  });
+  }, { signal });
 
   row.appendChild(statSelect);
   row.appendChild(condSelect);
