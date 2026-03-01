@@ -652,7 +652,23 @@ Remove the `data-field` block (lines 127-150) from `handleContainerChange`. This
 
 Also remove the `edit-sub-stat` branch (lines 156-178) from the substat section of `handleContainerChange`. Keep the `edit-sub-cond` branch (lines 179-184) since condition selects remain native.
 
-After removal, `handleContainerChange` handles: substat condition changes, substat value changes (via `input` on number field — wait, that's in `handleContainerInput`), set checkboxes, and slot checkboxes.
+After removing the `edit-sub-stat` branch, the remaining substat block unconditionally calls `currentCallbacks.onRuleChange(index, rule)` (line 185) even when no branch matched. Guard it so `onRuleChange` only fires when `edit-sub-cond` actually handled the event:
+
+```ts
+if (row) {
+  const subIndex = Number(row.dataset.subIndex);
+  if (target.classList.contains("edit-sub-cond")) {
+    rule.Substats[subIndex] = {
+      ...rule.Substats[subIndex],
+      Condition: (target as HTMLSelectElement).value,
+    };
+    currentCallbacks.onRuleChange(index, rule);
+  }
+  return;
+}
+```
+
+After removal, `handleContainerChange` handles: substat condition changes, set checkboxes, and slot checkboxes.
 
 ### Step 4: Run tests, build, lint, commit
 
@@ -847,19 +863,20 @@ test: update editor tests for shared dropdown trigger buttons
 ### Step 1: Add styles
 
 ```css
-/* Shared dropdown trigger buttons — styled to match native <select> appearance */
+/* Shared dropdown trigger buttons — match existing .edit-field select styling */
 .edit-dropdown-trigger {
-  padding: 0.25rem 0.5rem;
-  border: 1px solid #ccc;
-  background: #f9f9f9;
+  flex: 1;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d1d5db;
+  background: #fff;
   cursor: pointer;
-  font-size: 0.875rem;
-  border-radius: 2px;
+  font-size: 0.85rem;
+  border-radius: 4px;
   text-align: left;
-  min-width: 50px;
+  min-width: 0;
 }
 
-.edit-dropdown-trigger:hover { background-color: #e8e8e8; }
+.edit-dropdown-trigger:hover { background-color: #f3f4f6; }
 .edit-dropdown-trigger:focus { outline: 2px solid #0066cc; outline-offset: -1px; }
 
 /* Shared dropdown floating panel */
@@ -904,7 +921,7 @@ style: add CSS for shared dropdown triggers and floating panels
 
 ```ts
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { HsfFilter, HsfRule } from "@rslh/core";
 import { defaultRule } from "@rslh/core";
 import { renderEditableRules, clearEditor } from "../editor.js";
