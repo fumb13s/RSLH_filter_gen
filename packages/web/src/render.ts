@@ -93,6 +93,10 @@ let pageSize = 100;
 let currentFilter: HsfFilter | null = null;
 let currentCardBuilder: (rule: HsfRule, index: number) => HTMLElement = buildRuleCard;
 
+// Track the raw-json toggle handler so we can remove it before re-adding
+// (the <details> element persists across tab switches).
+let rawJsonToggleHandler: (() => void) | null = null;
+
 export function renderRules(filter: HsfFilter): void {
   renderPaginatedCards(filter, buildRuleCard, true);
 
@@ -101,13 +105,19 @@ export function renderRules(filter: HsfFilter): void {
   details.hidden = false;
   const pre = details.querySelector("pre")!;
   pre.textContent = "";
-  let rawPopulated = false;
-  details.addEventListener("toggle", () => {
-    if (details.open && !rawPopulated) {
+
+  // Remove previous handler to avoid accumulating listeners
+  if (rawJsonToggleHandler) {
+    details.removeEventListener("toggle", rawJsonToggleHandler);
+  }
+  let populated = false;
+  rawJsonToggleHandler = () => {
+    if (details.open && !populated) {
       pre.textContent = JSON.stringify(filter, null, 2);
-      rawPopulated = true;
+      populated = true;
     }
-  });
+  };
+  details.addEventListener("toggle", rawJsonToggleHandler);
 }
 
 /**

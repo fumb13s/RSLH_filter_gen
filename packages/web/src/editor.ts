@@ -55,6 +55,15 @@ function clearDropIndicators(container: Element): void {
 // Public API
 // ---------------------------------------------------------------------------
 
+// Single dragleave handler for the rules container — registered once to
+// avoid accumulating listeners on every renderEditableRules call.
+function handleContainerDragLeave(e: DragEvent): void {
+  const container = document.getElementById("rules-container")!;
+  if (!container.contains(e.relatedTarget as Node)) {
+    clearDropIndicators(container);
+  }
+}
+
 export function renderEditableRules(
   filter: HsfFilter,
   callbacks: RuleEditorCallbacks,
@@ -65,13 +74,10 @@ export function renderEditableRules(
     (rule, i) => buildEditableRuleCard(rule, i, total, callbacks),
   );
 
-  // Container-level drop indicator cleanup
+  // Container-level drop indicator cleanup — same function reference so
+  // addEventListener is a no-op if already registered.
   const container = document.getElementById("rules-container")!;
-  container.addEventListener("dragleave", (e) => {
-    if (!container.contains(e.relatedTarget as Node)) {
-      clearDropIndicators(container);
-    }
-  });
+  container.addEventListener("dragleave", handleContainerDragLeave);
 }
 
 export function clearEditor(): void {
