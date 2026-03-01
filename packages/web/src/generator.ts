@@ -258,10 +258,11 @@ function buildSetSelector(group: SettingGroup, index: number, cb: GeneratorCallb
 
 function summariseSets(ids: number[]): string {
   if (ids.length === 0) return "Any set";
-  if (ids.length <= 3) {
-    return ids.map((id) => ARTIFACT_SET_NAMES[id] ?? `Unknown(${id})`).join(", ");
-  }
-  return `${ids.length} sets selected`;
+  const names = ids
+    .map((id) => ARTIFACT_SET_NAMES[id] ?? `Unknown(${id})`)
+    .sort((a, b) => a.localeCompare(b));
+  if (names.length <= 4) return names.join(", ");
+  return `${names.slice(0, 4).join(", ")}, \u2026 (${names.length} sets)`;
 }
 
 // ---------------------------------------------------------------------------
