@@ -684,6 +684,81 @@ pre {
 }
 
 /* ---------------------------------------------------------------------------
+   Pagination controls
+--------------------------------------------------------------------------- */
+
+.rules-pagination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  font-size: 0.85rem;
+}
+
+.pagination-btn {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pagination-info {
+  color: #666;
+}
+
+.pagination-size {
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.pagination-size select {
+  padding: 0.2rem 0.3rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.pagination-goto {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.pagination-goto-input {
+  width: 5rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+/* Hide spinner arrows on the goto input */
+.pagination-goto-input::-webkit-inner-spin-button,
+.pagination-goto-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.pagination-goto-input {
+  -moz-appearance: textfield;
+}
+
+/* ---------------------------------------------------------------------------
    Test panel
 --------------------------------------------------------------------------- */
 

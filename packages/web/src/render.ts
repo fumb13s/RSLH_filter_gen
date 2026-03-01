@@ -41,10 +41,17 @@ export function clearError(): void {
 /** Reset all viewer content areas to their initial hidden/empty state. */
 export function clearViewer(): void {
   clearError();
+  currentFilter = null;
   document.getElementById("filter-summary")!.hidden = true;
   document.getElementById("test-panel")!.hidden = true;
   document.getElementById("test-panel-body")!.innerHTML = "";
+  const pag = document.getElementById("rules-pagination")!;
+  pag.innerHTML = "";
+  pag.hidden = true;
   document.getElementById("rules-container")!.innerHTML = "";
+  const pagBot = document.getElementById("rules-pagination-bottom")!;
+  pagBot.innerHTML = "";
+  pagBot.hidden = true;
   const rawJson = document.getElementById("raw-json")!;
   rawJson.hidden = true;
   rawJson.querySelector("pre")!.textContent = "";
@@ -77,16 +84,18 @@ export function renderSummary(filter: HsfFilter, fileName: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Rules
+// Rules — paginated rendering
 // ---------------------------------------------------------------------------
 
-export function renderRules(filter: HsfFilter): void {
-  const container = document.getElementById("rules-container")!;
-  container.innerHTML = "";
+const PAGE_SIZES = [50, 100, 250, 500, 1000];
+let currentPage = 0;
+let pageSize = 100;
+let currentFilter: HsfFilter | null = null;
 
-  filter.Rules.forEach((rule, i) => {
-    container.appendChild(buildRuleCard(rule, i));
-  });
+export function renderRules(filter: HsfFilter): void {
+  currentFilter = filter;
+  currentPage = 0;
+  renderCurrentPage();
 
   // Raw JSON collapsible — lazy-populate on first open
   const details = document.getElementById("raw-json")!;
@@ -100,6 +109,157 @@ export function renderRules(filter: HsfFilter): void {
       rawPopulated = true;
     }
   });
+}
+
+/** Navigate to the page containing the given 0-based rule index and scroll to it. */
+export function goToRule(ruleIndex: number): void {
+  if (!currentFilter) return;
+  const total = currentFilter.Rules.length;
+  if (ruleIndex < 0 || ruleIndex >= total) return;
+  const targetPage = Math.floor(ruleIndex / pageSize);
+  if (targetPage !== currentPage) {
+    currentPage = targetPage;
+    renderCurrentPage();
+  }
+  // Scroll to the card after render
+  const ruleNum = ruleIndex + 1;
+  const card = document.getElementById(`rule-${ruleNum}`);
+  if (card) {
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Brief highlight
+    card.classList.add("rule-matched");
+  }
+}
+
+function renderCurrentPage(): void {
+  if (!currentFilter) return;
+
+  const rules = currentFilter.Rules;
+  const total = rules.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (currentPage >= totalPages) currentPage = totalPages - 1;
+
+  const start = currentPage * pageSize;
+  const end = Math.min(start + pageSize, total);
+
+  // Render rule cards for this page
+  const container = document.getElementById("rules-container")!;
+  container.innerHTML = "";
+  for (let i = start; i < end; i++) {
+    container.appendChild(buildRuleCard(rules[i], i));
+  }
+
+  // Render pagination controls (top and bottom)
+  for (const id of ["rules-pagination", "rules-pagination-bottom"]) {
+    const el = document.getElementById(id)!;
+    el.hidden = total <= pageSize; // hide if everything fits on one page
+    el.innerHTML = "";
+    if (!el.hidden) {
+      renderPaginationControls(el, total, totalPages, id === "rules-pagination");
+    }
+  }
+}
+
+function renderPaginationControls(
+  container: HTMLElement,
+  totalRules: number,
+  totalPages: number,
+  includeGoTo: boolean,
+): void {
+  container.className = "rules-pagination";
+
+  // Prev button
+  const prevBtn = document.createElement("button");
+  prevBtn.type = "button";
+  prevBtn.className = "pagination-btn";
+  prevBtn.textContent = "\u25c0 Prev";
+  prevBtn.disabled = currentPage === 0;
+  prevBtn.addEventListener("click", () => {
+    if (currentPage > 0) {
+      currentPage--;
+      renderCurrentPage();
+      scrollToRulesTop();
+    }
+  });
+  container.appendChild(prevBtn);
+
+  // Page indicator
+  const info = document.createElement("span");
+  info.className = "pagination-info";
+  const start = currentPage * pageSize + 1;
+  const end = Math.min((currentPage + 1) * pageSize, totalRules);
+  info.textContent = `Rules ${start}\u2013${end} of ${totalRules} (page ${currentPage + 1}/${totalPages})`;
+  container.appendChild(info);
+
+  // Next button
+  const nextBtn = document.createElement("button");
+  nextBtn.type = "button";
+  nextBtn.className = "pagination-btn";
+  nextBtn.textContent = "Next \u25b6";
+  nextBtn.disabled = currentPage >= totalPages - 1;
+  nextBtn.addEventListener("click", () => {
+    if (currentPage < totalPages - 1) {
+      currentPage++;
+      renderCurrentPage();
+      scrollToRulesTop();
+    }
+  });
+  container.appendChild(nextBtn);
+
+  // Page size selector
+  const sizeLabel = document.createElement("label");
+  sizeLabel.className = "pagination-size";
+  sizeLabel.textContent = "Per page: ";
+  const sizeSelect = document.createElement("select");
+  for (const size of PAGE_SIZES) {
+    const opt = document.createElement("option");
+    opt.value = String(size);
+    opt.textContent = String(size);
+    if (size === pageSize) opt.selected = true;
+    sizeSelect.appendChild(opt);
+  }
+  sizeSelect.addEventListener("change", () => {
+    pageSize = Number(sizeSelect.value);
+    currentPage = 0;
+    renderCurrentPage();
+    scrollToRulesTop();
+  });
+  sizeLabel.appendChild(sizeSelect);
+  container.appendChild(sizeLabel);
+
+  // Go-to-rule input (top bar only)
+  if (includeGoTo) {
+    const goWrap = document.createElement("span");
+    goWrap.className = "pagination-goto";
+
+    const goInput = document.createElement("input");
+    goInput.type = "number";
+    goInput.min = "1";
+    goInput.max = String(totalRules);
+    goInput.placeholder = "Rule #";
+    goInput.className = "pagination-goto-input";
+
+    const goBtn = document.createElement("button");
+    goBtn.type = "button";
+    goBtn.className = "pagination-btn";
+    goBtn.textContent = "Go";
+    const doGo = () => {
+      const num = Number(goInput.value);
+      if (num >= 1 && num <= totalRules) goToRule(num - 1);
+    };
+    goBtn.addEventListener("click", doGo);
+    goInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") doGo();
+    });
+
+    goWrap.appendChild(goInput);
+    goWrap.appendChild(goBtn);
+    container.appendChild(goWrap);
+  }
+}
+
+function scrollToRulesTop(): void {
+  document.getElementById("rules-pagination")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // ---------------------------------------------------------------------------
@@ -457,9 +617,12 @@ function runTest(filter: HsfFilter): void {
   const cls = rule.Keep ? "test-result-keep" : "test-result-sell";
 
   resultEl.className = `test-result ${cls}`;
-  resultEl.innerHTML = `${action} &mdash; matched <a href="#rule-${ruleNum}">rule #${ruleNum}</a>`;
+  resultEl.innerHTML = `${action} &mdash; matched <a href="#" data-rule-index="${matchedIndex}">rule #${ruleNum}</a>`;
 
-  // Highlight matched rule card
-  const card = document.getElementById(`rule-${ruleNum}`);
-  if (card) card.classList.add("rule-matched");
+  // Wire the link to navigate to the correct page and highlight the card
+  const link = resultEl.querySelector("a")!;
+  link.addEventListener("click", (e) => {
+    e.preventDefault();
+    goToRule(matchedIndex);
+  });
 }
