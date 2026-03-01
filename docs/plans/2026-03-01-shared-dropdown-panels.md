@@ -323,7 +323,7 @@ Initialize one `SharedDropdown` per converted field type. Define all option arra
 
 **Files:**
 - Modify: `packages/web/src/editor.ts`
-- Modify: `packages/web/src/render.ts` (import `closeAllDropdowns`, call in `renderCurrentPage`)
+- Modify: `packages/web/src/main.ts` (call `closeAllDropdowns` before `renderEditableRules`)
 
 ### Step 1: Add imports
 
@@ -345,9 +345,9 @@ const RANK_OPTIONS: DropdownOption[] = [
 
 const RARITY_OPTIONS: DropdownOption[] = [
   { value: "0", label: "Any" },
-  ...HSF_RARITY_IDS.map((id) => ({
-    value: String(id),
-    label: describeRarity(id),
+  ...Object.entries(HSF_RARITY_IDS).map(([id, name]) => ({
+    value: id,
+    label: name,
   })),
 ];
 
@@ -414,18 +414,20 @@ Add `initDropdowns();` at the start of `renderEditableRules`, before `renderPagi
 
 Add `destroyDropdowns();` at the start of `clearEditor`.
 
-### Step 6: Close open dropdowns on page switch
+### Step 6: Close open dropdowns on page switch and re-render
 
-If a dropdown panel is open when the user switches pages, the trigger button it was positioned next to is destroyed but the floating panel remains. Wire `closeAllDropdowns()` into `renderCurrentPage()` in `render.ts`:
+If a dropdown panel is open when the user switches pages or triggers a re-render (delete, move, add), the trigger button it was positioned next to is destroyed but the floating panel remains. Wire `closeAllDropdowns()` into `main.ts` — call it before every `renderEditableRules()` and `showViewerContent()` call that re-renders cards:
 
 ```ts
-// At the top of renderCurrentPage(), before clearing container:
-import { closeAllDropdowns } from "./editor.js";
-// ...
+// In main.ts, import closeAllDropdowns from editor:
+import { renderEditableRules, clearEditor, closeAllDropdowns } from "./editor.js";
+
+// In the showViewerContent callback block, before renderEditableRules:
 closeAllDropdowns();
+renderEditableRules(tab.filter, { ... });
 ```
 
-This ensures any open panel is dismissed before the old cards are removed.
+This avoids a circular dependency (`editor.ts` already imports from `render.ts`, so `render.ts` must not import from `editor.ts`). Since `main.ts` already imports from both modules, it's the natural place for this wiring.
 
 ### Step 7: Run tests, build, lint, commit
 
@@ -568,7 +570,14 @@ Note: the trigger keeps `edit-sub-stat` class so existing CSS layout works. It a
 
 ### Step 5: Remove dead code
 
-Remove `buildSelectField` and `buildMainStatField` functions. Remove the `rarityOpts`, `levelOpts`, `factionOpts` local variables from `buildEditableRuleCard`. Remove `MAIN_STAT_OPTIONS` (alias for `SUBSTAT_OPTIONS`) — it's no longer referenced since `MAIN_STAT_DROPDOWN_OPTIONS` uses `SUBSTAT_OPTIONS` directly.
+Remove these functions and constants, which are replaced by the new trigger-based equivalents from Steps 1–2:
+
+- `buildSelectField` (line 475) — replaced by `buildTriggerButton` + `buildTriggerField`
+- `buildMainStatField` (line 514) — replaced by `buildTriggerField("Main Stat", ...)`
+- `encodeMainStat` (line 508) — replaced by new version in Step 2
+- `encodeSubstatValue` (line 685) — replaced by new version in Step 2
+- `MAIN_STAT_OPTIONS` (line 506) — replaced by `MAIN_STAT_DROPDOWN_OPTIONS`
+- `rarityOpts`, `levelOpts`, `factionOpts` local variables in `buildEditableRuleCard`
 
 ### Step 6: Run build to verify compilation
 
@@ -593,6 +602,8 @@ case "open-dropdown": {
   const currentValue = action.dataset.value ?? "-1";
   const dropdown = sharedDropdowns[fieldType];
   if (!dropdown) break;
+  // Close any other open panel before opening a new one
+  closeAllDropdowns();
   dropdown.open(action, currentValue, (newValue) => {
     handleDropdownSelection(card, index, action, fieldType, newValue);
   });
@@ -713,6 +724,18 @@ Do NOT commit yet — tests will fail until test updates in Task 5. Tasks 3–5 
 
 **Files:**
 - Modify: `packages/web/src/__tests__/editor.test.ts`
+
+### Step 0: Add `afterEach` cleanup to prevent listener leaks
+
+The existing tests use `beforeEach(setupDOM)` which resets `document.body.innerHTML` — this removes dropdown panel elements from the DOM but does NOT clean up document-level event listeners from `SharedDropdown` instances. Add an `afterEach` to the top-level `describe("editor", ...)` block:
+
+```ts
+afterEach(() => {
+  clearEditor();
+});
+```
+
+This ensures `destroyDropdowns()` is called between tests, properly removing all document-level `keydown` and `click` listeners.
 
 ### Step 1: Update "field selects have data-field" test (line 339-345)
 
@@ -918,7 +941,7 @@ for open-dropdown action and update existing editor tests.
   border: 1px solid #ccc;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  z-index: 10000;
+  z-index: 200;
   max-height: 300px;
   overflow-y: auto;
 }
