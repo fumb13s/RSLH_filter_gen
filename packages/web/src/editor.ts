@@ -389,6 +389,11 @@ function buildMainStatField(
 // Set selector — searchable checklist dropdown (like generator)
 // ---------------------------------------------------------------------------
 
+/** Sorted set entries — built once, reused across all cards. */
+const SORTED_SET_ENTRIES = Object.entries(ARTIFACT_SET_NAMES)
+  .map(([id, name]) => ({ id: Number(id), name }))
+  .sort((a, b) => a.name.localeCompare(b.name));
+
 function buildSetField(
   rule: HsfRule,
   index: number,
@@ -406,17 +411,43 @@ function buildSetField(
   dropdown.className = "set-selector";
   dropdown.style.flex = "1";
 
-  const currentSets = rule.ArtifactSet ?? [];
-
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.className = "set-selector-toggle";
-  toggle.textContent = summariseSets(currentSets);
+  toggle.textContent = summariseSets(rule.ArtifactSet ?? []);
   dropdown.appendChild(toggle);
 
   const panel = document.createElement("div");
   panel.className = "set-selector-panel";
+  dropdown.appendChild(panel);
 
+  // Lazy-build the checkbox list on first open to avoid ~210 DOM elements
+  // per card sitting in memory for cards the user never expands.
+  let populated = false;
+
+  toggle.addEventListener("click", () => {
+    if (!populated) {
+      populateSetPanel(panel, rule, index, toggle, cb);
+      populated = true;
+    }
+    panel.classList.toggle("open");
+    if (panel.classList.contains("open")) {
+      const search = panel.querySelector<HTMLInputElement>(".set-selector-search");
+      if (search) search.focus();
+    }
+  });
+
+  field.appendChild(dropdown);
+  return field;
+}
+
+function populateSetPanel(
+  panel: HTMLElement,
+  rule: HsfRule,
+  index: number,
+  toggle: HTMLElement,
+  cb: RuleEditorCallbacks,
+): void {
   const search = document.createElement("input");
   search.type = "text";
   search.className = "set-selector-search";
@@ -426,11 +457,9 @@ function buildSetField(
   const list = document.createElement("div");
   list.className = "set-selector-list";
 
-  const entries = Object.entries(ARTIFACT_SET_NAMES)
-    .map(([id, name]) => ({ id: Number(id), name }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const currentSets = rule.ArtifactSet ?? [];
 
-  for (const entry of entries) {
+  for (const entry of SORTED_SET_ENTRIES) {
     const row = document.createElement("label");
     row.className = "set-selector-item";
 
@@ -459,7 +488,6 @@ function buildSetField(
   }
 
   panel.appendChild(list);
-  dropdown.appendChild(panel);
 
   search.addEventListener("input", () => {
     const q = search.value.toLowerCase();
@@ -468,14 +496,6 @@ function buildSetField(
       (item as HTMLElement).hidden = !text.includes(q);
     }
   });
-
-  toggle.addEventListener("click", () => {
-    panel.classList.toggle("open");
-    if (panel.classList.contains("open")) search.focus();
-  });
-
-  field.appendChild(dropdown);
-  return field;
 }
 
 function summariseSets(ids: number[]): string {
