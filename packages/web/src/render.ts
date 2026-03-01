@@ -42,6 +42,7 @@ export function clearError(): void {
 export function clearViewer(): void {
   clearError();
   abortPageListeners();
+  document.getElementById("rules-container")!.removeEventListener("click", handleViewerClick);
   currentFilter = null;
   document.getElementById("filter-summary")!.hidden = true;
   document.getElementById("test-panel")!.hidden = true;
@@ -92,14 +93,19 @@ const PAGE_SIZES = [50, 100, 250, 500, 1000];
 let currentPage = 0;
 let pageSize = 100;
 let currentFilter: HsfFilter | null = null;
-let currentCardBuilder: (rule: HsfRule, index: number, signal: AbortSignal) => HTMLElement = buildRuleCard;
+let currentCardBuilder: (rule: HsfRule, index: number) => HTMLElement = buildRuleCard;
+
+/** Getter for the current filter — used by editor delegation handlers. */
+export function getCurrentFilter(): HsfFilter | null {
+  return currentFilter;
+}
 
 // AbortController for tearing down event listeners when pages change.
 // Aborted before each page render so detached DOM nodes become collectible.
 let pageController = new AbortController();
 
-/** Abort all event listeners registered on the current page's DOM nodes. */
-export function abortPageListeners(): void {
+/** Abort all event listeners registered on the current page's pagination controls. */
+function abortPageListeners(): void {
   pageController.abort();
 }
 
@@ -108,6 +114,10 @@ export function abortPageListeners(): void {
 let rawJsonToggleHandler: (() => void) | null = null;
 
 export function renderRules(filter: HsfFilter): void {
+  const container = document.getElementById("rules-container")!;
+  container.removeEventListener("click", handleViewerClick);
+  container.addEventListener("click", handleViewerClick);
+
   renderPaginatedCards(filter, buildRuleCard, true);
 
   // Raw JSON collapsible — lazy-populate on first open
@@ -137,7 +147,7 @@ export function renderRules(filter: HsfFilter): void {
  */
 export function renderPaginatedCards(
   filter: HsfFilter,
-  cardBuilder: (rule: HsfRule, index: number, signal: AbortSignal) => HTMLElement,
+  cardBuilder: (rule: HsfRule, index: number) => HTMLElement,
   resetPage = false,
 ): void {
   if (resetPage || filter !== currentFilter) {
@@ -189,7 +199,7 @@ function renderCurrentPage(): void {
   const container = document.getElementById("rules-container")!;
   container.innerHTML = "";
   for (let i = start; i < end; i++) {
-    container.appendChild(currentCardBuilder(rules[i], i, signal));
+    container.appendChild(currentCardBuilder(rules[i], i));
   }
 
   // Render pagination controls (top and bottom)
@@ -197,7 +207,9 @@ function renderCurrentPage(): void {
     const el = document.getElementById(id)!;
     el.hidden = total <= pageSize; // hide if everything fits on one page
     el.innerHTML = "";
-    if (!el.hidden) {
+    if (el.hidden) {
+      el.className = "";
+    } else {
       renderPaginationControls(el, total, totalPages, id === "rules-pagination", signal);
     }
   }
@@ -307,10 +319,32 @@ function scrollToRulesTop(): void {
 }
 
 // ---------------------------------------------------------------------------
+// View-mode delegation — single click handler for raw toggle buttons
+// ---------------------------------------------------------------------------
+
+function handleViewerClick(e: MouseEvent): void {
+  const target = e.target as HTMLElement;
+  const rawBtn = target.closest<HTMLElement>('[data-action="raw-toggle"]');
+  if (!rawBtn) return;
+  const card = rawBtn.closest<HTMLElement>(".rule-card");
+  if (!card) return;
+  const rawPre = card.querySelector<HTMLPreElement>(".rule-raw");
+  if (!rawPre) return;
+  rawPre.hidden = !rawPre.hidden;
+  if (!rawPre.hidden && !rawPre.textContent) {
+    const idx = Number(rawBtn.dataset.ruleIndex);
+    if (currentFilter && idx >= 0 && idx < currentFilter.Rules.length) {
+      rawPre.textContent = JSON.stringify(currentFilter.Rules[idx], null, 2);
+    }
+  }
+  rawBtn.classList.toggle("badge-raw-active", !rawPre.hidden);
+}
+
+// ---------------------------------------------------------------------------
 // Card builder
 // ---------------------------------------------------------------------------
 
-function buildRuleCard(rule: HsfRule, index: number, signal: AbortSignal): HTMLElement {
+function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
   const card = document.createElement("div");
   card.className = "rule-card";
   card.id = `rule-${index + 1}`;
@@ -363,7 +397,7 @@ function buildRuleCard(rule: HsfRule, index: number, signal: AbortSignal): HTMLE
     card.appendChild(substatsEl);
   }
 
-  // Raw JSON toggle — lazy-populate on first click
+  // Raw JSON toggle — lazy-populate on first click (delegated via handleViewerClick)
   const rawPre = document.createElement("pre");
   rawPre.className = "rule-raw";
   rawPre.hidden = true;
@@ -372,13 +406,8 @@ function buildRuleCard(rule: HsfRule, index: number, signal: AbortSignal): HTMLE
   const rawBtn = document.createElement("button");
   rawBtn.className = "badge badge-raw";
   rawBtn.textContent = "Raw";
-  rawBtn.addEventListener("click", () => {
-    rawPre.hidden = !rawPre.hidden;
-    if (!rawPre.hidden && !rawPre.textContent) {
-      rawPre.textContent = JSON.stringify(rule, null, 2);
-    }
-    rawBtn.classList.toggle("badge-raw-active", !rawPre.hidden);
-  }, { signal });
+  rawBtn.dataset.action = "raw-toggle";
+  rawBtn.dataset.ruleIndex = String(index);
   header.appendChild(rawBtn);
 
   return card;
@@ -661,7 +690,7 @@ function runTest(filter: HsfFilter): void {
   const cls = rule.Keep ? "test-result-keep" : "test-result-sell";
 
   resultEl.className = `test-result ${cls}`;
-  resultEl.innerHTML = `${action} &mdash; matched <a href="#" data-rule-index="${matchedIndex}">rule #${ruleNum}</a>`;
+  resultEl.innerHTML = `${action} &mdash; matched <a href="#">rule #${ruleNum}</a>`;
 
   // Wire the link to navigate to the correct page and highlight the card
   const link = resultEl.querySelector("a")!;
