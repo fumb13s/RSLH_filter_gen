@@ -252,13 +252,6 @@ function buildSetSelector(group: SettingGroup, index: number, cb: GeneratorCallb
     if (panel.classList.contains("open")) search.focus();
   });
 
-  // Close panel on click outside
-  document.addEventListener("click", (e) => {
-    if (!dropdown.contains(e.target as Node)) {
-      panel.classList.remove("open");
-    }
-  });
-
   wrap.appendChild(dropdown);
   return wrap;
 }

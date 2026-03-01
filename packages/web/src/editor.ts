@@ -468,12 +468,6 @@ function buildSetField(
     if (panel.classList.contains("open")) search.focus();
   });
 
-  document.addEventListener("click", (e) => {
-    if (!dropdown.contains(e.target as Node)) {
-      panel.classList.remove("open");
-    }
-  });
-
   field.appendChild(dropdown);
   return field;
 }

@@ -1113,6 +1113,20 @@ backToTop.addEventListener("click", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Global close-on-click-outside for set-selector dropdowns
+// ---------------------------------------------------------------------------
+
+// Single listener replaces per-card document listeners in editor.ts and
+// generator.ts that previously leaked (one per card, never removed).
+document.addEventListener("click", (e) => {
+  for (const panel of document.querySelectorAll(".set-selector-panel.open")) {
+    if (!panel.closest(".set-selector")?.contains(e.target as Node)) {
+      panel.classList.remove("open");
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Initialize
 // ---------------------------------------------------------------------------
 
