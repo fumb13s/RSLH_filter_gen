@@ -10,7 +10,7 @@ import type { QuickGenState, QuickBlock } from "./quick-generator.js";
 import { getSettings } from "./settings.js";
 import type { TabType } from "./settings.js";
 import { encodeState, decodeState } from "./share.js";
-import { renderEditableRules, clearEditor } from "./editor.js";
+import { renderEditableRules } from "./editor.js";
 import { initSettingsModal } from "./settings-modal.js";
 import { marked } from "marked";
 import readme from "../../../README.md?raw";
@@ -366,7 +366,6 @@ function showViewerContent(tab: TabEntry): void {
       saveHsfBtn.hidden = true;
       addRuleBtn.hidden = true;
       cancelBtn.hidden = true;
-      clearEditor();
       renderTestPanel(tab.filter);
       renderRules(tab.filter);
     }
