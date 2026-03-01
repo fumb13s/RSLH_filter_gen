@@ -82,7 +82,9 @@ export function renderEditableRules(
 
 export function clearEditor(): void {
   abortPageListeners();
-  document.getElementById("rules-container")!.innerHTML = "";
+  const container = document.getElementById("rules-container")!;
+  container.removeEventListener("dragleave", handleContainerDragLeave);
+  container.innerHTML = "";
 }
 
 // ---------------------------------------------------------------------------
