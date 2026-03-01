@@ -208,7 +208,7 @@ describe("editor", () => {
 
       // Change first substat to ATK% (ID:2, IsFlat:false = "2:0")
       statSelects[0].value = "2:0";
-      statSelects[0].dispatchEvent(new Event("change"));
+      statSelects[0].dispatchEvent(new Event("change", { bubbles: true }));
 
       expect(rule.Substats[0].ID).toBe(2);
       expect(rule.Substats[0].IsFlat).toBe(false);
@@ -225,7 +225,7 @@ describe("editor", () => {
 
       const statSelects = document.querySelectorAll(".edit-sub-stat") as NodeListOf<HTMLSelectElement>;
       statSelects[0].value = "-1";
-      statSelects[0].dispatchEvent(new Event("change"));
+      statSelects[0].dispatchEvent(new Event("change", { bubbles: true }));
 
       expect(rule.Substats[0].ID).toBe(-1);
       expect(rule.Substats[0].Value).toBe(0);
@@ -258,7 +258,7 @@ describe("editor", () => {
       // Change condition
       const condSelects = document.querySelectorAll(".edit-sub-cond") as NodeListOf<HTMLSelectElement>;
       condSelects[0].value = ">";
-      condSelects[0].dispatchEvent(new Event("change"));
+      condSelects[0].dispatchEvent(new Event("change", { bubbles: true }));
 
       // The spread in the handler preserves extra fields
       expect((rule.Substats[0] as Record<string, unknown>)["ExtraField"]).toBe(42);
@@ -308,6 +308,40 @@ describe("editor", () => {
       expect(cards[0].dataset.ruleIndex).toBe("0");
       expect(cards[1].dataset.ruleIndex).toBe("1");
       expect(cards[2].dataset.ruleIndex).toBe("2");
+    });
+  });
+
+  describe("data attributes for delegation", () => {
+    it("Keep button has data-action='keep-toggle'", () => {
+      const filter = makeFilter([defaultRule()]);
+      renderEditableRules(filter, noopCallbacks());
+      const btn = document.querySelector("[data-action='keep-toggle']");
+      expect(btn).not.toBeNull();
+      expect(btn!.textContent).toBe("Keep");
+    });
+
+    it("delete button has data-action='delete'", () => {
+      const filter = makeFilter([defaultRule()]);
+      renderEditableRules(filter, noopCallbacks());
+      const btn = document.querySelector("[data-action='delete']");
+      expect(btn).not.toBeNull();
+    });
+
+    it("substat rows have data-sub-index", () => {
+      const filter = makeFilter([defaultRule()]);
+      renderEditableRules(filter, noopCallbacks());
+      const rows = document.querySelectorAll(".edit-substat-row");
+      expect(rows.length).toBe(4);
+      expect((rows[0] as HTMLElement).dataset.subIndex).toBe("0");
+      expect((rows[3] as HTMLElement).dataset.subIndex).toBe("3");
+    });
+
+    it("field selects have data-field", () => {
+      const filter = makeFilter([defaultRule()]);
+      renderEditableRules(filter, noopCallbacks());
+      const rankField = document.querySelector("[data-field='rank']");
+      expect(rankField).not.toBeNull();
+      expect(rankField!.tagName).toBe("SELECT");
     });
   });
 });

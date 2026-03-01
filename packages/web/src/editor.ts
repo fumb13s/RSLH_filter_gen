@@ -1,5 +1,9 @@
 /**
  * Editable rule cards for the Viewer's edit mode.
+ *
+ * Uses event delegation: a single set of listeners on #rules-container
+ * handles all card interactions. This eliminates per-card closures that
+ * previously retained detached DOM nodes across page switches.
  */
 import type { HsfFilter, HsfRule, HsfSubstat } from "@rslh/core";
 import {
@@ -9,7 +13,7 @@ import {
   FACTION_NAMES,
   emptySubstat,
 } from "@rslh/core";
-import { abortPageListeners, esc, renderPaginatedCards } from "./render.js";
+import { esc, getCurrentFilter, renderPaginatedCards } from "./render.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,6 +49,9 @@ const CONDITION_OPTIONS = [">=", ">", "=", "<=", "<"];
 /** Index of the rule currently being dragged, or -1 if none. */
 let dragSourceIndex = -1;
 
+/** Current callbacks — set once when edit mode starts, read by delegation handlers. */
+let currentCallbacks: RuleEditorCallbacks | null = null;
+
 function clearDropIndicators(container: Element): void {
   for (const el of container.querySelectorAll(".edit-drop-above, .edit-drop-below")) {
     el.classList.remove("edit-drop-above", "edit-drop-below");
@@ -52,11 +59,252 @@ function clearDropIndicators(container: Element): void {
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// Delegation handlers
 // ---------------------------------------------------------------------------
 
-// Single dragleave handler for the rules container — registered once to
-// avoid accumulating listeners on every renderEditableRules call.
+function handleContainerClick(e: MouseEvent): void {
+  const target = e.target as HTMLElement;
+  const action = target.closest("[data-action]") as HTMLElement | null;
+  if (!action) return;
+  const card = action.closest(".edit-card") as HTMLElement | null;
+  if (!card) return;
+  const index = Number(card.dataset.ruleIndex);
+  const filter = getCurrentFilter();
+  if (!filter || !currentCallbacks) return;
+  const rule = filter.Rules[index];
+
+  switch (action.dataset.action) {
+    case "keep-toggle": {
+      rule.Keep = !rule.Keep;
+      action.textContent = rule.Keep ? "Keep" : "Sell";
+      action.className = `edit-badge-toggle ${rule.Keep ? "badge-keep" : "badge-sell"}`;
+      card.classList.toggle("keep", rule.Keep);
+      card.classList.toggle("sell", !rule.Keep);
+      currentCallbacks.onRuleChange(index, rule);
+      break;
+    }
+    case "use-toggle": {
+      rule.Use = !rule.Use;
+      action.textContent = rule.Use ? "Active" : "Inactive";
+      action.className = `edit-badge-toggle ${rule.Use ? "badge-active" : "badge-inactive"}`;
+      card.classList.toggle("inactive", !rule.Use);
+      currentCallbacks.onRuleChange(index, rule);
+      break;
+    }
+    case "move-up":
+      currentCallbacks.onRuleMove(index, index - 1);
+      break;
+    case "move-down":
+      currentCallbacks.onRuleMove(index, index + 1);
+      break;
+    case "delete":
+      currentCallbacks.onRuleDelete(index);
+      break;
+    case "set-toggle": {
+      const panel = card.querySelector(".set-selector-panel") as HTMLElement;
+      if (!panel.children.length) {
+        populateSetPanel(panel, rule.ArtifactSet ?? []);
+      }
+      panel.classList.toggle("open");
+      if (panel.classList.contains("open")) {
+        const search = panel.querySelector<HTMLInputElement>(".set-selector-search");
+        if (search) search.focus();
+      }
+      break;
+    }
+  }
+}
+
+function handleContainerChange(e: Event): void {
+  const target = e.target as HTMLElement;
+  const card = target.closest(".edit-card") as HTMLElement | null;
+  if (!card) return;
+  const index = Number(card.dataset.ruleIndex);
+  const filter = getCurrentFilter();
+  if (!filter || !currentCallbacks) return;
+  const rule = filter.Rules[index];
+
+  // Field selects (Rank, Rarity, Level, Faction, Main Stat)
+  const field = (target as HTMLElement).dataset.field;
+  if (field) {
+    const val = (target as HTMLSelectElement).value;
+    switch (field) {
+      case "rank": rule.Rank = Number(val); break;
+      case "rarity": rule.Rarity = Number(val); break;
+      case "level": rule.LVLForCheck = Number(val); break;
+      case "faction": rule.Faction = Number(val); break;
+      case "main-stat": {
+        if (val === "-1") {
+          rule.MainStatID = -1;
+          rule.MainStatF = 1;
+        } else {
+          const [statId, flatFlag] = val.split(":").map(Number);
+          rule.MainStatID = statId;
+          rule.MainStatF = flatFlag === 1 ? 0 : 1;
+        }
+        break;
+      }
+    }
+    currentCallbacks.onRuleChange(index, rule);
+    return;
+  }
+
+  // Substat changes
+  const row = target.closest(".edit-substat-row") as HTMLElement | null;
+  if (row) {
+    const subIndex = Number(row.dataset.subIndex);
+    if (target.classList.contains("edit-sub-stat")) {
+      const sv = (target as HTMLSelectElement).value;
+      const condSelect = row.querySelector(".edit-sub-cond") as HTMLSelectElement;
+      const valueInput = row.querySelector('input[type="number"]') as HTMLInputElement;
+      if (sv === "-1") {
+        rule.Substats[subIndex] = emptySubstat();
+        condSelect.disabled = true;
+        valueInput.disabled = true;
+        condSelect.value = ">=";
+        valueInput.value = "0";
+      } else {
+        const [statId, flatFlag] = sv.split(":").map(Number);
+        rule.Substats[subIndex] = {
+          ...rule.Substats[subIndex],
+          ID: statId,
+          IsFlat: flatFlag === 1,
+          NotAvailable: false,
+          Condition: condSelect.value || ">=",
+          Value: Number(valueInput.value) || 0,
+        };
+        condSelect.disabled = false;
+        valueInput.disabled = false;
+      }
+    } else if (target.classList.contains("edit-sub-cond")) {
+      rule.Substats[subIndex] = {
+        ...rule.Substats[subIndex],
+        Condition: (target as HTMLSelectElement).value,
+      };
+    }
+    currentCallbacks.onRuleChange(index, rule);
+    return;
+  }
+
+  // Set checkboxes
+  const actionAttr = (target as HTMLElement).dataset.action;
+  if (actionAttr === "set-check") {
+    const checkbox = target as HTMLInputElement;
+    const setId = Number(checkbox.dataset.setId);
+    let sets = rule.ArtifactSet ?? [];
+    if (checkbox.checked) {
+      sets.push(setId);
+    } else {
+      sets = sets.filter((s) => s !== setId);
+    }
+    rule.ArtifactSet = sets.length > 0 ? sets : undefined;
+    const toggle = card.querySelector("[data-action='set-toggle']") as HTMLElement;
+    toggle.textContent = summariseSets(sets);
+    currentCallbacks.onRuleChange(index, rule);
+    return;
+  }
+
+  // Slot checkboxes
+  if (actionAttr === "slot-check") {
+    const checkbox = target as HTMLInputElement;
+    const slotId = Number(checkbox.dataset.slotId);
+    let slots = rule.ArtifactType ?? [];
+    if (checkbox.checked) {
+      slots.push(slotId);
+    } else {
+      slots = slots.filter((s) => s !== slotId);
+    }
+    rule.ArtifactType = slots.length > 0 ? slots : undefined;
+    currentCallbacks.onRuleChange(index, rule);
+    return;
+  }
+}
+
+function handleContainerInput(e: Event): void {
+  const target = e.target as HTMLElement;
+  const card = target.closest(".edit-card") as HTMLElement | null;
+  if (!card) return;
+
+  // Set search filter
+  if ((target as HTMLElement).dataset.action === "set-search") {
+    const q = (target as HTMLInputElement).value.toLowerCase();
+    const list = target.closest(".set-selector-panel")?.querySelector(".set-selector-list");
+    if (list) {
+      for (const item of list.children) {
+        const text = (item as HTMLElement).textContent!.toLowerCase();
+        (item as HTMLElement).hidden = !text.includes(q);
+      }
+    }
+    return;
+  }
+
+  // Substat value input
+  const row = target.closest(".edit-substat-row") as HTMLElement | null;
+  if (row && target instanceof HTMLInputElement && target.type === "number") {
+    const index = Number(card.dataset.ruleIndex);
+    const filter = getCurrentFilter();
+    if (!filter || !currentCallbacks) return;
+    const rule = filter.Rules[index];
+    const subIndex = Number(row.dataset.subIndex);
+    rule.Substats[subIndex] = {
+      ...rule.Substats[subIndex],
+      Value: Number(target.value) || 0,
+    };
+    currentCallbacks.onRuleChange(index, rule);
+    return;
+  }
+}
+
+// --- Drag delegation ---
+
+function handleContainerDragStart(e: DragEvent): void {
+  const card = (e.target as Element).closest(".edit-card") as HTMLElement | null;
+  if (!card) return;
+  dragSourceIndex = Number(card.dataset.ruleIndex);
+  e.dataTransfer!.effectAllowed = "move";
+  e.dataTransfer!.setData("text/plain", String(dragSourceIndex));
+  card.classList.add("edit-card-dragging");
+}
+
+function handleContainerDragEnd(e: DragEvent): void {
+  const card = (e.target as Element).closest(".edit-card") as HTMLElement | null;
+  if (card) card.classList.remove("edit-card-dragging");
+  dragSourceIndex = -1;
+  const container = document.getElementById("rules-container")!;
+  clearDropIndicators(container);
+}
+
+function handleContainerDragOver(e: DragEvent): void {
+  if (dragSourceIndex === -1) return;
+  const card = (e.target as Element).closest(".edit-card") as HTMLElement | null;
+  if (!card) return;
+  e.preventDefault();
+  e.dataTransfer!.dropEffect = "move";
+  const container = card.parentElement!;
+  clearDropIndicators(container);
+  const targetIndex = Number(card.dataset.ruleIndex);
+  if (targetIndex === dragSourceIndex) return;
+  const rect = card.getBoundingClientRect();
+  const midY = rect.top + rect.height / 2;
+  if (e.clientY < midY) card.classList.add("edit-drop-above");
+  else card.classList.add("edit-drop-below");
+}
+
+function handleContainerDrop(e: DragEvent): void {
+  e.preventDefault();
+  const from = dragSourceIndex;
+  if (from === -1) return;
+  const card = (e.target as Element).closest(".edit-card") as HTMLElement | null;
+  if (!card || !currentCallbacks) return;
+  const targetIndex = Number(card.dataset.ruleIndex);
+  if (from === targetIndex) return;
+  const rect = card.getBoundingClientRect();
+  const midY = rect.top + rect.height / 2;
+  let to = e.clientY < midY ? targetIndex : targetIndex + 1;
+  if (from < to) to--;
+  if (from !== to) currentCallbacks.onRuleMove(from, to);
+}
+
 function handleContainerDragLeave(e: DragEvent): void {
   const container = document.getElementById("rules-container")!;
   if (!container.contains(e.relatedTarget as Node)) {
@@ -64,37 +312,54 @@ function handleContainerDragLeave(e: DragEvent): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 export function renderEditableRules(
   filter: HsfFilter,
   callbacks: RuleEditorCallbacks,
 ): void {
+  currentCallbacks = callbacks;
   const total = filter.Rules.length;
   renderPaginatedCards(
     filter,
-    (rule, i, signal) => buildEditableRuleCard(rule, i, total, callbacks, signal),
+    (rule, i) => buildEditableRuleCard(rule, i, total),
   );
 
-  // Container-level drop indicator cleanup — same function reference so
-  // addEventListener is a no-op if already registered.
   const container = document.getElementById("rules-container")!;
+  container.addEventListener("click", handleContainerClick);
+  container.addEventListener("change", handleContainerChange);
+  container.addEventListener("input", handleContainerInput);
+  container.addEventListener("dragstart", handleContainerDragStart);
+  container.addEventListener("dragend", handleContainerDragEnd);
+  container.addEventListener("dragover", handleContainerDragOver);
+  container.addEventListener("drop", handleContainerDrop);
   container.addEventListener("dragleave", handleContainerDragLeave);
 }
 
 export function clearEditor(): void {
-  abortPageListeners();
-  document.getElementById("rules-container")!.innerHTML = "";
+  currentCallbacks = null;
+  const container = document.getElementById("rules-container")!;
+  container.removeEventListener("click", handleContainerClick);
+  container.removeEventListener("change", handleContainerChange);
+  container.removeEventListener("input", handleContainerInput);
+  container.removeEventListener("dragstart", handleContainerDragStart);
+  container.removeEventListener("dragend", handleContainerDragEnd);
+  container.removeEventListener("dragover", handleContainerDragOver);
+  container.removeEventListener("drop", handleContainerDrop);
+  container.removeEventListener("dragleave", handleContainerDragLeave);
+  container.innerHTML = "";
 }
 
 // ---------------------------------------------------------------------------
-// Card builder
+// Card builder — pure DOM construction, no event listeners
 // ---------------------------------------------------------------------------
 
 function buildEditableRuleCard(
   rule: HsfRule,
   index: number,
   total: number,
-  cb: RuleEditorCallbacks,
-  signal: AbortSignal,
 ): HTMLElement {
   const card = document.createElement("div");
   card.className = "edit-card";
@@ -103,58 +368,6 @@ function buildEditableRuleCard(
   card.draggable = true;
   if (!rule.Use) card.classList.add("inactive");
   card.classList.add(rule.Keep ? "keep" : "sell");
-
-  // --- Drag-and-drop ---
-  card.addEventListener("dragstart", (e) => {
-    dragSourceIndex = index;
-    e.dataTransfer!.effectAllowed = "move";
-    e.dataTransfer!.setData("text/plain", String(index));
-    card.classList.add("edit-card-dragging");
-  }, { signal });
-
-  card.addEventListener("dragend", () => {
-    card.classList.remove("edit-card-dragging");
-    dragSourceIndex = -1;
-    const container = card.parentElement;
-    if (container) clearDropIndicators(container);
-  }, { signal });
-
-  card.addEventListener("dragover", (e) => {
-    if (dragSourceIndex === -1) return;
-    e.preventDefault();
-    e.dataTransfer!.dropEffect = "move";
-
-    const container = card.parentElement!;
-    clearDropIndicators(container);
-
-    const targetIndex = Number(card.dataset.ruleIndex);
-    if (targetIndex === dragSourceIndex) return;
-
-    const rect = card.getBoundingClientRect();
-    const midY = rect.top + rect.height / 2;
-    if (e.clientY < midY) {
-      card.classList.add("edit-drop-above");
-    } else {
-      card.classList.add("edit-drop-below");
-    }
-  }, { signal });
-
-  card.addEventListener("drop", (e) => {
-    e.preventDefault();
-    const from = dragSourceIndex;
-    if (from === -1) return;
-
-    const targetIndex = Number(card.dataset.ruleIndex);
-    if (from === targetIndex) return;
-
-    const rect = card.getBoundingClientRect();
-    const midY = rect.top + rect.height / 2;
-    let to = e.clientY < midY ? targetIndex : targetIndex + 1;
-    // Adjust: if dragging downward past the original position, the splice
-    // removes the source first, shifting indices down by 1
-    if (from < to) to--;
-    if (from !== to) cb.onRuleMove(from, to);
-  }, { signal });
 
   // --- Header ---
   const header = document.createElement("div");
@@ -177,14 +390,7 @@ function buildEditableRuleCard(
   keepBtn.type = "button";
   keepBtn.className = `edit-badge-toggle ${rule.Keep ? "badge-keep" : "badge-sell"}`;
   keepBtn.textContent = rule.Keep ? "Keep" : "Sell";
-  keepBtn.addEventListener("click", () => {
-    rule.Keep = !rule.Keep;
-    keepBtn.textContent = rule.Keep ? "Keep" : "Sell";
-    keepBtn.className = `edit-badge-toggle ${rule.Keep ? "badge-keep" : "badge-sell"}`;
-    card.classList.toggle("keep", rule.Keep);
-    card.classList.toggle("sell", !rule.Keep);
-    cb.onRuleChange(index, rule);
-  }, { signal });
+  keepBtn.dataset.action = "keep-toggle";
   header.appendChild(keepBtn);
 
   // Active/Inactive toggle
@@ -192,13 +398,7 @@ function buildEditableRuleCard(
   useBtn.type = "button";
   useBtn.className = `edit-badge-toggle ${rule.Use ? "badge-active" : "badge-inactive"}`;
   useBtn.textContent = rule.Use ? "Active" : "Inactive";
-  useBtn.addEventListener("click", () => {
-    rule.Use = !rule.Use;
-    useBtn.textContent = rule.Use ? "Active" : "Inactive";
-    useBtn.className = `edit-badge-toggle ${rule.Use ? "badge-active" : "badge-inactive"}`;
-    card.classList.toggle("inactive", !rule.Use);
-    cb.onRuleChange(index, rule);
-  }, { signal });
+  useBtn.dataset.action = "use-toggle";
   header.appendChild(useBtn);
 
   // Move up
@@ -208,7 +408,7 @@ function buildEditableRuleCard(
   upBtn.textContent = "\u25b2";
   upBtn.title = "Move up";
   upBtn.disabled = index === 0;
-  upBtn.addEventListener("click", () => cb.onRuleMove(index, index - 1), { signal });
+  upBtn.dataset.action = "move-up";
   header.appendChild(upBtn);
 
   // Move down
@@ -218,7 +418,7 @@ function buildEditableRuleCard(
   downBtn.textContent = "\u25bc";
   downBtn.title = "Move down";
   downBtn.disabled = index === total - 1;
-  downBtn.addEventListener("click", () => cb.onRuleMove(index, index + 1), { signal });
+  downBtn.dataset.action = "move-down";
   header.appendChild(downBtn);
 
   // Delete
@@ -227,7 +427,7 @@ function buildEditableRuleCard(
   delBtn.className = "edit-delete-btn";
   delBtn.textContent = "\u00d7";
   delBtn.title = "Delete rule";
-  delBtn.addEventListener("click", () => cb.onRuleDelete(index), { signal });
+  delBtn.dataset.action = "delete";
   header.appendChild(delBtn);
 
   card.appendChild(header);
@@ -236,78 +436,47 @@ function buildEditableRuleCard(
   const body = document.createElement("div");
   body.className = "edit-body";
 
-  // Sets — searchable multi-select dropdown (reuse pattern from generator)
-  body.appendChild(buildSetField(rule, index, cb, signal));
+  body.appendChild(buildSetField(rule));
+  body.appendChild(buildSlotField(rule));
+  body.appendChild(buildSelectField("Rank", "rank", rule.Rank, [
+    { value: 0, label: "Any" },
+    { value: 5, label: "5-star" },
+    { value: 6, label: "6-star" },
+  ]));
 
-  // Slots — checkbox grid
-  body.appendChild(buildSlotField(rule, index, cb, signal));
-
-  // Rank dropdown
-  body.appendChild(
-    buildSelectField("Rank", rule.Rank, [
-      { value: 0, label: "Any" },
-      { value: 5, label: "5-star" },
-      { value: 6, label: "6-star" },
-    ], (val) => {
-      rule.Rank = val;
-      cb.onRuleChange(index, rule);
-    }, signal),
-  );
-
-  // Rarity dropdown
   const rarityOpts: { value: number; label: string }[] = [{ value: 0, label: "Any" }];
   for (const [id, name] of Object.entries(HSF_RARITY_IDS)) {
     rarityOpts.push({ value: Number(id), label: name });
   }
-  body.appendChild(
-    buildSelectField("Rarity", rule.Rarity, rarityOpts, (val) => {
-      rule.Rarity = val;
-      cb.onRuleChange(index, rule);
-    }, signal),
-  );
+  body.appendChild(buildSelectField("Rarity", "rarity", rule.Rarity, rarityOpts));
+  body.appendChild(buildMainStatField(rule));
 
-  // Main Stat dropdown — encodes both MainStatID and MainStatF
-  body.appendChild(buildMainStatField(rule, index, cb, signal));
-
-  // Level dropdown
   const levelOpts = Array.from({ length: 17 }, (_, i) => ({ value: i, label: String(i) }));
-  body.appendChild(
-    buildSelectField("Level", rule.LVLForCheck, levelOpts, (val) => {
-      rule.LVLForCheck = val;
-      cb.onRuleChange(index, rule);
-    }, signal),
-  );
+  body.appendChild(buildSelectField("Level", "level", rule.LVLForCheck, levelOpts));
 
-  // Faction dropdown
   const factionOpts: { value: number; label: string }[] = [{ value: 0, label: "Any" }];
   for (const [id, name] of Object.entries(FACTION_NAMES)) {
     factionOpts.push({ value: Number(id), label: name });
   }
-  body.appendChild(
-    buildSelectField("Faction", rule.Faction, factionOpts, (val) => {
-      rule.Faction = val;
-      cb.onRuleChange(index, rule);
-    }, signal),
-  );
+  body.appendChild(buildSelectField("Faction", "faction", rule.Faction, factionOpts));
 
   card.appendChild(body);
 
   // --- Substats ---
-  card.appendChild(buildSubstatsSection(rule, index, cb, signal));
+  card.appendChild(buildSubstatsSection(rule));
 
   return card;
 }
 
 // ---------------------------------------------------------------------------
-// Field builders
+// Field builders — pure DOM, no listeners
 // ---------------------------------------------------------------------------
 
 function buildSelectField(
   labelText: string,
+  fieldName: string,
   current: number,
   options: { value: number; label: string }[],
-  onChange: (value: number) => void,
-  signal: AbortSignal,
 ): HTMLElement {
   const field = document.createElement("div");
   field.className = "edit-field";
@@ -317,6 +486,7 @@ function buildSelectField(
   field.appendChild(label);
 
   const select = document.createElement("select");
+  select.dataset.field = fieldName;
   for (const opt of options) {
     const option = document.createElement("option");
     option.value = String(opt.value);
@@ -324,32 +494,24 @@ function buildSelectField(
     if (opt.value === current) option.selected = true;
     select.appendChild(option);
   }
-  select.addEventListener("change", () => onChange(Number(select.value)), { signal });
   field.appendChild(select);
 
   return field;
 }
 
 // ---------------------------------------------------------------------------
-// Main Stat selector — encodes MainStatID + MainStatF together
+// Main Stat selector
 // ---------------------------------------------------------------------------
 
-/** All main stat options: same variants as SUBSTAT_OPTIONS. */
 const MAIN_STAT_OPTIONS = SUBSTAT_OPTIONS;
 
 function encodeMainStat(rule: HsfRule): string {
   if (rule.MainStatID === -1) return "-1";
-  // MainStatF: 0 = flat, 1 = percentage
   const isFlat = rule.MainStatF === 0;
   return `${rule.MainStatID}:${isFlat ? 1 : 0}`;
 }
 
-function buildMainStatField(
-  rule: HsfRule,
-  index: number,
-  cb: RuleEditorCallbacks,
-  signal: AbortSignal,
-): HTMLElement {
+function buildMainStatField(rule: HsfRule): HTMLElement {
   const field = document.createElement("div");
   field.className = "edit-field";
 
@@ -358,6 +520,7 @@ function buildMainStatField(
   field.appendChild(label);
 
   const select = document.createElement("select");
+  select.dataset.field = "main-stat";
 
   const noneOpt = document.createElement("option");
   noneOpt.value = "-1";
@@ -372,38 +535,19 @@ function buildMainStatField(
   }
   select.value = encodeMainStat(rule);
 
-  select.addEventListener("change", () => {
-    const val = select.value;
-    if (val === "-1") {
-      rule.MainStatID = -1;
-      rule.MainStatF = 1;
-    } else {
-      const [statId, flatFlag] = val.split(":").map(Number);
-      rule.MainStatID = statId;
-      rule.MainStatF = flatFlag === 1 ? 0 : 1; // flatFlag=1 → isFlat → MainStatF=0
-    }
-    cb.onRuleChange(index, rule);
-  }, { signal });
-
   field.appendChild(select);
   return field;
 }
 
 // ---------------------------------------------------------------------------
-// Set selector — searchable checklist dropdown (like generator)
+// Set selector
 // ---------------------------------------------------------------------------
 
-/** Sorted set entries — built once, reused across all cards. */
 const SORTED_SET_ENTRIES = Object.entries(ARTIFACT_SET_NAMES)
   .map(([id, name]) => ({ id: Number(id), name }))
   .sort((a, b) => a.name.localeCompare(b.name));
 
-function buildSetField(
-  rule: HsfRule,
-  index: number,
-  cb: RuleEditorCallbacks,
-  signal: AbortSignal,
-): HTMLElement {
+function buildSetField(rule: HsfRule): HTMLElement {
   const field = document.createElement("div");
   field.className = "edit-field";
   field.style.gridColumn = "1 / -1";
@@ -420,50 +564,27 @@ function buildSetField(
   toggle.type = "button";
   toggle.className = "set-selector-toggle";
   toggle.textContent = summariseSets(rule.ArtifactSet ?? []);
+  toggle.dataset.action = "set-toggle";
   dropdown.appendChild(toggle);
 
   const panel = document.createElement("div");
   panel.className = "set-selector-panel";
   dropdown.appendChild(panel);
 
-  // Lazy-build the checkbox list on first open to avoid ~210 DOM elements
-  // per card sitting in memory for cards the user never expands.
-  let populated = false;
-
-  toggle.addEventListener("click", () => {
-    if (!populated) {
-      populateSetPanel(panel, rule, index, toggle, cb, signal);
-      populated = true;
-    }
-    panel.classList.toggle("open");
-    if (panel.classList.contains("open")) {
-      const search = panel.querySelector<HTMLInputElement>(".set-selector-search");
-      if (search) search.focus();
-    }
-  }, { signal });
-
   field.appendChild(dropdown);
   return field;
 }
 
-function populateSetPanel(
-  panel: HTMLElement,
-  rule: HsfRule,
-  index: number,
-  toggle: HTMLElement,
-  cb: RuleEditorCallbacks,
-  signal: AbortSignal,
-): void {
+function populateSetPanel(panel: HTMLElement, currentSets: number[]): void {
   const search = document.createElement("input");
   search.type = "text";
   search.className = "set-selector-search";
   search.placeholder = "Search sets\u2026";
+  search.dataset.action = "set-search";
   panel.appendChild(search);
 
   const list = document.createElement("div");
   list.className = "set-selector-list";
-
-  const currentSets = rule.ArtifactSet ?? [];
 
   for (const entry of SORTED_SET_ENTRIES) {
     const row = document.createElement("label");
@@ -473,17 +594,8 @@ function populateSetPanel(
     checkbox.type = "checkbox";
     checkbox.value = String(entry.id);
     checkbox.checked = currentSets.includes(entry.id);
-    checkbox.addEventListener("change", () => {
-      let sets = rule.ArtifactSet ?? [];
-      if (checkbox.checked) {
-        sets.push(entry.id);
-      } else {
-        sets = sets.filter((s) => s !== entry.id);
-      }
-      rule.ArtifactSet = sets.length > 0 ? sets : undefined;
-      toggle.textContent = summariseSets(sets);
-      cb.onRuleChange(index, rule);
-    }, { signal });
+    checkbox.dataset.action = "set-check";
+    checkbox.dataset.setId = String(entry.id);
     row.appendChild(checkbox);
 
     const span = document.createElement("span");
@@ -494,14 +606,6 @@ function populateSetPanel(
   }
 
   panel.appendChild(list);
-
-  search.addEventListener("input", () => {
-    const q = search.value.toLowerCase();
-    for (const item of list.children) {
-      const text = (item as HTMLElement).textContent!.toLowerCase();
-      (item as HTMLElement).hidden = !text.includes(q);
-    }
-  }, { signal });
 }
 
 function summariseSets(ids: number[]): string {
@@ -515,15 +619,10 @@ function summariseSets(ids: number[]): string {
 }
 
 // ---------------------------------------------------------------------------
-// Slot selector — checkbox grid
+// Slot selector
 // ---------------------------------------------------------------------------
 
-function buildSlotField(
-  rule: HsfRule,
-  index: number,
-  cb: RuleEditorCallbacks,
-  signal: AbortSignal,
-): HTMLElement {
+function buildSlotField(rule: HsfRule): HTMLElement {
   const field = document.createElement("div");
   field.className = "edit-field";
   field.style.gridColumn = "1 / -1";
@@ -548,16 +647,8 @@ function buildSlotField(
     checkbox.type = "checkbox";
     checkbox.value = String(id);
     checkbox.checked = currentSlots.includes(id);
-    checkbox.addEventListener("change", () => {
-      let slots = rule.ArtifactType ?? [];
-      if (checkbox.checked) {
-        slots.push(id);
-      } else {
-        slots = slots.filter((s) => s !== id);
-      }
-      rule.ArtifactType = slots.length > 0 ? slots : undefined;
-      cb.onRuleChange(index, rule);
-    }, { signal });
+    checkbox.dataset.action = "slot-check";
+    checkbox.dataset.slotId = String(id);
     lbl.appendChild(checkbox);
 
     const span = document.createElement("span");
@@ -575,12 +666,7 @@ function buildSlotField(
 // Substats section
 // ---------------------------------------------------------------------------
 
-function buildSubstatsSection(
-  rule: HsfRule,
-  index: number,
-  cb: RuleEditorCallbacks,
-  signal: AbortSignal,
-): HTMLElement {
+function buildSubstatsSection(rule: HsfRule): HTMLElement {
   const section = document.createElement("div");
   section.className = "edit-substats";
 
@@ -590,7 +676,7 @@ function buildSubstatsSection(
   section.appendChild(title);
 
   for (let i = 0; i < 4; i++) {
-    section.appendChild(buildSubstatRow(rule, i, index, cb, signal));
+    section.appendChild(buildSubstatRow(rule, i));
   }
 
   return section;
@@ -601,15 +687,10 @@ function encodeSubstatValue(s: HsfSubstat): string {
   return `${s.ID}:${s.IsFlat ? 1 : 0}`;
 }
 
-function buildSubstatRow(
-  rule: HsfRule,
-  subIndex: number,
-  ruleIndex: number,
-  cb: RuleEditorCallbacks,
-  signal: AbortSignal,
-): HTMLElement {
+function buildSubstatRow(rule: HsfRule, subIndex: number): HTMLElement {
   const row = document.createElement("div");
   row.className = "edit-substat-row";
+  row.dataset.subIndex = String(subIndex);
   const sub = rule.Substats[subIndex];
 
   // Stat dropdown
@@ -650,47 +731,6 @@ function buildSubstatRow(
   const isNone = sub.ID === -1;
   condSelect.disabled = isNone;
   valueInput.disabled = isNone;
-
-  // Wire events
-  statSelect.addEventListener("change", () => {
-    const val = statSelect.value;
-    if (val === "-1") {
-      rule.Substats[subIndex] = emptySubstat();
-      condSelect.disabled = true;
-      valueInput.disabled = true;
-      condSelect.value = ">=";
-      valueInput.value = "0";
-    } else {
-      const [statId, flatFlag] = val.split(":").map(Number);
-      rule.Substats[subIndex] = {
-        ...rule.Substats[subIndex],
-        ID: statId,
-        IsFlat: flatFlag === 1,
-        NotAvailable: false,
-        Condition: condSelect.value || ">=",
-        Value: Number(valueInput.value) || 0,
-      };
-      condSelect.disabled = false;
-      valueInput.disabled = false;
-    }
-    cb.onRuleChange(ruleIndex, rule);
-  }, { signal });
-
-  condSelect.addEventListener("change", () => {
-    rule.Substats[subIndex] = {
-      ...rule.Substats[subIndex],
-      Condition: condSelect.value,
-    };
-    cb.onRuleChange(ruleIndex, rule);
-  }, { signal });
-
-  valueInput.addEventListener("input", () => {
-    rule.Substats[subIndex] = {
-      ...rule.Substats[subIndex],
-      Value: Number(valueInput.value) || 0,
-    };
-    cb.onRuleChange(ruleIndex, rule);
-  }, { signal });
 
   row.appendChild(statSelect);
   row.appendChild(condSelect);

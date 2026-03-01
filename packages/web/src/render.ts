@@ -92,7 +92,12 @@ const PAGE_SIZES = [50, 100, 250, 500, 1000];
 let currentPage = 0;
 let pageSize = 100;
 let currentFilter: HsfFilter | null = null;
-let currentCardBuilder: (rule: HsfRule, index: number, signal: AbortSignal) => HTMLElement = buildRuleCard;
+let currentCardBuilder: (rule: HsfRule, index: number) => HTMLElement = buildRuleCard;
+
+/** Getter for the current filter — used by editor delegation handlers. */
+export function getCurrentFilter(): HsfFilter | null {
+  return currentFilter;
+}
 
 // AbortController for tearing down event listeners when pages change.
 // Aborted before each page render so detached DOM nodes become collectible.
@@ -137,7 +142,7 @@ export function renderRules(filter: HsfFilter): void {
  */
 export function renderPaginatedCards(
   filter: HsfFilter,
-  cardBuilder: (rule: HsfRule, index: number, signal: AbortSignal) => HTMLElement,
+  cardBuilder: (rule: HsfRule, index: number) => HTMLElement,
   resetPage = false,
 ): void {
   if (resetPage || filter !== currentFilter) {
@@ -189,7 +194,7 @@ function renderCurrentPage(): void {
   const container = document.getElementById("rules-container")!;
   container.innerHTML = "";
   for (let i = start; i < end; i++) {
-    container.appendChild(currentCardBuilder(rules[i], i, signal));
+    container.appendChild(currentCardBuilder(rules[i], i));
   }
 
   // Render pagination controls (top and bottom)
@@ -310,7 +315,7 @@ function scrollToRulesTop(): void {
 // Card builder
 // ---------------------------------------------------------------------------
 
-function buildRuleCard(rule: HsfRule, index: number, signal: AbortSignal): HTMLElement {
+function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
   const card = document.createElement("div");
   card.className = "rule-card";
   card.id = `rule-${index + 1}`;
@@ -378,7 +383,7 @@ function buildRuleCard(rule: HsfRule, index: number, signal: AbortSignal): HTMLE
       rawPre.textContent = JSON.stringify(rule, null, 2);
     }
     rawBtn.classList.toggle("badge-raw-active", !rawPre.hidden);
-  }, { signal });
+  });
   header.appendChild(rawBtn);
 
   return card;
