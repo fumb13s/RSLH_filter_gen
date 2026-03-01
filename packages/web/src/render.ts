@@ -207,7 +207,9 @@ function renderCurrentPage(): void {
     const el = document.getElementById(id)!;
     el.hidden = total <= pageSize; // hide if everything fits on one page
     el.innerHTML = "";
-    if (!el.hidden) {
+    if (el.hidden) {
+      el.className = "";
+    } else {
       renderPaginationControls(el, total, totalPages, id === "rules-pagination", signal);
     }
   }
@@ -688,7 +690,7 @@ function runTest(filter: HsfFilter): void {
   const cls = rule.Keep ? "test-result-keep" : "test-result-sell";
 
   resultEl.className = `test-result ${cls}`;
-  resultEl.innerHTML = `${action} &mdash; matched <a href="#" data-rule-index="${matchedIndex}">rule #${ruleNum}</a>`;
+  resultEl.innerHTML = `${action} &mdash; matched <a href="#">rule #${ruleNum}</a>`;
 
   // Wire the link to navigate to the correct page and highlight the card
   const link = resultEl.querySelector("a")!;
