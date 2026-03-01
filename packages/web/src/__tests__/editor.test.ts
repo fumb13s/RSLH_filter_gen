@@ -7,7 +7,10 @@ import type { RuleEditorCallbacks } from "../editor.js";
 
 // Minimal DOM setup — vitest uses JSDOM by default
 function setupDOM(): void {
-  document.body.innerHTML = '<div id="rules-container"></div>';
+  document.body.innerHTML =
+    '<div id="rules-pagination" hidden></div>' +
+    '<div id="rules-container"></div>' +
+    '<div id="rules-pagination-bottom" hidden></div>';
 }
 
 function makeFilter(rules: HsfRule[]): HsfFilter {

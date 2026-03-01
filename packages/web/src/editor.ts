@@ -9,7 +9,7 @@ import {
   FACTION_NAMES,
   emptySubstat,
 } from "@rslh/core";
-import { esc } from "./render.js";
+import { esc, renderPaginatedCards } from "./render.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -59,15 +59,14 @@ export function renderEditableRules(
   filter: HsfFilter,
   callbacks: RuleEditorCallbacks,
 ): void {
-  const container = document.getElementById("rules-container")!;
-  container.innerHTML = "";
-
   const total = filter.Rules.length;
-  filter.Rules.forEach((rule, i) => {
-    container.appendChild(buildEditableRuleCard(rule, i, total, callbacks));
-  });
+  renderPaginatedCards(
+    filter,
+    (rule, i) => buildEditableRuleCard(rule, i, total, callbacks),
+  );
 
   // Container-level drop indicator cleanup
+  const container = document.getElementById("rules-container")!;
   container.addEventListener("dragleave", (e) => {
     if (!container.contains(e.relatedTarget as Node)) {
       clearDropIndicators(container);

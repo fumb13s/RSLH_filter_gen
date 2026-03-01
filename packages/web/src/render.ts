@@ -91,11 +91,10 @@ const PAGE_SIZES = [50, 100, 250, 500, 1000];
 let currentPage = 0;
 let pageSize = 100;
 let currentFilter: HsfFilter | null = null;
+let currentCardBuilder: (rule: HsfRule, index: number) => HTMLElement = buildRuleCard;
 
 export function renderRules(filter: HsfFilter): void {
-  currentFilter = filter;
-  currentPage = 0;
-  renderCurrentPage();
+  renderPaginatedCards(filter, buildRuleCard, true);
 
   // Raw JSON collapsible — lazy-populate on first open
   const details = document.getElementById("raw-json")!;
@@ -109,6 +108,24 @@ export function renderRules(filter: HsfFilter): void {
       rawPopulated = true;
     }
   });
+}
+
+/**
+ * Set up paginated card rendering. Resets to page 0 when a new filter is
+ * loaded; preserves current page when re-rendering the same filter (e.g.
+ * after an edit-mode rule move/delete/add).
+ */
+export function renderPaginatedCards(
+  filter: HsfFilter,
+  cardBuilder: (rule: HsfRule, index: number) => HTMLElement,
+  resetPage = false,
+): void {
+  if (resetPage || filter !== currentFilter) {
+    currentPage = 0;
+  }
+  currentFilter = filter;
+  currentCardBuilder = cardBuilder;
+  renderCurrentPage();
 }
 
 /** Navigate to the page containing the given 0-based rule index and scroll to it. */
@@ -146,7 +163,7 @@ function renderCurrentPage(): void {
   const container = document.getElementById("rules-container")!;
   container.innerHTML = "";
   for (let i = start; i < end; i++) {
-    container.appendChild(buildRuleCard(rules[i], i));
+    container.appendChild(currentCardBuilder(rules[i], i));
   }
 
   // Render pagination controls (top and bottom)
