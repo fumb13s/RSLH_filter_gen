@@ -88,11 +88,18 @@ export function renderRules(filter: HsfFilter): void {
     container.appendChild(buildRuleCard(rule, i));
   });
 
-  // Raw JSON collapsible
+  // Raw JSON collapsible — lazy-populate on first open
   const details = document.getElementById("raw-json")!;
   details.hidden = false;
   const pre = details.querySelector("pre")!;
-  pre.textContent = JSON.stringify(filter, null, 2);
+  pre.textContent = "";
+  let rawPopulated = false;
+  details.addEventListener("toggle", () => {
+    if (details.open && !rawPopulated) {
+      pre.textContent = JSON.stringify(filter, null, 2);
+      rawPopulated = true;
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -152,11 +159,10 @@ function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
     card.appendChild(substatsEl);
   }
 
-  // Raw JSON toggle
+  // Raw JSON toggle — lazy-populate on first click
   const rawPre = document.createElement("pre");
   rawPre.className = "rule-raw";
   rawPre.hidden = true;
-  rawPre.textContent = JSON.stringify(rule, null, 2);
   card.appendChild(rawPre);
 
   const rawBtn = document.createElement("button");
@@ -164,6 +170,9 @@ function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
   rawBtn.textContent = "Raw";
   rawBtn.addEventListener("click", () => {
     rawPre.hidden = !rawPre.hidden;
+    if (!rawPre.hidden && !rawPre.textContent) {
+      rawPre.textContent = JSON.stringify(rule, null, 2);
+    }
     rawBtn.classList.toggle("badge-raw-active", !rawPre.hidden);
   });
   header.appendChild(rawBtn);
