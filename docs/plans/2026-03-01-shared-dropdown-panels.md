@@ -286,7 +286,7 @@ export class SharedDropdown {
     if (!this.panel.classList.contains("open")) return;
     if (
       !this.panel.contains(e.target as Node) &&
-      e.target !== this.currentTrigger
+      !this.currentTrigger?.contains(e.target as Node)
     ) {
       this.close();
     }
@@ -319,10 +319,11 @@ feat: add SharedDropdown component for reusable floating option panels
 
 ## Task 2: Create shared dropdown instances and option arrays in editor.ts
 
-Initialize one `SharedDropdown` per converted field type. Define all option arrays explicitly.
+Initialize one `SharedDropdown` per converted field type. Define all option arrays explicitly. Wire dropdown close into page switches.
 
 **Files:**
 - Modify: `packages/web/src/editor.ts`
+- Modify: `packages/web/src/render.ts` (import `closeAllDropdowns`, call in `renderCurrentPage`)
 
 ### Step 1: Add imports
 
@@ -344,10 +345,10 @@ const RANK_OPTIONS: DropdownOption[] = [
 
 const RARITY_OPTIONS: DropdownOption[] = [
   { value: "0", label: "Any" },
-  { value: "8", label: "Rare" },
-  { value: "9", label: "Epic" },
-  { value: "15", label: "Mythical" },
-  { value: "16", label: "Legendary" },
+  ...HSF_RARITY_IDS.map((id) => ({
+    value: String(id),
+    label: describeRarity(id),
+  })),
 ];
 
 // Main stat uses the same stat list as substats, with "Any" prepended
@@ -394,6 +395,11 @@ function initDropdowns(): void {
   };
 }
 
+/** Close any open dropdown panel (e.g. on page switch). */
+export function closeAllDropdowns(): void {
+  for (const dd of Object.values(sharedDropdowns)) dd.close();
+}
+
 function destroyDropdowns(): void {
   for (const dd of Object.values(sharedDropdowns)) dd.destroy();
   sharedDropdowns = {};
@@ -408,7 +414,20 @@ Add `initDropdowns();` at the start of `renderEditableRules`, before `renderPagi
 
 Add `destroyDropdowns();` at the start of `clearEditor`.
 
-### Step 6: Run tests, build, lint, commit
+### Step 6: Close open dropdowns on page switch
+
+If a dropdown panel is open when the user switches pages, the trigger button it was positioned next to is destroyed but the floating panel remains. Wire `closeAllDropdowns()` into `renderCurrentPage()` in `render.ts`:
+
+```ts
+// At the top of renderCurrentPage(), before clearing container:
+import { closeAllDropdowns } from "./editor.js";
+// ...
+closeAllDropdowns();
+```
+
+This ensures any open panel is dismissed before the old cards are removed.
+
+### Step 7: Run tests, build, lint, commit
 
 Run: `npm run build && npm test && npm run lint`
 
@@ -446,26 +465,44 @@ function buildTriggerButton(
 }
 ```
 
-Add a label-lookup helper used by both builders and selection handlers:
+Add a label-lookup helper used by both builders and selection handlers. The lookup map is module-level to avoid re-creating it on every call (~900 calls per page render):
 
 ```ts
+const OPTION_ARRAYS: Record<string, DropdownOption[]> = {
+  rank: RANK_OPTIONS,
+  rarity: RARITY_OPTIONS,
+  "main-stat": MAIN_STAT_DROPDOWN_OPTIONS,
+  level: LEVEL_OPTIONS,
+  faction: FACTION_OPTIONS,
+  "substat-stat": SUBSTAT_STAT_DROPDOWN_OPTIONS,
+};
+
 function getLabelForValue(fieldType: string, value: string): string {
-  const optionArrays: Record<string, DropdownOption[]> = {
-    rank: RANK_OPTIONS,
-    rarity: RARITY_OPTIONS,
-    "main-stat": MAIN_STAT_DROPDOWN_OPTIONS,
-    level: LEVEL_OPTIONS,
-    faction: FACTION_OPTIONS,
-    "substat-stat": SUBSTAT_STAT_DROPDOWN_OPTIONS,
-  };
-  const opts = optionArrays[fieldType];
+  const opts = OPTION_ARRAYS[fieldType];
   return opts?.find((o) => o.value === value)?.label ?? value;
 }
 ```
 
-### Step 2: Replace field builders in `buildEditableRuleCard`
+### Step 2: Add value-encoding helpers
 
-Replace the `buildSelectField` calls (lines 441-461) and `buildMainStatField` call (line 452) with trigger-field builders:
+These encode the current rule state into the string values used by `SUBSTAT_OPTIONS` and `MAIN_STAT_DROPDOWN_OPTIONS` (format: `"statId:flatFlag"` or `"-1"` for none):
+
+```ts
+function encodeMainStat(rule: HsfRule): string {
+  if (rule.MainStatID === -1) return "-1";
+  // MainStatF=1 means percent (flatFlag=0), MainStatF=0 means flat (flatFlag=1)
+  return `${rule.MainStatID}:${rule.MainStatF === 1 ? 0 : 1}`;
+}
+
+function encodeSubstatValue(sub: { ID: number; IsFlat: boolean }): string {
+  if (sub.ID === -1) return "-1";
+  return `${sub.ID}:${sub.IsFlat ? 1 : 0}`;
+}
+```
+
+### Step 3: Replace field builders in `buildEditableRuleCard`
+
+Replace the `buildSelectField` calls and `buildMainStatField` call with trigger-field builders:
 
 ```ts
 // Replace:  body.appendChild(buildSelectField("Rank", "rank", rule.Rank, [...]))
@@ -512,9 +549,9 @@ function buildTriggerField(
 }
 ```
 
-### Step 3: Replace substat stat `<select>` with trigger button
+### Step 4: Replace substat stat `<select>` with trigger button
 
-In `buildSubstatRow`, replace the stat `<select>` (lines 697-711) with:
+In `buildSubstatRow`, replace the stat `<select>` with:
 
 ```ts
 const statTrigger = buildTriggerButton(
@@ -529,21 +566,15 @@ row.appendChild(statTrigger);
 
 Note: the trigger keeps `edit-sub-stat` class so existing CSS layout works. It also gets `data-sub-index` so the selection handler knows which substat row it belongs to.
 
-### Step 4: Remove dead code
+### Step 5: Remove dead code
 
-Remove `buildSelectField` and `buildMainStatField` functions. Remove the `rarityOpts`, `levelOpts`, `factionOpts` local variables from `buildEditableRuleCard`. Keep `MAIN_STAT_OPTIONS` (alias for `SUBSTAT_OPTIONS`) since it's used by `MAIN_STAT_DROPDOWN_OPTIONS`. Keep `encodeMainStat` and `encodeSubstatValue` (used by trigger value encoding).
+Remove `buildSelectField` and `buildMainStatField` functions. Remove the `rarityOpts`, `levelOpts`, `factionOpts` local variables from `buildEditableRuleCard`. Remove `MAIN_STAT_OPTIONS` (alias for `SUBSTAT_OPTIONS`) — it's no longer referenced since `MAIN_STAT_DROPDOWN_OPTIONS` uses `SUBSTAT_OPTIONS` directly.
 
-### Step 5: Run build to verify compilation
+### Step 6: Run build to verify compilation
 
 Run: `npm run build`
 
-Tests will fail at this point (expected — delegation wiring is Task 4 and test updates are Task 5).
-
-### Step 6: Commit
-
-```
-feat: replace per-card <select> elements with shared dropdown trigger buttons
-```
+Do NOT commit yet — tests will fail until delegation wiring (Task 4) and test updates (Task 5) are done. Tasks 3–5 are committed together at the end of Task 5.
 
 ---
 
@@ -670,15 +701,11 @@ if (row) {
 
 After removal, `handleContainerChange` handles: substat condition changes, set checkboxes, and slot checkboxes.
 
-### Step 4: Run tests, build, lint, commit
+### Step 4: Run build to verify compilation
 
-Run: `npm run build && npm test && npm run lint`
+Run: `npm run build`
 
-Tests will still fail — test updates are in Task 5.
-
-```
-feat: wire delegation for shared dropdown trigger clicks and selections
-```
+Do NOT commit yet — tests will fail until test updates in Task 5. Tasks 3–5 are committed together at the end of Task 5.
 
 ---
 
@@ -847,10 +874,14 @@ These tests should NOT need changes:
 
 Run: `npm run build && npm test && npm run lint`
 
-All tests should pass now.
+All tests should pass now. This is the single commit for Tasks 3–5 (DOM changes + delegation wiring + test updates), ensuring every commit has a green test suite:
 
 ```
-test: update editor tests for shared dropdown trigger buttons
+feat: replace per-card <select> elements with shared dropdown triggers
+
+Convert rank, rarity, main-stat, level, faction, and substat-stat fields
+from native <select> to shared dropdown trigger buttons. Wire delegation
+for open-dropdown action and update existing editor tests.
 ```
 
 ---
