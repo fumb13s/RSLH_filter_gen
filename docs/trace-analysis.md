@@ -300,13 +300,38 @@ collection (~click 18, -1.1M nodes).
 The **+3,608 listeners/page** signature (36 x 100 cards) is the clearest
 indicator of per-card listener leaks.
 
-### Target (post-delegation)
+### Baseline (post-delegation): event-delegation branch
 
-With event delegation, each page switch should show:
-- ~0 net node growth (old page's detached nodes become immediately GC-eligible)
-- ~0 net listener growth (8 named handlers on `#rules-container`, deduplicated
-  by `addEventListener`)
-- Click duration should drop (no per-card listener wiring)
+Trace `Trace-20260301T194212.json.gz` — same test: edit mode, rapid
+pagination, 100 rules/page:
+
+```
+Duration: 17.6s, 29 clicks
+
+DOM nodes:  min=1,750  max=673,205
+Listeners:  min=110    max=1,990
+
+Per page switch: +97,707 nodes, +8 listeners
+```
+
+| Metric | Pre-delegation | Post-delegation | Change |
+|---|---|---|---|
+| Peak listeners | 33,100 | 1,990 | **-94%** |
+| Listener delta/click | +3,608 | +8 | **-99.8%** |
+| Peak nodes | 1,372,886 | 673,205 | **-51%** |
+| Node delta/click | +97,707 (retained) | +97,707 (GC-eligible) | Same build cost, different retention |
+| GC reclamation | Only at ~1.3M pressure | Frequent batches (-250K to -310K) | Nodes actually collected |
+
+**Listeners:** The +3,608 → +8 delta confirms delegation works. The ~8
+residual per click are pagination button handlers wired via `AbortController`
+signal, torn down on the next page switch. Steady-state hovers at 118–142.
+
+**Nodes:** The per-page build cost is still +97,707 (100 edit cards × ~977
+DOM elements each). The difference is retention: without closure references
+pinning detached nodes, V8 can now collect them. The trace shows GC reclaiming
+in batches (clicks 8–9, 12–13, 16–17, 22), keeping the peak at roughly half
+the pre-delegation level. V8 doesn't GC synchronously on each page switch —
+it batches when it decides to. This is normal, healthy behavior.
 
 ## Quick reference
 
