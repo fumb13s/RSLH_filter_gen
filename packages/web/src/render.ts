@@ -9,7 +9,6 @@ import {
   getRollRange,
   ARTIFACT_SET_NAMES,
   ARTIFACT_SLOT_NAMES,
-  STAT_NAMES,
   ITEM_RARITIES,
   FACTION_NAMES,
   SLOT_STATS,
@@ -376,7 +375,7 @@ function buildRuleCard(rule: HsfRule, index: number): HTMLElement {
   const slots = rule.ArtifactType
     ? rule.ArtifactType.map((id) => lookupName(ARTIFACT_SLOT_NAMES, id)).join(", ")
     : "Any";
-  const mainStat = rule.MainStatID === -1 ? "Any" : lookupName(STAT_NAMES, rule.MainStatID);
+  const mainStat = rule.MainStatID === -1 ? "Any" : statDisplayName(rule.MainStatID, rule.MainStatF === 0);
   const faction = rule.Faction === 0 ? "Any" : String(rule.Faction);
 
   body.innerHTML = `
