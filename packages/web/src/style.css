@@ -1952,6 +1952,7 @@ details summary {
 .edit-substat-row .edit-sub-cond {
   width: 55px;
   flex-shrink: 0;
+  text-align: center;
 }
 
 .edit-substat-row input[type="number"] {
@@ -1963,7 +1964,7 @@ details summary {
   flex-shrink: 0;
 }
 
-.edit-substat-row select:disabled,
+.edit-substat-row button:disabled,
 .edit-substat-row input:disabled {
   opacity: 0.4;
   cursor: default;
