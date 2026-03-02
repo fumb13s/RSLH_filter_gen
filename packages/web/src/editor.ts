@@ -48,6 +48,10 @@ const SUBSTAT_OPTIONS: { value: string; label: string }[] = [
 
 const CONDITION_OPTIONS = [">=", ">", "=", "<=", "<"];
 
+const CONDITION_DROPDOWN_OPTIONS: DropdownOption[] = CONDITION_OPTIONS.map(
+  (c) => ({ value: c, label: c }),
+);
+
 const RANK_OPTIONS: DropdownOption[] = [
   { value: "0", label: "Any" },
   { value: "5", label: "5-star" },
@@ -103,6 +107,7 @@ function initDropdowns(): void {
     level: new SharedDropdown("level", LEVEL_OPTIONS),
     faction: new SharedDropdown("faction", FACTION_OPTIONS),
     "substat-stat": new SharedDropdown("substat-stat", SUBSTAT_STAT_DROPDOWN_OPTIONS),
+    "substat-condition": new SharedDropdown("substat-condition", CONDITION_DROPDOWN_OPTIONS),
   };
 }
 
@@ -572,6 +577,7 @@ const OPTION_ARRAYS: Record<string, DropdownOption[]> = {
   level: LEVEL_OPTIONS,
   faction: FACTION_OPTIONS,
   "substat-stat": SUBSTAT_STAT_DROPDOWN_OPTIONS,
+  "substat-condition": CONDITION_DROPDOWN_OPTIONS,
 };
 
 function getLabelForValue(fieldType: string, value: string): string {

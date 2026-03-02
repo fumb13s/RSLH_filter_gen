@@ -279,7 +279,7 @@ describe("shared dropdown integration", () => {
 
     expect(
       document.querySelectorAll(".shared-dropdown-panel").length,
-    ).toBe(6);
+    ).toBe(7);
     clearEditor();
     expect(
       document.querySelectorAll(".shared-dropdown-panel").length,
