@@ -111,7 +111,9 @@ export class SharedDropdown {
     }
   };
 
-  private handleScroll = (): void => {
+  private handleScroll = (e: Event): void => {
+    // Don't close when scrolling within the dropdown itself
+    if (e.target instanceof Node && this.panel.contains(e.target)) return;
     this.close();
   };
 
