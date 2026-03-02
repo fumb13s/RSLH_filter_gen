@@ -1,5 +1,7 @@
 # Shared Dropdown Panels Implementation Plan
 
+> **Status:** Implemented.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Replace per-card `<select>` elements in editor mode with custom dropdown trigger buttons that share a single floating option list panel per field type. This eliminates ~20,400 DOM nodes per page (100 cards) by removing redundant `<option>` elements that are cloned identically across every card.
