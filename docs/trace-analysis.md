@@ -333,6 +333,44 @@ in batches (clicks 8–9, 12–13, 16–17, 22), keeping the peak at roughly hal
 the pre-delegation level. V8 doesn't GC synchronously on each page switch —
 it batches when it decides to. This is normal, healthy behavior.
 
+### Baseline (post-shared-dropdowns): shared dropdown panels
+
+Trace `Trace-20260302T011613.json.gz` — same test: edit mode, rapid
+pagination, 100 rules/page:
+
+```
+Duration: 28.1s, 30 clicks (including dropdown interactions)
+
+DOM nodes:  min=127,553  max=444,455
+Listeners:  min=121      max=1,984
+
+Per page switch: +29,307 nodes, +20 listeners
+```
+
+| Metric | Pre-delegation | Post-delegation | Post-shared-dropdowns | Change (vs post-delegation) |
+|---|---|---|---|---|
+| Peak listeners | 33,100 | 1,990 | **1,984** | ~same |
+| Listener delta/click | +3,608 | +8 | **+20** | +12 (pagination) |
+| Peak nodes | 1,372,886 | 673,205 | **444,455** | **-34%** |
+| Node delta/click | +97,707 | +97,707 | **+29,307** | **-70%** |
+| Nodes per card | ~977 | ~977 | **~293** | **-70%** |
+
+**Nodes:** The per-page build cost dropped from +97,707 to +29,307 — a 70%
+reduction. This matches the plan's prediction of ~20,400 fewer `<option>`
+nodes plus additional savings from replacing 900 `<select>` elements with
+lightweight `<button>` triggers. Each card now costs ~293 DOM nodes instead
+of ~977.
+
+**Listeners:** Steady at +20 per page switch, all from pagination controls.
+No accumulation — steady-state hovers at 121–180.
+
+**GC behavior:** V8 reclaims old pages in healthy batches: click 13 shows
+399K → 185K (-214K), click 26 shows 429K → 168K (-260K). No retention leaks.
+
+**Dropdown interactions** (clicks 21–24): Small deltas of +24/+43 nodes
+with +2/+14 listeners confirm the shared panels are lightweight — opening a
+panel creates a few option elements, closing removes them.
+
 ## Quick reference
 
 ```bash
