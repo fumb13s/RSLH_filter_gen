@@ -5,7 +5,7 @@
  * handles all card interactions. This eliminates per-card closures that
  * previously retained detached DOM nodes across page switches.
  */
-import type { HsfFilter, HsfRule, HsfSubstat } from "@rslh/core";
+import type { HsfFilter, HsfRule } from "@rslh/core";
 import {
   ARTIFACT_SET_NAMES,
   ARTIFACT_SLOT_NAMES,
@@ -13,7 +13,7 @@ import {
   FACTION_NAMES,
   emptySubstat,
 } from "@rslh/core";
-import { esc, getCurrentFilter, renderPaginatedCards } from "./render.js";
+import { getCurrentFilter, renderPaginatedCards } from "./render.js";
 import { SharedDropdown } from "./shared-dropdown.js";
 import type { DropdownOption } from "./shared-dropdown.js";
 
@@ -182,59 +182,71 @@ function handleContainerClick(e: MouseEvent): void {
       }
       break;
     }
+    case "open-dropdown": {
+      const fieldType = action.dataset.field!;
+      const currentValue = action.dataset.value ?? "-1";
+      const dropdown = sharedDropdowns[fieldType];
+      if (!dropdown) break;
+      // Close any other open panel before opening a new one
+      closeAllDropdowns();
+      dropdown.open(action, currentValue, (newValue) => {
+        handleDropdownSelection(card, index, action, fieldType, newValue);
+      });
+      break;
+    }
   }
 }
 
-function handleContainerChange(e: Event): void {
-  const target = e.target as HTMLElement;
-  const card = target.closest(".edit-card") as HTMLElement | null;
-  if (!card) return;
-  const index = Number(card.dataset.ruleIndex);
+function handleDropdownSelection(
+  card: HTMLElement,
+  ruleIndex: number,
+  trigger: HTMLElement,
+  fieldType: string,
+  value: string,
+): void {
   const filter = getCurrentFilter();
   if (!filter || !currentCallbacks) return;
-  const rule = filter.Rules[index];
+  const rule = filter.Rules[ruleIndex];
 
-  // Field selects (Rank, Rarity, Level, Faction, Main Stat)
-  const field = (target as HTMLElement).dataset.field;
-  if (field) {
-    const val = (target as HTMLSelectElement).value;
-    switch (field) {
-      case "rank": rule.Rank = Number(val); break;
-      case "rarity": rule.Rarity = Number(val); break;
-      case "level": rule.LVLForCheck = Number(val); break;
-      case "faction": rule.Faction = Number(val); break;
-      case "main-stat": {
-        if (val === "-1") {
-          rule.MainStatID = -1;
-          rule.MainStatF = 1;
-        } else {
-          const [statId, flatFlag] = val.split(":").map(Number);
-          rule.MainStatID = statId;
-          rule.MainStatF = flatFlag === 1 ? 0 : 1;
-        }
-        break;
+  switch (fieldType) {
+    case "rank":
+      rule.Rank = Number(value);
+      break;
+    case "rarity":
+      rule.Rarity = Number(value);
+      break;
+    case "level":
+      rule.LVLForCheck = Number(value);
+      break;
+    case "faction":
+      rule.Faction = Number(value);
+      break;
+    case "main-stat": {
+      if (value === "-1") {
+        rule.MainStatID = -1;
+        rule.MainStatF = 1;
+      } else {
+        const [statId, flatFlag] = value.split(":").map(Number);
+        rule.MainStatID = statId;
+        rule.MainStatF = flatFlag === 1 ? 0 : 1;
       }
+      break;
     }
-    currentCallbacks.onRuleChange(index, rule);
-    return;
-  }
-
-  // Substat changes
-  const row = target.closest(".edit-substat-row") as HTMLElement | null;
-  if (row) {
-    const subIndex = Number(row.dataset.subIndex);
-    if (target.classList.contains("edit-sub-stat")) {
-      const sv = (target as HTMLSelectElement).value;
+    case "substat-stat": {
+      const subIndex = Number(trigger.dataset.subIndex);
+      const row = trigger.closest(".edit-substat-row") as HTMLElement;
       const condSelect = row.querySelector(".edit-sub-cond") as HTMLSelectElement;
       const valueInput = row.querySelector('input[type="number"]') as HTMLInputElement;
-      if (sv === "-1") {
+
+      if (value === "-1") {
+        // Reset to empty substat
         rule.Substats[subIndex] = emptySubstat();
         condSelect.disabled = true;
         valueInput.disabled = true;
         condSelect.value = ">=";
         valueInput.value = "0";
       } else {
-        const [statId, flatFlag] = sv.split(":").map(Number);
+        const [statId, flatFlag] = value.split(":").map(Number);
         rule.Substats[subIndex] = {
           ...rule.Substats[subIndex],
           ID: statId,
@@ -246,13 +258,36 @@ function handleContainerChange(e: Event): void {
         condSelect.disabled = false;
         valueInput.disabled = false;
       }
-    } else if (target.classList.contains("edit-sub-cond")) {
+      break;
+    }
+  }
+
+  // Update trigger display text and stored value
+  trigger.textContent = getLabelForValue(fieldType, value);
+  trigger.dataset.value = value;
+  currentCallbacks.onRuleChange(ruleIndex, rule);
+}
+
+function handleContainerChange(e: Event): void {
+  const target = e.target as HTMLElement;
+  const card = target.closest(".edit-card") as HTMLElement | null;
+  if (!card) return;
+  const index = Number(card.dataset.ruleIndex);
+  const filter = getCurrentFilter();
+  if (!filter || !currentCallbacks) return;
+  const rule = filter.Rules[index];
+
+  // Substat condition changes (native <select>, kept as-is)
+  const row = target.closest(".edit-substat-row") as HTMLElement | null;
+  if (row) {
+    const subIndex = Number(row.dataset.subIndex);
+    if (target.classList.contains("edit-sub-cond")) {
       rule.Substats[subIndex] = {
         ...rule.Substats[subIndex],
         Condition: (target as HTMLSelectElement).value,
       };
+      currentCallbacks.onRuleChange(index, rule);
     }
-    currentCallbacks.onRuleChange(index, rule);
     return;
   }
 
@@ -512,27 +547,11 @@ function buildEditableRuleCard(
 
   body.appendChild(buildSetField(rule));
   body.appendChild(buildSlotField(rule));
-  body.appendChild(buildSelectField("Rank", "rank", rule.Rank, [
-    { value: 0, label: "Any" },
-    { value: 5, label: "5-star" },
-    { value: 6, label: "6-star" },
-  ]));
-
-  const rarityOpts: { value: number; label: string }[] = [{ value: 0, label: "Any" }];
-  for (const [id, name] of Object.entries(HSF_RARITY_IDS)) {
-    rarityOpts.push({ value: Number(id), label: name });
-  }
-  body.appendChild(buildSelectField("Rarity", "rarity", rule.Rarity, rarityOpts));
-  body.appendChild(buildMainStatField(rule));
-
-  const levelOpts = Array.from({ length: 17 }, (_, i) => ({ value: i, label: String(i) }));
-  body.appendChild(buildSelectField("Level", "level", rule.LVLForCheck, levelOpts));
-
-  const factionOpts: { value: number; label: string }[] = [{ value: 0, label: "Any" }];
-  for (const [id, name] of Object.entries(FACTION_NAMES)) {
-    factionOpts.push({ value: Number(id), label: name });
-  }
-  body.appendChild(buildSelectField("Faction", "faction", rule.Faction, factionOpts));
+  body.appendChild(buildTriggerField("Rank", "rank", String(rule.Rank)));
+  body.appendChild(buildTriggerField("Rarity", "rarity", String(rule.Rarity)));
+  body.appendChild(buildTriggerField("Main Stat", "main-stat", encodeMainStat(rule)));
+  body.appendChild(buildTriggerField("Level", "level", String(rule.LVLForCheck)));
+  body.appendChild(buildTriggerField("Faction", "faction", String(rule.Faction)));
 
   card.appendChild(body);
 
@@ -543,14 +562,44 @@ function buildEditableRuleCard(
 }
 
 // ---------------------------------------------------------------------------
-// Field builders — pure DOM, no listeners
+// Trigger button builders — pure DOM, no listeners
 // ---------------------------------------------------------------------------
 
-function buildSelectField(
+const OPTION_ARRAYS: Record<string, DropdownOption[]> = {
+  rank: RANK_OPTIONS,
+  rarity: RARITY_OPTIONS,
+  "main-stat": MAIN_STAT_DROPDOWN_OPTIONS,
+  level: LEVEL_OPTIONS,
+  faction: FACTION_OPTIONS,
+  "substat-stat": SUBSTAT_STAT_DROPDOWN_OPTIONS,
+};
+
+function getLabelForValue(fieldType: string, value: string): string {
+  const opts = OPTION_ARRAYS[fieldType];
+  return opts?.find((o) => o.value === value)?.label ?? value;
+}
+
+function buildTriggerButton(
+  fieldName: string,
+  currentValue: string,
+  label: string,
+): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "edit-dropdown-trigger";
+  btn.dataset.action = "open-dropdown";
+  btn.dataset.field = fieldName;
+  btn.dataset.value = currentValue;
+  btn.textContent = label;
+  btn.setAttribute("aria-haspopup", "listbox");
+  btn.setAttribute("aria-expanded", "false");
+  return btn;
+}
+
+function buildTriggerField(
   labelText: string,
   fieldName: string,
-  current: number,
-  options: { value: number; label: string }[],
+  currentValue: string,
 ): HTMLElement {
   const field = document.createElement("div");
   field.className = "edit-field";
@@ -559,58 +608,26 @@ function buildSelectField(
   label.textContent = labelText;
   field.appendChild(label);
 
-  const select = document.createElement("select");
-  select.dataset.field = fieldName;
-  for (const opt of options) {
-    const option = document.createElement("option");
-    option.value = String(opt.value);
-    option.textContent = esc(opt.label);
-    if (opt.value === current) option.selected = true;
-    select.appendChild(option);
-  }
-  field.appendChild(select);
+  field.appendChild(
+    buildTriggerButton(fieldName, currentValue, getLabelForValue(fieldName, currentValue)),
+  );
 
   return field;
 }
 
 // ---------------------------------------------------------------------------
-// Main Stat selector
+// Value encoding helpers
 // ---------------------------------------------------------------------------
-
-const MAIN_STAT_OPTIONS = SUBSTAT_OPTIONS;
 
 function encodeMainStat(rule: HsfRule): string {
   if (rule.MainStatID === -1) return "-1";
-  const isFlat = rule.MainStatF === 0;
-  return `${rule.MainStatID}:${isFlat ? 1 : 0}`;
+  // MainStatF=1 means percent (flatFlag=0), MainStatF=0 means flat (flatFlag=1)
+  return `${rule.MainStatID}:${rule.MainStatF === 1 ? 0 : 1}`;
 }
 
-function buildMainStatField(rule: HsfRule): HTMLElement {
-  const field = document.createElement("div");
-  field.className = "edit-field";
-
-  const label = document.createElement("label");
-  label.textContent = "Main Stat";
-  field.appendChild(label);
-
-  const select = document.createElement("select");
-  select.dataset.field = "main-stat";
-
-  const noneOpt = document.createElement("option");
-  noneOpt.value = "-1";
-  noneOpt.textContent = "Any";
-  select.appendChild(noneOpt);
-
-  for (const opt of MAIN_STAT_OPTIONS) {
-    const option = document.createElement("option");
-    option.value = opt.value;
-    option.textContent = opt.label;
-    select.appendChild(option);
-  }
-  select.value = encodeMainStat(rule);
-
-  field.appendChild(select);
-  return field;
+function encodeSubstatValue(sub: { ID: number; IsFlat: boolean }): string {
+  if (sub.ID === -1) return "-1";
+  return `${sub.ID}:${sub.IsFlat ? 1 : 0}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -756,33 +773,21 @@ function buildSubstatsSection(rule: HsfRule): HTMLElement {
   return section;
 }
 
-function encodeSubstatValue(s: HsfSubstat): string {
-  if (s.ID === -1) return "-1";
-  return `${s.ID}:${s.IsFlat ? 1 : 0}`;
-}
-
 function buildSubstatRow(rule: HsfRule, subIndex: number): HTMLElement {
   const row = document.createElement("div");
   row.className = "edit-substat-row";
   row.dataset.subIndex = String(subIndex);
   const sub = rule.Substats[subIndex];
 
-  // Stat dropdown
-  const statSelect = document.createElement("select");
-  statSelect.className = "edit-sub-stat";
-
-  const noneOpt = document.createElement("option");
-  noneOpt.value = "-1";
-  noneOpt.textContent = "None";
-  statSelect.appendChild(noneOpt);
-
-  for (const opt of SUBSTAT_OPTIONS) {
-    const option = document.createElement("option");
-    option.value = opt.value;
-    option.textContent = opt.label;
-    statSelect.appendChild(option);
-  }
-  statSelect.value = encodeSubstatValue(sub);
+  // Stat trigger button (replaces <select>)
+  const encoded = encodeSubstatValue(sub);
+  const statTrigger = buildTriggerButton(
+    "substat-stat",
+    encoded,
+    sub.ID === -1 ? "None" : getLabelForValue("substat-stat", encoded),
+  );
+  statTrigger.className = "edit-sub-stat edit-dropdown-trigger";
+  statTrigger.dataset.subIndex = String(subIndex);
 
   // Condition dropdown
   const condSelect = document.createElement("select");
@@ -806,7 +811,7 @@ function buildSubstatRow(rule: HsfRule, subIndex: number): HTMLElement {
   condSelect.disabled = isNone;
   valueInput.disabled = isNone;
 
-  row.appendChild(statSelect);
+  row.appendChild(statTrigger);
   row.appendChild(condSelect);
   row.appendChild(valueInput);
 

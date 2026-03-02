@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { HsfFilter, HsfRule } from "@rslh/core";
 import { defaultRule } from "@rslh/core";
-import { renderEditableRules } from "../editor.js";
+import { renderEditableRules, clearEditor } from "../editor.js";
 import type { RuleEditorCallbacks } from "../editor.js";
 
 // Minimal DOM setup — vitest uses JSDOM by default
@@ -28,6 +28,9 @@ function noopCallbacks(overrides?: Partial<RuleEditorCallbacks>): RuleEditorCall
 
 describe("editor", () => {
   beforeEach(setupDOM);
+  afterEach(() => {
+    clearEditor();
+  });
 
   describe("renderEditableRules", () => {
     it("renders one card per rule", () => {
@@ -202,13 +205,19 @@ describe("editor", () => {
         onRuleChange(index) { changes.push(index); },
       }));
 
-      // Find first substat stat dropdown
-      const statSelects = document.querySelectorAll(".edit-sub-stat") as NodeListOf<HTMLSelectElement>;
-      expect(statSelects.length).toBe(4);
+      const statTriggers = document.querySelectorAll(".edit-sub-stat") as NodeListOf<HTMLButtonElement>;
+      expect(statTriggers.length).toBe(4);
 
-      // Change first substat to ATK% (ID:2, IsFlat:false = "2:0")
-      statSelects[0].value = "2:0";
-      statSelects[0].dispatchEvent(new Event("change", { bubbles: true }));
+      // Click trigger to open dropdown
+      statTriggers[0].click();
+
+      // Find the "ATK%" option (value "2:0") in the dropdown panel and click it
+      const items = document.querySelectorAll(".shared-dropdown-panel.open .shared-dropdown-item");
+      const atkPctItem = Array.from(items).find(
+        (el) => (el as HTMLElement).dataset.value === "2:0",
+      ) as HTMLElement;
+      expect(atkPctItem).not.toBeUndefined();
+      atkPctItem.click();
 
       expect(rule.Substats[0].ID).toBe(2);
       expect(rule.Substats[0].IsFlat).toBe(false);
@@ -223,9 +232,17 @@ describe("editor", () => {
       const filter = makeFilter([rule]);
       renderEditableRules(filter, noopCallbacks());
 
-      const statSelects = document.querySelectorAll(".edit-sub-stat") as NodeListOf<HTMLSelectElement>;
-      statSelects[0].value = "-1";
-      statSelects[0].dispatchEvent(new Event("change", { bubbles: true }));
+      const statTriggers = document.querySelectorAll(".edit-sub-stat") as NodeListOf<HTMLButtonElement>;
+
+      // Click trigger to open dropdown
+      statTriggers[0].click();
+
+      // Click the "None" option (value "-1")
+      const items = document.querySelectorAll(".shared-dropdown-panel.open .shared-dropdown-item");
+      const noneItem = Array.from(items).find(
+        (el) => (el as HTMLElement).dataset.value === "-1",
+      ) as HTMLElement;
+      noneItem.click();
 
       expect(rule.Substats[0].ID).toBe(-1);
       expect(rule.Substats[0].Value).toBe(0);
@@ -272,18 +289,10 @@ describe("editor", () => {
       const filter = makeFilter([rule]);
       renderEditableRules(filter, noopCallbacks());
 
-      // Find the Rank select (label text "Rank")
-      const fields = document.querySelectorAll(".edit-field");
-      let rankSelect: HTMLSelectElement | null = null;
-      for (const field of fields) {
-        const label = field.querySelector("label");
-        if (label?.textContent === "Rank") {
-          rankSelect = field.querySelector("select");
-          break;
-        }
-      }
-      expect(rankSelect).not.toBeNull();
-      expect(rankSelect!.value).toBe("5");
+      const trigger = document.querySelector("[data-field='rank']") as HTMLElement;
+      expect(trigger).not.toBeNull();
+      expect(trigger.dataset.value).toBe("5");
+      expect(trigger.textContent).toBe("5-star");
     });
   });
 
@@ -336,12 +345,13 @@ describe("editor", () => {
       expect((rows[3] as HTMLElement).dataset.subIndex).toBe("3");
     });
 
-    it("field selects have data-field", () => {
+    it("field triggers have data-field", () => {
       const filter = makeFilter([defaultRule()]);
       renderEditableRules(filter, noopCallbacks());
       const rankField = document.querySelector("[data-field='rank']");
       expect(rankField).not.toBeNull();
-      expect(rankField!.tagName).toBe("SELECT");
+      expect(rankField!.tagName).toBe("BUTTON");
+      expect((rankField as HTMLElement).dataset.action).toBe("open-dropdown");
     });
   });
 });
