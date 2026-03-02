@@ -248,19 +248,44 @@ describe("editor", () => {
       expect(rule.Substats[0].Value).toBe(0);
     });
 
+    it("condition trigger button shows current condition", () => {
+      const rule = defaultRule();
+      rule.Substats[0] = { ID: 5, Value: 10, IsFlat: false, NotAvailable: false, Condition: ">" };
+      const filter = makeFilter([rule]);
+      renderEditableRules(filter, noopCallbacks());
+
+      const condTrigger = document.querySelector(
+        '.edit-substat-row [data-field="substat-condition"]',
+      ) as HTMLButtonElement;
+      expect(condTrigger).not.toBeNull();
+      expect(condTrigger.textContent).toBe(">");
+      expect(condTrigger.dataset.value).toBe(">");
+    });
+
+    it("condition trigger is disabled when stat is None", () => {
+      const rule = defaultRule(); // default substats have ID:-1
+      const filter = makeFilter([rule]);
+      renderEditableRules(filter, noopCallbacks());
+
+      const condTrigger = document.querySelector(
+        '.edit-substat-row [data-field="substat-condition"]',
+      ) as HTMLButtonElement;
+      expect(condTrigger.disabled).toBe(true);
+    });
+
     it("condition and value inputs are disabled when stat is None", () => {
       const rule = defaultRule(); // substats are all empty (ID:-1)
       const filter = makeFilter([rule]);
       renderEditableRules(filter, noopCallbacks());
 
-      const condSelects = document.querySelectorAll(".edit-sub-cond") as NodeListOf<HTMLSelectElement>;
+      const condTriggers = document.querySelectorAll(".edit-sub-cond") as NodeListOf<HTMLButtonElement>;
       const valueInputs = document.querySelectorAll('.edit-substat-row input[type="number"]') as NodeListOf<HTMLInputElement>;
 
-      expect(condSelects[0].disabled).toBe(true);
+      expect(condTriggers[0].disabled).toBe(true);
       expect(valueInputs[0].disabled).toBe(true);
     });
 
-    it("passthrough fields on substat survive edits", () => {
+    it("passthrough fields on substat survive stat change", () => {
       const rule = defaultRule();
       const sub = rule.Substats[0] as Record<string, unknown>;
       sub["ExtraField"] = 42;
@@ -272,14 +297,18 @@ describe("editor", () => {
       const filter = makeFilter([rule]);
       renderEditableRules(filter, noopCallbacks());
 
-      // Change condition
-      const condSelects = document.querySelectorAll(".edit-sub-cond") as NodeListOf<HTMLSelectElement>;
-      condSelects[0].value = ">";
-      condSelects[0].dispatchEvent(new Event("change", { bubbles: true }));
+      // Change stat via shared dropdown (ATK% = 2:0)
+      const statTrigger = document.querySelector(".edit-sub-stat") as HTMLButtonElement;
+      statTrigger.click();
+      const items = document.querySelectorAll('.shared-dropdown-panel.open .shared-dropdown-item');
+      const atkPctItem = Array.from(items).find(
+        (el) => (el as HTMLElement).dataset.value === "2:0",
+      ) as HTMLElement;
+      atkPctItem.click();
 
       // The spread in the handler preserves extra fields
       expect((rule.Substats[0] as Record<string, unknown>)["ExtraField"]).toBe(42);
-      expect(rule.Substats[0].Condition).toBe(">");
+      expect(rule.Substats[0].ID).toBe(2);
     });
   });
 

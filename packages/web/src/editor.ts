@@ -795,16 +795,11 @@ function buildSubstatRow(rule: HsfRule, subIndex: number): HTMLElement {
   statTrigger.className = "edit-sub-stat edit-dropdown-trigger";
   statTrigger.dataset.subIndex = String(subIndex);
 
-  // Condition dropdown
-  const condSelect = document.createElement("select");
-  condSelect.className = "edit-sub-cond";
-  for (const cond of CONDITION_OPTIONS) {
-    const option = document.createElement("option");
-    option.value = cond;
-    option.textContent = cond;
-    if (cond === (sub.Condition || ">=")) option.selected = true;
-    condSelect.appendChild(option);
-  }
+  // Condition trigger button (shared dropdown)
+  const currentCond = sub.Condition || ">=";
+  const condTrigger = buildTriggerButton("substat-condition", currentCond, currentCond);
+  condTrigger.className = "edit-sub-cond edit-dropdown-trigger";
+  condTrigger.dataset.subIndex = String(subIndex);
 
   // Value input
   const valueInput = document.createElement("input");
@@ -814,11 +809,11 @@ function buildSubstatRow(rule: HsfRule, subIndex: number): HTMLElement {
 
   // Disable condition/value when stat is "None"
   const isNone = sub.ID === -1;
-  condSelect.disabled = isNone;
+  condTrigger.disabled = isNone;
   valueInput.disabled = isNone;
 
   row.appendChild(statTrigger);
-  row.appendChild(condSelect);
+  row.appendChild(condTrigger);
   row.appendChild(valueInput);
 
   return row;
