@@ -240,16 +240,21 @@ function handleDropdownSelection(
     case "substat-stat": {
       const subIndex = Number(trigger.dataset.subIndex);
       const row = trigger.closest(".edit-substat-row") as HTMLElement;
-      const condSelect = row.querySelector(".edit-sub-cond") as HTMLSelectElement;
-      const valueInput = row.querySelector('input[type="number"]') as HTMLInputElement;
+      const condTrigger = row.querySelector('[data-field="substat-condition"]') as HTMLButtonElement | null;
+      const valueInput = row.querySelector('input[type="number"]') as HTMLInputElement | null;
 
       if (value === "-1") {
         // Reset to empty substat
         rule.Substats[subIndex] = emptySubstat();
-        condSelect.disabled = true;
-        valueInput.disabled = true;
-        condSelect.value = ">=";
-        valueInput.value = "0";
+        if (condTrigger) {
+          condTrigger.disabled = true;
+          condTrigger.textContent = ">=";
+          condTrigger.dataset.value = ">=";
+        }
+        if (valueInput) {
+          valueInput.disabled = true;
+          valueInput.value = "0";
+        }
       } else {
         const [statId, flatFlag] = value.split(":").map(Number);
         rule.Substats[subIndex] = {
@@ -257,12 +262,20 @@ function handleDropdownSelection(
           ID: statId,
           IsFlat: flatFlag === 1,
           NotAvailable: false,
-          Condition: condSelect.value || ">=",
-          Value: Number(valueInput.value) || 0,
+          Condition: condTrigger?.dataset.value || ">=",
+          Value: Number(valueInput?.value) || 0,
         };
-        condSelect.disabled = false;
-        valueInput.disabled = false;
+        if (condTrigger) condTrigger.disabled = false;
+        if (valueInput) valueInput.disabled = false;
       }
+      break;
+    }
+    case "substat-condition": {
+      const subIndex = Number(trigger.dataset.subIndex);
+      rule.Substats[subIndex] = {
+        ...rule.Substats[subIndex],
+        Condition: value,
+      };
       break;
     }
   }
@@ -281,20 +294,6 @@ function handleContainerChange(e: Event): void {
   const filter = getCurrentFilter();
   if (!filter || !currentCallbacks) return;
   const rule = filter.Rules[index];
-
-  // Substat condition changes (native <select>, kept as-is)
-  const row = target.closest(".edit-substat-row") as HTMLElement | null;
-  if (row) {
-    const subIndex = Number(row.dataset.subIndex);
-    if (target.classList.contains("edit-sub-cond")) {
-      rule.Substats[subIndex] = {
-        ...rule.Substats[subIndex],
-        Condition: (target as HTMLSelectElement).value,
-      };
-      currentCallbacks.onRuleChange(index, rule);
-    }
-    return;
-  }
 
   // Set checkboxes
   const actionAttr = (target as HTMLElement).dataset.action;

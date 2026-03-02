@@ -285,6 +285,59 @@ describe("editor", () => {
       expect(valueInputs[0].disabled).toBe(true);
     });
 
+    it("selecting a condition via shared dropdown updates the rule", () => {
+      const rule = defaultRule();
+      rule.Substats[0] = { ID: 5, Value: 10, IsFlat: false, NotAvailable: false, Condition: ">=" };
+      let changedRule: HsfRule | null = null;
+      const filter = makeFilter([rule]);
+      renderEditableRules(filter, {
+        onRuleChange(_i, r) { changedRule = r; },
+        onRuleDelete() {},
+        onRuleMove() {},
+        onRuleAdd() {},
+      });
+
+      const condTrigger = document.querySelector(
+        '.edit-substat-row [data-field="substat-condition"]',
+      ) as HTMLButtonElement;
+      condTrigger.click();
+
+      // Select ">" from the shared dropdown panel
+      const items = document.querySelectorAll('.shared-dropdown-panel.open .shared-dropdown-item');
+      const gtItem = Array.from(items).find((el) => el.textContent === ">");
+      (gtItem as HTMLElement).click();
+
+      expect(changedRule!.Substats[0].Condition).toBe(">");
+      expect(condTrigger.textContent).toBe(">");
+      expect(condTrigger.dataset.value).toBe(">");
+    });
+
+    it("passthrough fields on substat survive condition change", () => {
+      const rule = defaultRule();
+      const sub = rule.Substats[0] as Record<string, unknown>;
+      sub["ExtraField"] = 42;
+      sub["ID"] = 5;
+      sub["IsFlat"] = false;
+      sub["Value"] = 10;
+      sub["Condition"] = ">=";
+
+      const filter = makeFilter([rule]);
+      renderEditableRules(filter, noopCallbacks());
+
+      // Change condition via shared dropdown
+      const condTrigger = document.querySelector(
+        '.edit-substat-row [data-field="substat-condition"]',
+      ) as HTMLButtonElement;
+      condTrigger.click();
+      const items = document.querySelectorAll('.shared-dropdown-panel.open .shared-dropdown-item');
+      const gtItem = Array.from(items).find((el) => el.textContent === ">") as HTMLElement;
+      gtItem.click();
+
+      // The spread in the handler preserves extra fields
+      expect((rule.Substats[0] as Record<string, unknown>)["ExtraField"]).toBe(42);
+      expect(rule.Substats[0].Condition).toBe(">");
+    });
+
     it("passthrough fields on substat survive stat change", () => {
       const rule = defaultRule();
       const sub = rule.Substats[0] as Record<string, unknown>;
