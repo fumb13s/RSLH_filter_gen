@@ -14,6 +14,8 @@ import {
   emptySubstat,
 } from "@rslh/core";
 import { esc, getCurrentFilter, renderPaginatedCards } from "./render.js";
+import { SharedDropdown } from "./shared-dropdown.js";
+import type { DropdownOption } from "./shared-dropdown.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,6 +47,74 @@ const SUBSTAT_OPTIONS: { value: string; label: string }[] = [
 ];
 
 const CONDITION_OPTIONS = [">=", ">", "=", "<=", "<"];
+
+const RANK_OPTIONS: DropdownOption[] = [
+  { value: "0", label: "Any" },
+  { value: "5", label: "5-star" },
+  { value: "6", label: "6-star" },
+];
+
+const RARITY_OPTIONS: DropdownOption[] = [
+  { value: "0", label: "Any" },
+  ...Object.entries(HSF_RARITY_IDS).map(([id, name]) => ({
+    value: id,
+    label: name,
+  })),
+];
+
+// Main stat uses the same stat list as substats, with "Any" prepended
+const MAIN_STAT_DROPDOWN_OPTIONS: DropdownOption[] = [
+  { value: "-1", label: "Any" },
+  ...SUBSTAT_OPTIONS,
+];
+
+const LEVEL_OPTIONS: DropdownOption[] = Array.from({ length: 17 }, (_, i) => ({
+  value: String(i),
+  label: String(i),
+}));
+
+const FACTION_OPTIONS: DropdownOption[] = [
+  { value: "0", label: "Any" },
+  ...Object.entries(FACTION_NAMES).map(([id, name]) => ({
+    value: id,
+    label: name,
+  })),
+];
+
+// Substat stat dropdown — "None" + all stat variants
+const SUBSTAT_STAT_DROPDOWN_OPTIONS: DropdownOption[] = [
+  { value: "-1", label: "None" },
+  ...SUBSTAT_OPTIONS,
+];
+
+// ---------------------------------------------------------------------------
+// Shared dropdown lifecycle
+// ---------------------------------------------------------------------------
+
+let sharedDropdowns: Record<string, SharedDropdown> = {};
+
+/** Lazy-init: create shared dropdowns once, survive across re-renders. */
+function initDropdowns(): void {
+  if (Object.keys(sharedDropdowns).length > 0) return; // already initialized
+  sharedDropdowns = {
+    rank: new SharedDropdown("rank", RANK_OPTIONS),
+    rarity: new SharedDropdown("rarity", RARITY_OPTIONS),
+    "main-stat": new SharedDropdown("main-stat", MAIN_STAT_DROPDOWN_OPTIONS),
+    level: new SharedDropdown("level", LEVEL_OPTIONS),
+    faction: new SharedDropdown("faction", FACTION_OPTIONS),
+    "substat-stat": new SharedDropdown("substat-stat", SUBSTAT_STAT_DROPDOWN_OPTIONS),
+  };
+}
+
+/** Close any open dropdown panel (e.g. on page switch). */
+export function closeAllDropdowns(): void {
+  for (const dd of Object.values(sharedDropdowns)) dd.close();
+}
+
+function destroyDropdowns(): void {
+  for (const dd of Object.values(sharedDropdowns)) dd.destroy();
+  sharedDropdowns = {};
+}
 
 /** Index of the rule currently being dragged, or -1 if none. */
 let dragSourceIndex = -1;
@@ -320,11 +390,14 @@ export function renderEditableRules(
   filter: HsfFilter,
   callbacks: RuleEditorCallbacks,
 ): void {
+  initDropdowns();
   currentCallbacks = callbacks;
   const total = filter.Rules.length;
   renderPaginatedCards(
     filter,
     (rule, i) => buildEditableRuleCard(rule, i, total),
+    false,
+    closeAllDropdowns,
   );
 
   const container = document.getElementById("rules-container")!;
@@ -339,6 +412,7 @@ export function renderEditableRules(
 }
 
 export function clearEditor(): void {
+  destroyDropdowns();
   currentCallbacks = null;
   const container = document.getElementById("rules-container")!;
   container.removeEventListener("click", handleContainerClick);

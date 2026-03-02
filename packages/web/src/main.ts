@@ -10,7 +10,7 @@ import type { QuickGenState, QuickBlock } from "./quick-generator.js";
 import { getSettings } from "./settings.js";
 import type { TabType } from "./settings.js";
 import { encodeState, decodeState } from "./share.js";
-import { renderEditableRules, clearEditor } from "./editor.js";
+import { renderEditableRules, clearEditor, closeAllDropdowns } from "./editor.js";
 import { initSettingsModal } from "./settings-modal.js";
 import { marked } from "marked";
 import readme from "../../../README.md?raw";
@@ -341,6 +341,7 @@ function showViewerContent(tab: TabEntry): void {
       // Hide test panel and raw JSON in edit mode
       document.getElementById("test-panel")!.hidden = true;
       document.getElementById("raw-json")!.hidden = true;
+      closeAllDropdowns();
       renderEditableRules(tab.filter, {
         onRuleChange(index, rule) {
           tab.filter!.Rules[index] = rule;

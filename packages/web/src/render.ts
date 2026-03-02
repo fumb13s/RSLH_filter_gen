@@ -94,6 +94,7 @@ let currentPage = 0;
 let pageSize = 100;
 let currentFilter: HsfFilter | null = null;
 let currentCardBuilder: (rule: HsfRule, index: number) => HTMLElement = buildRuleCard;
+let beforePageRender: (() => void) | null = null;
 
 /** Getter for the current filter — used by editor delegation handlers. */
 export function getCurrentFilter(): HsfFilter | null {
@@ -149,12 +150,14 @@ export function renderPaginatedCards(
   filter: HsfFilter,
   cardBuilder: (rule: HsfRule, index: number) => HTMLElement,
   resetPage = false,
+  onBeforePageRender?: () => void,
 ): void {
   if (resetPage || filter !== currentFilter) {
     currentPage = 0;
   }
   currentFilter = filter;
   currentCardBuilder = cardBuilder;
+  beforePageRender = onBeforePageRender ?? null;
   renderCurrentPage();
 }
 
@@ -180,6 +183,7 @@ export function goToRule(ruleIndex: number): void {
 
 function renderCurrentPage(): void {
   if (!currentFilter) return;
+  beforePageRender?.();
 
   // Tear down all event listeners from the previous page so that
   // detached DOM nodes become eligible for garbage collection.
