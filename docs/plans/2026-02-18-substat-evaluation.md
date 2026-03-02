@@ -1,5 +1,7 @@
 # Substat Evaluation in matchesRule — Implementation Plan
 
+> **Status:** Implemented.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Make `matchesRule` check item substats against rule substat thresholds, and add `LVLForCheck` level gating, so the evaluation engine is complete.

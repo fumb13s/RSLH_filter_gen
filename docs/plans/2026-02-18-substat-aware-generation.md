@@ -1,5 +1,7 @@
 # Substat-Aware Item Generation — Implementation Plan
 
+> **Status:** Implemented.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Make property test item generation substat-aware so that `matchesRule` substat evaluation is meaningfully exercised with near-threshold items that sometimes pass and sometimes fail.

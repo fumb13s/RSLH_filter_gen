@@ -1,5 +1,7 @@
 # Substat-Aware Item Generation — Design
 
+> **Status:** Implemented.
+
 **Problem:** Property tests generate game-accurate substats but don't calibrate
 them near rule thresholds. Since `matchesRule` now evaluates substats, random
 substats almost never pass threshold checks, so the positive evaluation path

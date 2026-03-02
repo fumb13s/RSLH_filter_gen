@@ -1,5 +1,7 @@
 # Item Substat Generation for Property Tests
 
+> **Status:** Implemented.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Generate game-accurate substats on `Item` objects in property-based test arbitraries so items are realistic and ready for future substat evaluation testing.
