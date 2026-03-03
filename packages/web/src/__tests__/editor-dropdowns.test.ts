@@ -141,15 +141,15 @@ describe("shared dropdown integration", () => {
       ".edit-sub-stat",
     ) as NodeListOf<HTMLElement>;
     const row = statTriggers[0].closest(".edit-substat-row")!;
-    const condSelect = row.querySelector(
+    const condTrigger = row.querySelector(
       ".edit-sub-cond",
-    ) as HTMLSelectElement;
+    ) as HTMLButtonElement;
     const valueInput = row.querySelector(
       'input[type="number"]',
     ) as HTMLInputElement;
 
     // Initially disabled
-    expect(condSelect.disabled).toBe(true);
+    expect(condTrigger.disabled).toBe(true);
     expect(valueInput.disabled).toBe(true);
 
     // Select HP% (1:0)
@@ -157,7 +157,7 @@ describe("shared dropdown integration", () => {
 
     expect(rule.Substats[0].ID).toBe(1);
     expect(rule.Substats[0].IsFlat).toBe(false);
-    expect(condSelect.disabled).toBe(false);
+    expect(condTrigger.disabled).toBe(false);
     expect(valueInput.disabled).toBe(false);
   });
 
@@ -184,7 +184,7 @@ describe("shared dropdown integration", () => {
 
     const row = statTriggers[0].closest(".edit-substat-row")!;
     expect(
-      (row.querySelector(".edit-sub-cond") as HTMLSelectElement).disabled,
+      (row.querySelector(".edit-sub-cond") as HTMLButtonElement).disabled,
     ).toBe(true);
     expect(
       (row.querySelector('input[type="number"]') as HTMLInputElement).disabled,
@@ -271,6 +271,163 @@ describe("shared dropdown integration", () => {
     expect(rule1.Rank).toBe(6);
     expect(rule0.Rank).toBe(0); // first rule unchanged
     expect(changes).toEqual([1]); // callback fired with index 1
+  });
+
+  it("condition dropdown opens with correct pre-selection", () => {
+    const rule = defaultRule();
+    rule.Substats[0] = {
+      ID: 5,
+      Value: 10,
+      IsFlat: false,
+      NotAvailable: false,
+      Condition: ">",
+    };
+    const filter = makeFilter([rule]);
+    renderEditableRules(filter, noopCallbacks());
+
+    const condTrigger = document.querySelector(
+      '[data-field="substat-condition"]',
+    ) as HTMLButtonElement;
+    expect(condTrigger.dataset.value).toBe(">");
+    expect(condTrigger.textContent).toBe(">");
+
+    condTrigger.click();
+    const panel = document.querySelector(
+      '.shared-dropdown-panel.open[data-field-type="substat-condition"]',
+    );
+    expect(panel).not.toBeNull();
+
+    // The pre-selected item should have the active class
+    const activeItem = panel!.querySelector(".shared-dropdown-item.active");
+    expect(activeItem).not.toBeNull();
+    expect((activeItem as HTMLElement).dataset.value).toBe(">");
+  });
+
+  it("selecting condition updates trigger text and fires onRuleChange", () => {
+    const rule = defaultRule();
+    rule.Substats[0] = {
+      ID: 5,
+      Value: 10,
+      IsFlat: false,
+      NotAvailable: false,
+      Condition: ">=",
+    };
+    const filter = makeFilter([rule]);
+    const changes: number[] = [];
+    renderEditableRules(
+      filter,
+      noopCallbacks({
+        onRuleChange(index) {
+          changes.push(index);
+        },
+      }),
+    );
+
+    const condTrigger = document.querySelector(
+      '[data-field="substat-condition"]',
+    ) as HTMLButtonElement;
+
+    selectDropdownValue(condTrigger, "<");
+    expect(rule.Substats[0].Condition).toBe("<");
+    expect(condTrigger.textContent).toBe("<");
+    expect(condTrigger.dataset.value).toBe("<");
+    expect(changes).toEqual([0]);
+  });
+
+  it("condition trigger disabled when stat is None, re-enabled when stat selected", () => {
+    const rule = defaultRule(); // all substats empty (ID:-1)
+    const filter = makeFilter([rule]);
+    renderEditableRules(filter, noopCallbacks());
+
+    const row = document.querySelector(".edit-substat-row")!;
+    const condTrigger = row.querySelector(
+      '[data-field="substat-condition"]',
+    ) as HTMLButtonElement;
+    const statTrigger = row.querySelector(".edit-sub-stat") as HTMLElement;
+
+    // Initially disabled
+    expect(condTrigger.disabled).toBe(true);
+
+    // Select a stat → condition should enable
+    selectDropdownValue(statTrigger, "1:0");
+    expect(condTrigger.disabled).toBe(false);
+
+    // Reset to None → condition should disable and reset to >=
+    selectDropdownValue(statTrigger, "-1");
+    expect(condTrigger.disabled).toBe(true);
+    expect(condTrigger.textContent).toBe(">=");
+    expect(condTrigger.dataset.value).toBe(">=");
+  });
+
+  it("keyboard navigation works on condition dropdown", () => {
+    const rule = defaultRule();
+    rule.Substats[0] = {
+      ID: 5,
+      Value: 10,
+      IsFlat: false,
+      NotAvailable: false,
+      Condition: ">=",
+    };
+    const filter = makeFilter([rule]);
+    renderEditableRules(filter, noopCallbacks());
+
+    const condTrigger = document.querySelector(
+      '[data-field="substat-condition"]',
+    ) as HTMLButtonElement;
+    condTrigger.click();
+
+    const panel = document.querySelector(
+      '.shared-dropdown-panel.open[data-field-type="substat-condition"]',
+    );
+    expect(panel).not.toBeNull();
+
+    // Press ArrowDown to move to next item
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+    );
+
+    // Press Enter to select
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+
+    // Should have selected ">" (next after ">=")
+    expect(rule.Substats[0].Condition).toBe(">");
+    expect(condTrigger.textContent).toBe(">");
+
+    // Panel should be closed after Enter
+    expect(
+      document.querySelector('.shared-dropdown-panel.open[data-field-type="substat-condition"]'),
+    ).toBeNull();
+  });
+
+  it("Escape closes condition dropdown without changing value", () => {
+    const rule = defaultRule();
+    rule.Substats[0] = {
+      ID: 5,
+      Value: 10,
+      IsFlat: false,
+      NotAvailable: false,
+      Condition: ">=",
+    };
+    const filter = makeFilter([rule]);
+    renderEditableRules(filter, noopCallbacks());
+
+    const condTrigger = document.querySelector(
+      '[data-field="substat-condition"]',
+    ) as HTMLButtonElement;
+    condTrigger.click();
+    expect(
+      document.querySelector('.shared-dropdown-panel.open[data-field-type="substat-condition"]'),
+    ).not.toBeNull();
+
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    );
+    expect(
+      document.querySelector('.shared-dropdown-panel.open[data-field-type="substat-condition"]'),
+    ).toBeNull();
+    expect(rule.Substats[0].Condition).toBe(">="); // unchanged
   });
 
   it("clearEditor destroys dropdown panels", () => {
