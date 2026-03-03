@@ -97,3 +97,147 @@ Dispatch an implementation subagent (Agent tool, `subagent_type: "general-purpos
 **Relay pattern:** Same as planning — relay `USER_INPUT_NEEDED:` to the user, resume with answers.
 
 **When IMPLEMENTATION_COMPLETE:** Proceed to Step 5.
+
+## Step 5: Create Draft PR
+
+Push the worktree branch and create a draft PR:
+
+```
+git push -u origin <branch-name>
+gh pr create --draft --title "<issue-title>" --body "$(cat <<'EOF'
+## Summary
+
+<2-3 bullets summarizing the implementation>
+
+Closes #<issue-number>
+
+---
+
+Autonomously developed with the lightbulb skill.
+
+— Claude
+EOF
+)"
+```
+
+Store the PR number for posting review comments.
+
+## Step 6: Review Loop
+
+Track the current round number (starting at 1) and the max rounds (default 5).
+
+**For each round:**
+
+1. Get the full diff:
+
+```
+git diff main...HEAD
+```
+
+2. Read the plan file for spec context.
+
+3. Dispatch a reviewer subagent (Agent tool, `subagent_type: "general-purpose"`) with:
+
+> You are a code reviewer. Review the following implementation for BOTH spec compliance and code quality.
+>
+> **Plan (spec):**
+>
+> {FULL_PLAN_TEXT}
+>
+> **Diff:**
+>
+> {FULL_DIFF}
+>
+> Review for:
+> - **Spec compliance:** Does the implementation match the plan? Anything missing or extra?
+> - **Code quality:** Is the code well-structured, tested, maintainable? Any bugs, security issues, performance problems?
+>
+> Categorize each issue as:
+> - **Critical:** Must fix — bugs, security issues, missing requirements
+> - **Important:** Should fix — poor patterns, missing tests, unclear code
+> - **Cosmetic:** Nice to have — style, naming, minor improvements
+>
+> Return your review in this format:
+>
+> ```
+> REVIEW_RESULT:
+> Status: APPROVED | NEEDS_FIXES
+> Critical: <count>
+> Important: <count>
+> Cosmetic: <count>
+>
+> ## Issues
+> ### Critical
+> - ...
+> ### Important
+> - ...
+> ### Cosmetic
+> - ...
+>
+> ## Strengths
+> - ...
+> ```
+
+4. Post the review as a PR comment (signed "— Claude"):
+
+```
+gh pr comment <pr-number> --body "<review-content>
+
+— Claude"
+```
+
+5. **If Status is NEEDS_FIXES** (critical or important issues):
+
+   Dispatch a fixer subagent (Agent tool, `subagent_type: "general-purpose"`) with:
+
+   > You are a code fixer. Fix the following review issues:
+   >
+   > {REVIEW_ISSUES — critical and important only}
+   >
+   > Fix each issue, run tests to verify, and commit your changes.
+   >
+   > When done, return `FIXES_COMPLETE:` followed by a summary.
+
+   After fixes, increment round counter and loop back to step 1.
+
+6. **If Status is APPROVED** (only cosmetic issues remain):
+
+   If cosmetic issues exist and rounds remain, ask the user:
+
+   > The reviewer approved with N cosmetic suggestions. Would you like to fix those too?
+   > 1. Yes, fix cosmetics (Recommended)
+   > 2. No, move on
+
+   If yes: dispatch fixer with cosmetic issues, increment round, re-review.
+   If no: exit loop.
+
+7. **If max rounds reached:** Post remaining issues as a PR comment and exit loop.
+
+## Step 7: CI Check
+
+After the review loop converges:
+
+```
+gh pr checks <pr-number> --watch
+```
+
+If checks fail, dispatch a fixer subagent with the failure output:
+
+> CI pipeline failed. Diagnose and fix:
+>
+> {FAILURE_OUTPUT}
+>
+> Fix the issue, run tests locally to verify, and commit.
+
+Re-check after fixes. If CI still fails after 2 fix attempts, report to user and stop.
+
+## Step 8: Completion
+
+All review rounds passed and CI is green. Ask the user:
+
+> Development complete for issue #N.
+> 1. Mark PR ready for review (Recommended)
+> 2. Merge directly
+
+If mark ready: `gh pr ready <pr-number>`
+If merge: `gh pr merge <pr-number> --squash`
