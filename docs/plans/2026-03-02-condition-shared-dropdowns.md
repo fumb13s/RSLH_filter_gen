@@ -1,4 +1,9 @@
-# Shared Condition Select Dropdowns — Implementation Plan
+# Shared Condition Select Dropdowns — Implementation Plan (IMPLEMENTED)
+
+> **Status:** Implemented 2026-03-03. Impact measurements from Chrome traces were
+> inconclusive (UpdateCounters doesn't capture shadow DOM savings), but the DOM
+> node peak decreased significantly — from ~444k to ~110k in comparable multi-page
+> edit-mode sessions.
 
 **Goal:** Replace the 4 native `<select>` elements per editor card (substat condition dropdowns) with shared dropdown trigger buttons, following the same pattern as the existing 6 shared dropdowns. Eliminates ~10,800 DOM nodes per page (100 cards).
 
