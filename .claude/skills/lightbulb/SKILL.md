@@ -241,3 +241,44 @@ All review rounds passed and CI is green. Ask the user:
 
 If mark ready: `gh pr ready <pr-number>`
 If merge: `gh pr merge <pr-number> --squash`
+
+## Error Handling
+
+If any subagent fails or returns an unexpected result:
+
+1. Report the failure to the user with context (which phase, what happened).
+2. Ask: Retry / Skip this phase / Abort entirely.
+3. Never silently continue past a failed phase.
+
+If a subagent needs user input but doesn't use the `USER_INPUT_NEEDED:` protocol, check its output for questions and relay them manually.
+
+## Red Flags
+
+**Never:**
+- Write code yourself — always dispatch a subagent
+- Skip the review loop — even if implementation "looks good"
+- Continue past a failed phase without user acknowledgment
+- Create a PR before implementation is complete
+- Dispatch subagents in parallel — phases are sequential
+- Post review comments without signing "— Claude"
+- Merge without explicit user consent
+- Run more review rounds than the configured max
+
+**Always:**
+- Relay brainstorming questions to the user — don't answer them yourself
+- Commit after each phase (plan, implementation fixes, review fixes, CI fixes)
+- Post every review on the PR as a comment
+- Check CI after the review loop converges
+- Ask the user before merging or marking ready
+
+## Integration
+
+**Skills called (via subagents):**
+- `superpowers:using-git-worktrees` — worktree setup (orchestrator invokes directly)
+- `superpowers:brainstorming` — design exploration (planning subagent)
+- `superpowers:writing-plans` — plan creation (planning subagent)
+- `superpowers:subagent-driven-development` — implementation (implementer subagent)
+
+**Skills NOT called:**
+- `superpowers:finishing-a-development-branch` — orchestrator handles PR lifecycle directly
+- `superpowers:executing-plans` — SDD used instead
