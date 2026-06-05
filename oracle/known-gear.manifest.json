@@ -1,7 +1,8 @@
 {
-  "source": "curated real armor rows from RslHelper.db",
+  "source": "curated real rows (armor + accessories) from RslHelper.db",
   "decode": "display = lvlid / 2**32, *100 when percent (fl==0)",
-  "slotTranslation": "DB type -> our slot id by name (see build script)",
+  "slotMapping": "DB type == our ARTIFACT_SLOT_NAMES id (identity); verified via Champs equip columns",
+  "statMapping": "DB id {1HP 2ATK 3DEF 4SPD 5RES 6ACC 7CRATE 8CDMG}; ourStatId is the our-model id",
   "count": 24,
   "items": [
     {
@@ -20,6 +21,7 @@
       "faction": null,
       "mainStat": {
         "statId": 1,
+        "ourStatId": 1,
         "stat": "HP",
         "isFlat": true,
         "value": 4080.0
@@ -27,31 +29,35 @@
       "substats": [
         {
           "statId": 7,
-          "stat": "RES",
+          "ourStatId": 5,
+          "stat": "C.RATE",
           "isFlat": false,
-          "rolls": 1,
-          "value": 13.0
+          "value": 13.0,
+          "rolls": 1
         },
         {
           "statId": 8,
-          "stat": "ACC",
+          "ourStatId": 6,
+          "stat": "C.DMG",
           "isFlat": false,
-          "rolls": 1,
-          "value": 13.0
+          "value": 13.0,
+          "rolls": 1
         },
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 1,
-          "value": 11.0
+          "value": 11.0,
+          "rolls": 1
         },
         {
           "statId": 2,
+          "ourStatId": 2,
           "stat": "ATK",
           "isFlat": false,
-          "rolls": 1,
-          "value": 11.0
+          "value": 11.0,
+          "rolls": 1
         }
       ]
     },
@@ -71,6 +77,7 @@
       "faction": null,
       "mainStat": {
         "statId": 1,
+        "ourStatId": 1,
         "stat": "HP",
         "isFlat": true,
         "value": 2631.0
@@ -78,24 +85,27 @@
       "substats": [
         {
           "statId": 3,
+          "ourStatId": 3,
           "stat": "DEF",
           "isFlat": true,
-          "rolls": 1,
-          "value": 46.0
+          "value": 46.0,
+          "rolls": 1
         },
         {
           "statId": 6,
-          "stat": "C.DMG",
+          "ourStatId": 8,
+          "stat": "ACC",
           "isFlat": true,
-          "rolls": 2,
-          "value": 32.0
+          "value": 32.0,
+          "rolls": 2
         },
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 0,
-          "value": 5.0
+          "value": 5.0,
+          "rolls": 0
         }
       ]
     },
@@ -115,6 +125,7 @@
       "faction": null,
       "mainStat": {
         "statId": 1,
+        "ourStatId": 1,
         "stat": "HP",
         "isFlat": true,
         "value": 600.0
@@ -122,39 +133,43 @@
       "substats": [
         {
           "statId": 6,
-          "stat": "C.DMG",
+          "ourStatId": 8,
+          "stat": "ACC",
           "isFlat": true,
-          "rolls": 0,
-          "value": 11.0
+          "value": 11.0,
+          "rolls": 0
         },
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 0,
-          "value": 5.0
+          "value": 5.0,
+          "rolls": 0
         },
         {
           "statId": 3,
+          "ourStatId": 3,
           "stat": "DEF",
           "isFlat": false,
-          "rolls": 0,
-          "value": 5.0
+          "value": 5.0,
+          "rolls": 0
         },
         {
           "statId": 5,
-          "stat": "C.RATE",
+          "ourStatId": 7,
+          "stat": "RES",
           "isFlat": true,
-          "rolls": 0,
-          "value": 12.0
+          "value": 12.0,
+          "rolls": 0
         }
       ]
     },
     {
       "id": 7794,
       "dbType": 2,
-      "slot": "Gloves",
-      "ourSlotId": 3,
+      "slot": "Chest",
+      "ourSlotId": 2,
       "isAccessory": false,
       "rank": 5,
       "dbRarity": 5,
@@ -166,46 +181,51 @@
       "faction": null,
       "mainStat": {
         "statId": 6,
-        "stat": "C.DMG",
+        "ourStatId": 8,
+        "stat": "ACC",
         "isFlat": true,
         "value": 78.0
       },
       "substats": [
         {
           "statId": 2,
+          "ourStatId": 2,
           "stat": "ATK",
           "isFlat": true,
-          "rolls": 0,
-          "value": 17.0
+          "value": 17.0,
+          "rolls": 0
         },
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 2,
-          "value": 13.0
+          "value": 13.0,
+          "rolls": 2
         },
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": false,
-          "rolls": 0,
-          "value": 6.0
+          "value": 6.0,
+          "rolls": 0
         },
         {
           "statId": 3,
+          "ourStatId": 3,
           "stat": "DEF",
           "isFlat": false,
-          "rolls": 2,
-          "value": 15.0
+          "value": 15.0,
+          "rolls": 2
         }
       ]
     },
     {
       "id": 12118,
       "dbType": 2,
-      "slot": "Gloves",
-      "ourSlotId": 3,
+      "slot": "Chest",
+      "ourSlotId": 2,
       "isAccessory": false,
       "rank": 6,
       "dbRarity": 4,
@@ -217,6 +237,7 @@
       "faction": null,
       "mainStat": {
         "statId": 3,
+        "ourStatId": 3,
         "stat": "DEF",
         "isFlat": false,
         "value": 39.0
@@ -224,32 +245,35 @@
       "substats": [
         {
           "statId": 8,
-          "stat": "ACC",
+          "ourStatId": 6,
+          "stat": "C.DMG",
           "isFlat": false,
-          "rolls": 0,
-          "value": 6.0
+          "value": 6.0,
+          "rolls": 0
         },
         {
           "statId": 7,
-          "stat": "RES",
+          "ourStatId": 5,
+          "stat": "C.RATE",
           "isFlat": false,
-          "rolls": 1,
-          "value": 13.0
+          "value": 13.0,
+          "rolls": 1
         },
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": true,
-          "rolls": 2,
-          "value": 874.0
+          "value": 874.0,
+          "rolls": 2
         }
       ]
     },
     {
       "id": 353102,
       "dbType": 2,
-      "slot": "Gloves",
-      "ourSlotId": 3,
+      "slot": "Chest",
+      "ourSlotId": 2,
       "isAccessory": false,
       "rank": 6,
       "dbRarity": 4,
@@ -261,39 +285,43 @@
       "faction": null,
       "mainStat": {
         "statId": 6,
-        "stat": "C.DMG",
+        "ourStatId": 8,
+        "stat": "ACC",
         "isFlat": true,
         "value": 16.0
       },
       "substats": [
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": true,
-          "rolls": 0,
-          "value": 559.0
+          "value": 559.0,
+          "rolls": 0
         },
         {
           "statId": 5,
-          "stat": "C.RATE",
+          "ourStatId": 7,
+          "stat": "RES",
           "isFlat": true,
-          "rolls": 0,
-          "value": 11.0
+          "value": 11.0,
+          "rolls": 0
         },
         {
           "statId": 3,
+          "ourStatId": 3,
           "stat": "DEF",
           "isFlat": false,
-          "rolls": 0,
-          "value": 7.0
+          "value": 7.0,
+          "rolls": 0
         }
       ]
     },
     {
       "id": 13917,
       "dbType": 3,
-      "slot": "Chest",
-      "ourSlotId": 2,
+      "slot": "Gloves",
+      "ourSlotId": 3,
       "isAccessory": false,
       "rank": 6,
       "dbRarity": 5,
@@ -305,46 +333,51 @@
       "faction": null,
       "mainStat": {
         "statId": 8,
-        "stat": "ACC",
+        "ourStatId": 6,
+        "stat": "C.DMG",
         "isFlat": false,
         "value": 80.0
       },
       "substats": [
         {
           "statId": 2,
+          "ourStatId": 2,
           "stat": "ATK",
           "isFlat": true,
-          "rolls": 0,
-          "value": 16.0
+          "value": 16.0,
+          "rolls": 0
         },
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 2,
-          "value": 17.0
+          "value": 17.0,
+          "rolls": 2
         },
         {
           "statId": 2,
+          "ourStatId": 2,
           "stat": "ATK",
           "isFlat": false,
-          "rolls": 0,
-          "value": 7.0
+          "value": 7.0,
+          "rolls": 0
         },
         {
           "statId": 5,
-          "stat": "C.RATE",
+          "ourStatId": 7,
+          "stat": "RES",
           "isFlat": true,
-          "rolls": 2,
-          "value": 32.0
+          "value": 32.0,
+          "rolls": 2
         }
       ]
     },
     {
       "id": 13231,
       "dbType": 3,
-      "slot": "Chest",
-      "ourSlotId": 2,
+      "slot": "Gloves",
+      "ourSlotId": 3,
       "isAccessory": false,
       "rank": 6,
       "dbRarity": 3,
@@ -356,6 +389,7 @@
       "faction": null,
       "mainStat": {
         "statId": 3,
+        "ourStatId": 3,
         "stat": "DEF",
         "isFlat": false,
         "value": 39.0
@@ -363,32 +397,35 @@
       "substats": [
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 0,
-          "value": 6.0
+          "value": 6.0,
+          "rolls": 0
         },
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": false,
-          "rolls": 2,
-          "value": 19.0
+          "value": 19.0,
+          "rolls": 2
         },
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": true,
-          "rolls": 0,
-          "value": 208.0
+          "value": 208.0,
+          "rolls": 0
         }
       ]
     },
     {
       "id": 209177,
       "dbType": 3,
-      "slot": "Chest",
-      "ourSlotId": 2,
+      "slot": "Gloves",
+      "ourSlotId": 3,
       "isAccessory": false,
       "rank": 6,
       "dbRarity": 4,
@@ -400,6 +437,7 @@
       "faction": null,
       "mainStat": {
         "statId": 3,
+        "ourStatId": 3,
         "stat": "DEF",
         "isFlat": true,
         "value": 35.0
@@ -407,24 +445,27 @@
       "substats": [
         {
           "statId": 5,
-          "stat": "C.RATE",
+          "ourStatId": 7,
+          "stat": "RES",
           "isFlat": true,
-          "rolls": 0,
-          "value": 11.0
+          "value": 11.0,
+          "rolls": 0
         },
         {
           "statId": 2,
+          "ourStatId": 2,
           "stat": "ATK",
           "isFlat": true,
-          "rolls": 0,
-          "value": 17.0
+          "value": 17.0,
+          "rolls": 0
         },
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 0,
-          "value": 6.0
+          "value": 6.0,
+          "rolls": 0
         }
       ]
     },
@@ -444,6 +485,7 @@
       "faction": null,
       "mainStat": {
         "statId": 1,
+        "ourStatId": 1,
         "stat": "HP",
         "isFlat": false,
         "value": 60.0
@@ -451,31 +493,35 @@
       "substats": [
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 1,
-          "value": 12.0
+          "value": 12.0,
+          "rolls": 1
         },
         {
           "statId": 7,
-          "stat": "RES",
+          "ourStatId": 5,
+          "stat": "C.RATE",
           "isFlat": false,
-          "rolls": 0,
-          "value": 7.0
+          "value": 7.0,
+          "rolls": 0
         },
         {
           "statId": 6,
-          "stat": "C.DMG",
+          "ourStatId": 8,
+          "stat": "ACC",
           "isFlat": true,
-          "rolls": 0,
-          "value": 10.0
+          "value": 10.0,
+          "rolls": 0
         },
         {
           "statId": 8,
-          "stat": "ACC",
+          "ourStatId": 6,
+          "stat": "C.DMG",
           "isFlat": false,
-          "rolls": 3,
-          "value": 25.0
+          "value": 25.0,
+          "rolls": 3
         }
       ]
     },
@@ -495,6 +541,7 @@
       "faction": null,
       "mainStat": {
         "statId": 3,
+        "ourStatId": 3,
         "stat": "DEF",
         "isFlat": false,
         "value": 39.0
@@ -502,24 +549,27 @@
       "substats": [
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": false,
-          "rolls": 1,
-          "value": 11.0
+          "value": 11.0,
+          "rolls": 1
         },
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 0,
-          "value": 5.0
+          "value": 5.0,
+          "rolls": 0
         },
         {
           "statId": 6,
-          "stat": "C.DMG",
+          "ourStatId": 8,
+          "stat": "ACC",
           "isFlat": true,
-          "rolls": 2,
-          "value": 34.0
+          "value": 34.0,
+          "rolls": 2
         }
       ]
     },
@@ -539,6 +589,7 @@
       "faction": null,
       "mainStat": {
         "statId": 1,
+        "ourStatId": 1,
         "stat": "HP",
         "isFlat": false,
         "value": 10.0
@@ -546,31 +597,35 @@
       "substats": [
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": true,
-          "rolls": 0,
-          "value": 499.0
+          "value": 499.0,
+          "rolls": 0
         },
         {
           "statId": 3,
+          "ourStatId": 3,
           "stat": "DEF",
           "isFlat": true,
-          "rolls": 0,
-          "value": 27.0
+          "value": 27.0,
+          "rolls": 0
         },
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 0,
-          "value": 6.0
+          "value": 6.0,
+          "rolls": 0
         },
         {
           "statId": 5,
-          "stat": "C.RATE",
+          "ourStatId": 7,
+          "stat": "RES",
           "isFlat": true,
-          "rolls": 0,
-          "value": 10.0
+          "value": 10.0,
+          "rolls": 0
         }
       ]
     },
@@ -590,6 +645,7 @@
       "faction": null,
       "mainStat": {
         "statId": 2,
+        "ourStatId": 2,
         "stat": "ATK",
         "isFlat": true,
         "value": 265.0
@@ -597,31 +653,35 @@
       "substats": [
         {
           "statId": 8,
-          "stat": "ACC",
+          "ourStatId": 6,
+          "stat": "C.DMG",
           "isFlat": false,
-          "rolls": 1,
-          "value": 11.0
+          "value": 11.0,
+          "rolls": 1
         },
         {
           "statId": 7,
-          "stat": "RES",
+          "ourStatId": 5,
+          "stat": "C.RATE",
           "isFlat": false,
-          "rolls": 2,
-          "value": 18.0
+          "value": 18.0,
+          "rolls": 2
         },
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": false,
-          "rolls": 1,
-          "value": 12.0
+          "value": 12.0,
+          "rolls": 1
         },
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 0,
-          "value": 5.0
+          "value": 5.0,
+          "rolls": 0
         }
       ]
     },
@@ -641,6 +701,7 @@
       "faction": null,
       "mainStat": {
         "statId": 2,
+        "ourStatId": 2,
         "stat": "ATK",
         "isFlat": true,
         "value": 170.0
@@ -648,24 +709,27 @@
       "substats": [
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 0,
-          "value": 5.0
+          "value": 5.0,
+          "rolls": 0
         },
         {
           "statId": 8,
-          "stat": "ACC",
+          "ourStatId": 6,
+          "stat": "C.DMG",
           "isFlat": false,
-          "rolls": 2,
-          "value": 17.0
+          "value": 17.0,
+          "rolls": 2
         },
         {
           "statId": 6,
-          "stat": "C.DMG",
+          "ourStatId": 8,
+          "stat": "ACC",
           "isFlat": true,
-          "rolls": 1,
-          "value": 23.0
+          "value": 23.0,
+          "rolls": 1
         }
       ]
     },
@@ -685,6 +749,7 @@
       "faction": null,
       "mainStat": {
         "statId": 2,
+        "ourStatId": 2,
         "stat": "ATK",
         "isFlat": true,
         "value": 35.0
@@ -692,24 +757,27 @@
       "substats": [
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 0,
-          "value": 5.0
+          "value": 5.0,
+          "rolls": 0
         },
         {
           "statId": 5,
-          "stat": "C.RATE",
+          "ourStatId": 7,
+          "stat": "RES",
           "isFlat": true,
-          "rolls": 0,
-          "value": 12.0
+          "value": 12.0,
+          "rolls": 0
         },
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": false,
-          "rolls": 0,
-          "value": 6.0
+          "value": 6.0,
+          "rolls": 0
         }
       ]
     },
@@ -729,6 +797,7 @@
       "faction": null,
       "mainStat": {
         "statId": 3,
+        "ourStatId": 3,
         "stat": "DEF",
         "isFlat": true,
         "value": 265.0
@@ -736,31 +805,35 @@
       "substats": [
         {
           "statId": 6,
-          "stat": "C.DMG",
+          "ourStatId": 8,
+          "stat": "ACC",
           "isFlat": true,
-          "rolls": 0,
-          "value": 12.0
+          "value": 12.0,
+          "rolls": 0
         },
         {
           "statId": 5,
-          "stat": "C.RATE",
+          "ourStatId": 7,
+          "stat": "RES",
           "isFlat": true,
-          "rolls": 0,
-          "value": 9.0
+          "value": 9.0,
+          "rolls": 0
         },
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": false,
-          "rolls": 2,
-          "value": 18.0
+          "value": 18.0,
+          "rolls": 2
         },
         {
           "statId": 3,
+          "ourStatId": 3,
           "stat": "DEF",
           "isFlat": false,
-          "rolls": 2,
-          "value": 19.0
+          "value": 19.0,
+          "rolls": 2
         }
       ]
     },
@@ -780,6 +853,7 @@
       "faction": null,
       "mainStat": {
         "statId": 3,
+        "ourStatId": 3,
         "stat": "DEF",
         "isFlat": true,
         "value": 170.0
@@ -787,24 +861,27 @@
       "substats": [
         {
           "statId": 8,
-          "stat": "ACC",
+          "ourStatId": 6,
+          "stat": "C.DMG",
           "isFlat": false,
-          "rolls": 0,
-          "value": 6.0
+          "value": 6.0,
+          "rolls": 0
         },
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 1,
-          "value": 12.0
+          "value": 12.0,
+          "rolls": 1
         },
         {
           "statId": 7,
-          "stat": "RES",
+          "ourStatId": 5,
+          "stat": "C.RATE",
           "isFlat": false,
-          "rolls": 2,
-          "value": 20.0
+          "value": 20.0,
+          "rolls": 2
         }
       ]
     },
@@ -824,6 +901,7 @@
       "faction": null,
       "mainStat": {
         "statId": 3,
+        "ourStatId": 3,
         "stat": "DEF",
         "isFlat": true,
         "value": 35.0
@@ -831,31 +909,35 @@
       "substats": [
         {
           "statId": 8,
-          "stat": "ACC",
+          "ourStatId": 6,
+          "stat": "C.DMG",
           "isFlat": false,
-          "rolls": 0,
-          "value": 7.0
+          "value": 7.0,
+          "rolls": 0
         },
         {
           "statId": 5,
-          "stat": "C.RATE",
+          "ourStatId": 7,
+          "stat": "RES",
           "isFlat": true,
-          "rolls": 0,
-          "value": 12.0
+          "value": 12.0,
+          "rolls": 0
         },
         {
           "statId": 6,
-          "stat": "C.DMG",
+          "ourStatId": 8,
+          "stat": "ACC",
           "isFlat": true,
-          "rolls": 0,
-          "value": 10.0
+          "value": 10.0,
+          "rolls": 0
         },
         {
           "statId": 3,
+          "ourStatId": 3,
           "stat": "DEF",
           "isFlat": false,
-          "rolls": 0,
-          "value": 6.0
+          "value": 6.0,
+          "rolls": 0
         }
       ]
     },
@@ -878,6 +960,7 @@
       },
       "mainStat": {
         "statId": 3,
+        "ourStatId": 3,
         "stat": "DEF",
         "isFlat": true,
         "value": 265.0
@@ -885,31 +968,35 @@
       "substats": [
         {
           "statId": 3,
+          "ourStatId": 3,
           "stat": "DEF",
           "isFlat": false,
-          "rolls": 1,
-          "value": 11.0
+          "value": 11.0,
+          "rolls": 1
         },
         {
           "statId": 2,
+          "ourStatId": 2,
           "stat": "ATK",
           "isFlat": false,
-          "rolls": 1,
-          "value": 10.0
+          "value": 10.0,
+          "rolls": 1
         },
         {
           "statId": 2,
+          "ourStatId": 2,
           "stat": "ATK",
           "isFlat": true,
-          "rolls": 1,
-          "value": 42.0
+          "value": 42.0,
+          "rolls": 1
         },
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": true,
-          "rolls": 1,
-          "value": 410.0
+          "value": 410.0,
+          "rolls": 1
         }
       ]
     },
@@ -932,6 +1019,7 @@
       },
       "mainStat": {
         "statId": 1,
+        "ourStatId": 1,
         "stat": "HP",
         "isFlat": true,
         "value": 3480.0
@@ -939,39 +1027,43 @@
       "substats": [
         {
           "statId": 3,
+          "ourStatId": 3,
           "stat": "DEF",
           "isFlat": false,
-          "rolls": 1,
-          "value": 11.0
+          "value": 11.0,
+          "rolls": 1
         },
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": false,
-          "rolls": 1,
-          "value": 12.0
+          "value": 12.0,
+          "rolls": 1
         },
         {
           "statId": 2,
+          "ourStatId": 2,
           "stat": "ATK",
           "isFlat": false,
-          "rolls": 1,
-          "value": 12.0
+          "value": 12.0,
+          "rolls": 1
         },
         {
           "statId": 2,
+          "ourStatId": 2,
           "stat": "ATK",
           "isFlat": true,
-          "rolls": 0,
-          "value": 22.0
+          "value": 22.0,
+          "rolls": 0
         }
       ]
     },
     {
       "id": 40050,
       "dbType": 8,
-      "slot": "Banner",
-      "ourSlotId": 9,
+      "slot": "Amulet",
+      "ourSlotId": 8,
       "isAccessory": true,
       "rank": 6,
       "dbRarity": 5,
@@ -986,6 +1078,7 @@
       },
       "mainStat": {
         "statId": 3,
+        "ourStatId": 3,
         "stat": "DEF",
         "isFlat": true,
         "value": 265.0
@@ -993,39 +1086,43 @@
       "substats": [
         {
           "statId": 8,
-          "stat": "ACC",
+          "ourStatId": 6,
+          "stat": "C.DMG",
           "isFlat": false,
-          "rolls": 1,
-          "value": 11.0
+          "value": 11.0,
+          "rolls": 1
         },
         {
           "statId": 2,
+          "ourStatId": 2,
           "stat": "ATK",
           "isFlat": true,
-          "rolls": 0,
-          "value": 15.0
+          "value": 15.0,
+          "rolls": 0
         },
         {
           "statId": 6,
-          "stat": "C.DMG",
+          "ourStatId": 8,
+          "stat": "ACC",
           "isFlat": true,
-          "rolls": 2,
-          "value": 30.0
+          "value": 30.0,
+          "rolls": 2
         },
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": true,
-          "rolls": 1,
-          "value": 1074.0
+          "value": 1074.0,
+          "rolls": 1
         }
       ]
     },
     {
       "id": 12080,
       "dbType": 8,
-      "slot": "Banner",
-      "ourSlotId": 9,
+      "slot": "Amulet",
+      "ourSlotId": 8,
       "isAccessory": true,
       "rank": 6,
       "dbRarity": 5,
@@ -1040,46 +1137,51 @@
       },
       "mainStat": {
         "statId": 8,
-        "stat": "ACC",
+        "ourStatId": 6,
+        "stat": "C.DMG",
         "isFlat": false,
         "value": 40.0
       },
       "substats": [
         {
           "statId": 2,
+          "ourStatId": 2,
           "stat": "ATK",
           "isFlat": true,
-          "rolls": 1,
-          "value": 38.0
+          "value": 38.0,
+          "rolls": 1
         },
         {
           "statId": 3,
+          "ourStatId": 3,
           "stat": "DEF",
           "isFlat": true,
-          "rolls": 1,
-          "value": 51.0
+          "value": 51.0,
+          "rolls": 1
         },
         {
           "statId": 6,
-          "stat": "C.DMG",
+          "ourStatId": 8,
+          "stat": "ACC",
           "isFlat": true,
-          "rolls": 0,
-          "value": 9.0
+          "value": 9.0,
+          "rolls": 0
         },
         {
           "statId": 5,
-          "stat": "C.RATE",
+          "ourStatId": 7,
+          "stat": "RES",
           "isFlat": true,
-          "rolls": 2,
-          "value": 30.0
+          "value": 30.0,
+          "rolls": 2
         }
       ]
     },
     {
       "id": 35459,
       "dbType": 9,
-      "slot": "Amulet",
-      "ourSlotId": 8,
+      "slot": "Banner",
+      "ourSlotId": 9,
       "isAccessory": true,
       "rank": 6,
       "dbRarity": 5,
@@ -1094,6 +1196,7 @@
       },
       "mainStat": {
         "statId": 1,
+        "ourStatId": 1,
         "stat": "HP",
         "isFlat": true,
         "value": 6120.0
@@ -1101,39 +1204,43 @@
       "substats": [
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": false,
-          "rolls": 2,
-          "value": 17.0
+          "value": 17.0,
+          "rolls": 2
         },
         {
           "statId": 3,
+          "ourStatId": 3,
           "stat": "DEF",
           "isFlat": true,
-          "rolls": 1,
-          "value": 49.0
+          "value": 49.0,
+          "rolls": 1
         },
         {
           "statId": 2,
+          "ourStatId": 2,
           "stat": "ATK",
           "isFlat": true,
-          "rolls": 0,
-          "value": 18.0
+          "value": 18.0,
+          "rolls": 0
         },
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 1,
-          "value": 11.0
+          "value": 11.0,
+          "rolls": 1
         }
       ]
     },
     {
       "id": 13315,
       "dbType": 9,
-      "slot": "Amulet",
-      "ourSlotId": 8,
+      "slot": "Banner",
+      "ourSlotId": 9,
       "isAccessory": true,
       "rank": 5,
       "dbRarity": 5,
@@ -1148,6 +1255,7 @@
       },
       "mainStat": {
         "statId": 3,
+        "ourStatId": 3,
         "stat": "DEF",
         "isFlat": true,
         "value": 338.0
@@ -1155,31 +1263,35 @@
       "substats": [
         {
           "statId": 3,
+          "ourStatId": 3,
           "stat": "DEF",
           "isFlat": false,
-          "rolls": 1,
-          "value": 11.0
+          "value": 11.0,
+          "rolls": 1
         },
         {
           "statId": 4,
+          "ourStatId": 4,
           "stat": "SPD",
           "isFlat": true,
-          "rolls": 2,
-          "value": 14.0
+          "value": 14.0,
+          "rolls": 2
         },
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": true,
-          "rolls": 0,
-          "value": 427.0
+          "value": 427.0,
+          "rolls": 0
         },
         {
           "statId": 1,
+          "ourStatId": 1,
           "stat": "HP",
           "isFlat": false,
-          "rolls": 1,
-          "value": 12.0
+          "value": 12.0,
+          "rolls": 1
         }
       ]
     }

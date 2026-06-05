@@ -2,20 +2,23 @@
 """
 Build a small "known contents" SQLite gear DB for the Sellfile Creator oracle probe.
 
-Strategy: copy a curated spread of REAL armor rows out of a real RslHelper.db
-(guaranteed-valid encoding) into a fresh minimal DB with the same schema, and emit
-a fully-decoded manifest so every item's contents are known. Armor-only for now
-(sidesteps the accessory-set `accset` id space and per-accessory faction).
+Strategy: copy a curated spread of REAL rows (armor + accessories) out of a real RslHelper.db
+(guaranteed-valid encoding) into a fresh minimal DB with the same schema, and emit a fully-decoded
+manifest so every item's contents are known.
 
 Encoding (reverse-engineered + confirmed against the bundle's `/4294967296` decode):
     display_value = lvlid / 2**32        (then *100 for percent stats, i.e. fl == 0)
 
-Slot translation (DB `type` -> our ARTIFACT_SLOT_NAMES id). Derived EMPIRICALLY from each
-type's main-stat signature; the websocket doc's `kindId` is a different, NON-matching
-convention and must not be trusted for the DB. By name:
-    DB 1 Helmet->1, 2 Gloves->3, 3 Chest->2, 4 Boots->4, 5 Weapon->5, 6 Shield->6,
-    7 Ring->7, 8 Banner->9, 9 Amulet->8
-Set ids (`aset`) already match our ARTIFACT_SET_NAMES space directly.
+Slot: DB `type` == our ARTIFACT_SLOT_NAMES id (identity 1:1). Verified via the Champs equipped-slot
+columns (ground truth) — NOT main-stat signatures (which mislead because the DB's stat-id enum
+differs from ours) and NOT the websocket `kindId`. 1=Helmet 2=Chest 3=Gloves 4=Boots 5=Weapon
+6=Shield 7=Ring 8=Amulet 9=Banner.
+
+Stat id: DB enum != our enum. DB {1 HP, 2 ATK, 3 DEF, 4 SPD, 5 RES, 6 ACC, 7 C.RATE, 8 C.DMG}
+-> our STAT_NAMES ids {1:1, 2:2, 3:3, 4:4, 5:7, 6:8, 7:5, 8:6}. The ACC/RES and C.RATE/C.DMG pairs
+sit in swapped positions; resolved via equipped-champion stat lift (Champs.ACC/RES/CritRate/CritDamage).
+
+Set ids (`aset`) match our ARTIFACT_SET_NAMES space directly. Accessory faction is in `accset` (1-17).
 """
 import sqlite3, json, os
 
@@ -27,12 +30,16 @@ MAN_OUT = os.path.join(OUT_DIR, "known-gear.manifest.json")
 # Tables Sellfile Creator looks for (replicate schema verbatim; aux tables stay empty).
 TABLES = ["Artifacts", "Champs", "InboxArtifacts", "LastUsedArtifacts"]
 
-# Derived empirically from main-stat signatures (NOT the websocket kindId, which differs).
-DB_SLOT_NAME = {1: "Helmet", 2: "Gloves", 3: "Chest", 4: "Boots", 5: "Weapon",
-                6: "Shield", 7: "Ring", 8: "Banner", 9: "Amulet"}
-# -> our ARTIFACT_SLOT_NAMES ids: Helmet1 Chest2 Gloves3 Boots4 Weapon5 Shield6 Ring7 Amulet8 Banner9
-DBTYPE_TO_OURSLOT = {1: 1, 2: 3, 3: 2, 4: 4, 5: 5, 6: 6, 7: 7, 8: 9, 9: 8}
-STAT = {1: "HP", 2: "ATK", 3: "DEF", 4: "SPD", 5: "C.RATE", 6: "C.DMG", 7: "RES", 8: "ACC"}
+# DB `type` == our ARTIFACT_SLOT_NAMES id (identity). Verified via Champs equipped-slot columns.
+DB_SLOT_NAME = {1: "Helmet", 2: "Chest", 3: "Gloves", 4: "Boots", 5: "Weapon",
+                6: "Shield", 7: "Ring", 8: "Amulet", 9: "Banner"}
+DBTYPE_TO_OURSLOT = {i: i for i in range(1, 10)}
+
+# DB stat-id enum (differs from our STAT_NAMES; map to ours via DBSTAT_TO_OURSTAT).
+STAT = {1: "HP", 2: "ATK", 3: "DEF", 4: "SPD", 5: "RES", 6: "ACC", 7: "C.RATE", 8: "C.DMG"}
+DBSTAT_TO_OURSTAT = {1: 1, 2: 2, 3: 3, 4: 4, 5: 7, 6: 8, 7: 5, 8: 6}  # -> our STAT_NAMES ids
+PERCENT_STATS = {7, 8}  # DB C.RATE / C.DMG always shown as %; HP/ATK/DEF (1-3) are % when fl==0
+
 RARITY = {1: "Common", 2: "Uncommon", 3: "Rare", 4: "Epic", 5: "Legendary", 6: "Mythical"}
 # Accessory faction lives in the `accset` column (1-16; 17 = a newer faction not yet mapped).
 FACTION_NAMES = {1: "Banner Lords", 2: "High Elves", 3: "Sacred Order", 4: "Barbarians",
@@ -57,13 +64,19 @@ ARTIFACT_SET_NAMES = {
 }
 
 
-def disp(sid, fl, lvlid):
+def disp(fl, lvlid):
     if lvlid in (None, 0):
         return 0
     v = lvlid / 2 ** 32
     if fl == 0:
         v *= 100
     return round(v, 2)
+
+
+def label(stat_dict):
+    s = stat_dict
+    pct = "%" if (s["statId"] in (1, 2, 3) and not s["isFlat"]) or s["statId"] in PERCENT_STATS else ""
+    return f"{s['stat']}{pct}={s['value']}"
 
 
 def main():
@@ -125,19 +138,18 @@ def main():
     dst.close()
 
     # Decoded manifest.
+    def stat_entry(sid, fl, lvlid, lvl=None):
+        e = {"statId": sid, "ourStatId": DBSTAT_TO_OURSTAT.get(sid), "stat": STAT.get(sid, f"?{sid}"),
+             "isFlat": bool(fl), "value": disp(fl, lvlid)}
+        if lvl is not None:
+            e["rolls"] = lvl
+        return e
+
     items = []
     for r in rows:
         d = dict(r)
-        subs = []
-        for i in range(1, 5):
-            sid = d[f"s{i}id"]
-            if sid in (None, -1, 0):
-                continue
-            subs.append({
-                "statId": sid, "stat": STAT.get(sid, f"?{sid}"),
-                "isFlat": bool(d[f"s{i}fl"]), "rolls": d[f"s{i}lvl"],
-                "value": disp(sid, d[f"s{i}fl"], d[f"s{i}lvlid"]),
-            })
+        subs = [stat_entry(d[f"s{i}id"], d[f"s{i}fl"], d[f"s{i}lvlid"], d[f"s{i}lvl"])
+                for i in range(1, 5) if d[f"s{i}id"] not in (None, -1, 0)]
         setid = d["aset"] or 0
         facid = d["accset"] or 0
         items.append({
@@ -149,17 +161,15 @@ def main():
             "level": d["lvl"],
             "setId": setid, "set": ARTIFACT_SET_NAMES.get(setid, f"set{setid}") if setid else "(none)",
             "faction": ({"id": facid, "name": FACTION_NAMES.get(facid, f"faction{facid}")} if facid else None),
-            "mainStat": {
-                "statId": d["mid"], "stat": STAT.get(d["mid"], f"?{d['mid']}"),
-                "isFlat": bool(d["mfl"]), "value": disp(d["mid"], d["mfl"], d["mlvlid"]),
-            },
+            "mainStat": stat_entry(d["mid"], d["mfl"], d["mlvlid"]),
             "substats": subs,
         })
 
     manifest = {
-        "source": "curated real armor rows from RslHelper.db",
+        "source": "curated real rows (armor + accessories) from RslHelper.db",
         "decode": "display = lvlid / 2**32, *100 when percent (fl==0)",
-        "slotTranslation": "DB type -> our slot id by name (see build script)",
+        "slotMapping": "DB type == our ARTIFACT_SLOT_NAMES id (identity); verified via Champs equip columns",
+        "statMapping": "DB id {1HP 2ATK 3DEF 4SPD 5RES 6ACC 7CRATE 8CDMG}; ourStatId is the our-model id",
         "count": len(items),
         "items": items,
     }
@@ -173,18 +183,16 @@ def main():
     assert n == len(rows), f"row count mismatch {n} != {len(rows)}"
     for m in items:
         rr = chk.execute("SELECT * FROM Artifacts WHERE ID=?", (m["id"],)).fetchone()
-        assert disp(rr["mid"], rr["mfl"], rr["mlvlid"]) == m["mainStat"]["value"], f"main mismatch {m['id']}"
+        assert disp(rr["mfl"], rr["mlvlid"]) == m["mainStat"]["value"], f"main mismatch {m['id']}"
     chk.close()
 
     print(f"OK  wrote {DB_OUT}  ({os.path.getsize(DB_OUT):,} bytes, {n} artifacts)")
     print(f"OK  wrote {MAN_OUT}")
-    print(f"\n{'ID':>7}  {'slot':7} {'rank rar':10} lvl  set            main / substats")
+    print(f"\n{'ID':>7}  {'slot':7} {'rank rar':14} lvl  set            main / substats")
     for m in items:
-        subs = ", ".join(f"{s['stat']}{'%' if not s['isFlat'] and s['statId'] in (1,2,3) else ''}={s['value']}" for s in m["substats"])
-        ms = m["mainStat"]
-        mn = f"{ms['stat']}{'%' if not ms['isFlat'] and ms['statId'] in (1,2,3) else ''}={ms['value']}"
+        subs = ", ".join(label(s) for s in m["substats"])
         fac = f"  [{m['faction']['name']}]" if m["faction"] else ""
-        print(f"{m['id']:>7}  {m['slot']:7} {('r'+str(m['rank'])+' '+m['rarity']):10} +{m['level']:<2} {m['set']:12} {mn:11} | {subs}{fac}")
+        print(f"{m['id']:>7}  {m['slot']:7} {('r'+str(m['rank'])+' '+m['rarity']):14} +{m['level']:<2} {m['set']:12} {label(m['mainStat']):12} | {subs}{fac}")
 
 
 if __name__ == "__main__":
