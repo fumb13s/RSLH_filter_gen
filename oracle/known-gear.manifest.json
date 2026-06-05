@@ -1,0 +1,1187 @@
+{
+  "source": "curated real armor rows from RslHelper.db",
+  "decode": "display = lvlid / 2**32, *100 when percent (fl==0)",
+  "slotTranslation": "DB type -> our slot id by name (see build script)",
+  "count": 24,
+  "items": [
+    {
+      "id": 13076,
+      "dbType": 1,
+      "slot": "Helmet",
+      "ourSlotId": 1,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 5,
+      "rarity": "Legendary",
+      "ourRarityIndex": 4,
+      "level": 16,
+      "setId": 11,
+      "set": "Daze",
+      "faction": null,
+      "mainStat": {
+        "statId": 1,
+        "stat": "HP",
+        "isFlat": true,
+        "value": 4080.0
+      },
+      "substats": [
+        {
+          "statId": 7,
+          "stat": "RES",
+          "isFlat": false,
+          "rolls": 1,
+          "value": 13.0
+        },
+        {
+          "statId": 8,
+          "stat": "ACC",
+          "isFlat": false,
+          "rolls": 1,
+          "value": 13.0
+        },
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 1,
+          "value": 11.0
+        },
+        {
+          "statId": 2,
+          "stat": "ATK",
+          "isFlat": false,
+          "rolls": 1,
+          "value": 11.0
+        }
+      ]
+    },
+    {
+      "id": 15982,
+      "dbType": 1,
+      "slot": "Helmet",
+      "ourSlotId": 1,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 4,
+      "rarity": "Epic",
+      "ourRarityIndex": 3,
+      "level": 12,
+      "setId": 38,
+      "set": "Perception",
+      "faction": null,
+      "mainStat": {
+        "statId": 1,
+        "stat": "HP",
+        "isFlat": true,
+        "value": 2631.0
+      },
+      "substats": [
+        {
+          "statId": 3,
+          "stat": "DEF",
+          "isFlat": true,
+          "rolls": 1,
+          "value": 46.0
+        },
+        {
+          "statId": 6,
+          "stat": "C.DMG",
+          "isFlat": true,
+          "rolls": 2,
+          "value": 32.0
+        },
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 5.0
+        }
+      ]
+    },
+    {
+      "id": 352926,
+      "dbType": 1,
+      "slot": "Helmet",
+      "ourSlotId": 1,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 5,
+      "rarity": "Legendary",
+      "ourRarityIndex": 4,
+      "level": 0,
+      "setId": 7,
+      "set": "Accuracy",
+      "faction": null,
+      "mainStat": {
+        "statId": 1,
+        "stat": "HP",
+        "isFlat": true,
+        "value": 600.0
+      },
+      "substats": [
+        {
+          "statId": 6,
+          "stat": "C.DMG",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 11.0
+        },
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 5.0
+        },
+        {
+          "statId": 3,
+          "stat": "DEF",
+          "isFlat": false,
+          "rolls": 0,
+          "value": 5.0
+        },
+        {
+          "statId": 5,
+          "stat": "C.RATE",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 12.0
+        }
+      ]
+    },
+    {
+      "id": 7794,
+      "dbType": 2,
+      "slot": "Gloves",
+      "ourSlotId": 3,
+      "isAccessory": false,
+      "rank": 5,
+      "dbRarity": 5,
+      "rarity": "Legendary",
+      "ourRarityIndex": 4,
+      "level": 16,
+      "setId": 29,
+      "set": "Cruel",
+      "faction": null,
+      "mainStat": {
+        "statId": 6,
+        "stat": "C.DMG",
+        "isFlat": true,
+        "value": 78.0
+      },
+      "substats": [
+        {
+          "statId": 2,
+          "stat": "ATK",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 17.0
+        },
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 2,
+          "value": 13.0
+        },
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": false,
+          "rolls": 0,
+          "value": 6.0
+        },
+        {
+          "statId": 3,
+          "stat": "DEF",
+          "isFlat": false,
+          "rolls": 2,
+          "value": 15.0
+        }
+      ]
+    },
+    {
+      "id": 12118,
+      "dbType": 2,
+      "slot": "Gloves",
+      "ourSlotId": 3,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 4,
+      "rarity": "Epic",
+      "ourRarityIndex": 3,
+      "level": 12,
+      "setId": 18,
+      "set": "Relentless",
+      "faction": null,
+      "mainStat": {
+        "statId": 3,
+        "stat": "DEF",
+        "isFlat": false,
+        "value": 39.0
+      },
+      "substats": [
+        {
+          "statId": 8,
+          "stat": "ACC",
+          "isFlat": false,
+          "rolls": 0,
+          "value": 6.0
+        },
+        {
+          "statId": 7,
+          "stat": "RES",
+          "isFlat": false,
+          "rolls": 1,
+          "value": 13.0
+        },
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": true,
+          "rolls": 2,
+          "value": 874.0
+        }
+      ]
+    },
+    {
+      "id": 353102,
+      "dbType": 2,
+      "slot": "Gloves",
+      "ourSlotId": 3,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 4,
+      "rarity": "Epic",
+      "ourRarityIndex": 3,
+      "level": 0,
+      "setId": 18,
+      "set": "Relentless",
+      "faction": null,
+      "mainStat": {
+        "statId": 6,
+        "stat": "C.DMG",
+        "isFlat": true,
+        "value": 16.0
+      },
+      "substats": [
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 559.0
+        },
+        {
+          "statId": 5,
+          "stat": "C.RATE",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 11.0
+        },
+        {
+          "statId": 3,
+          "stat": "DEF",
+          "isFlat": false,
+          "rolls": 0,
+          "value": 7.0
+        }
+      ]
+    },
+    {
+      "id": 13917,
+      "dbType": 3,
+      "slot": "Chest",
+      "ourSlotId": 2,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 5,
+      "rarity": "Legendary",
+      "ourRarityIndex": 4,
+      "level": 16,
+      "setId": 22,
+      "set": "Toxic",
+      "faction": null,
+      "mainStat": {
+        "statId": 8,
+        "stat": "ACC",
+        "isFlat": false,
+        "value": 80.0
+      },
+      "substats": [
+        {
+          "statId": 2,
+          "stat": "ATK",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 16.0
+        },
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 2,
+          "value": 17.0
+        },
+        {
+          "statId": 2,
+          "stat": "ATK",
+          "isFlat": false,
+          "rolls": 0,
+          "value": 7.0
+        },
+        {
+          "statId": 5,
+          "stat": "C.RATE",
+          "isFlat": true,
+          "rolls": 2,
+          "value": 32.0
+        }
+      ]
+    },
+    {
+      "id": 13231,
+      "dbType": 3,
+      "slot": "Chest",
+      "ourSlotId": 2,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 3,
+      "rarity": "Rare",
+      "ourRarityIndex": 2,
+      "level": 12,
+      "setId": 25,
+      "set": "Avenging",
+      "faction": null,
+      "mainStat": {
+        "statId": 3,
+        "stat": "DEF",
+        "isFlat": false,
+        "value": 39.0
+      },
+      "substats": [
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 6.0
+        },
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": false,
+          "rolls": 2,
+          "value": 19.0
+        },
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 208.0
+        }
+      ]
+    },
+    {
+      "id": 209177,
+      "dbType": 3,
+      "slot": "Chest",
+      "ourSlotId": 2,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 4,
+      "rarity": "Epic",
+      "ourRarityIndex": 3,
+      "level": 0,
+      "setId": 54,
+      "set": "Zeal",
+      "faction": null,
+      "mainStat": {
+        "statId": 3,
+        "stat": "DEF",
+        "isFlat": true,
+        "value": 35.0
+      },
+      "substats": [
+        {
+          "statId": 5,
+          "stat": "C.RATE",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 11.0
+        },
+        {
+          "statId": 2,
+          "stat": "ATK",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 17.0
+        },
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 6.0
+        }
+      ]
+    },
+    {
+      "id": 9952,
+      "dbType": 4,
+      "slot": "Boots",
+      "ourSlotId": 4,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 5,
+      "rarity": "Legendary",
+      "ourRarityIndex": 4,
+      "level": 16,
+      "setId": 18,
+      "set": "Relentless",
+      "faction": null,
+      "mainStat": {
+        "statId": 1,
+        "stat": "HP",
+        "isFlat": false,
+        "value": 60.0
+      },
+      "substats": [
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 1,
+          "value": 12.0
+        },
+        {
+          "statId": 7,
+          "stat": "RES",
+          "isFlat": false,
+          "rolls": 0,
+          "value": 7.0
+        },
+        {
+          "statId": 6,
+          "stat": "C.DMG",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 10.0
+        },
+        {
+          "statId": 8,
+          "stat": "ACC",
+          "isFlat": false,
+          "rolls": 3,
+          "value": 25.0
+        }
+      ]
+    },
+    {
+      "id": 57531,
+      "dbType": 4,
+      "slot": "Boots",
+      "ourSlotId": 4,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 4,
+      "rarity": "Epic",
+      "ourRarityIndex": 3,
+      "level": 12,
+      "setId": 34,
+      "set": "Divine Speed",
+      "faction": null,
+      "mainStat": {
+        "statId": 3,
+        "stat": "DEF",
+        "isFlat": false,
+        "value": 39.0
+      },
+      "substats": [
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": false,
+          "rolls": 1,
+          "value": 11.0
+        },
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 5.0
+        },
+        {
+          "statId": 6,
+          "stat": "C.DMG",
+          "isFlat": true,
+          "rolls": 2,
+          "value": 34.0
+        }
+      ]
+    },
+    {
+      "id": 353026,
+      "dbType": 4,
+      "slot": "Boots",
+      "ourSlotId": 4,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 5,
+      "rarity": "Legendary",
+      "ourRarityIndex": 4,
+      "level": 0,
+      "setId": 4,
+      "set": "Speed",
+      "faction": null,
+      "mainStat": {
+        "statId": 1,
+        "stat": "HP",
+        "isFlat": false,
+        "value": 10.0
+      },
+      "substats": [
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 499.0
+        },
+        {
+          "statId": 3,
+          "stat": "DEF",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 27.0
+        },
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 6.0
+        },
+        {
+          "statId": 5,
+          "stat": "C.RATE",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 10.0
+        }
+      ]
+    },
+    {
+      "id": 7275,
+      "dbType": 5,
+      "slot": "Weapon",
+      "ourSlotId": 5,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 5,
+      "rarity": "Legendary",
+      "ourRarityIndex": 4,
+      "level": 16,
+      "setId": 9,
+      "set": "Lifesteal",
+      "faction": null,
+      "mainStat": {
+        "statId": 2,
+        "stat": "ATK",
+        "isFlat": true,
+        "value": 265.0
+      },
+      "substats": [
+        {
+          "statId": 8,
+          "stat": "ACC",
+          "isFlat": false,
+          "rolls": 1,
+          "value": 11.0
+        },
+        {
+          "statId": 7,
+          "stat": "RES",
+          "isFlat": false,
+          "rolls": 2,
+          "value": 18.0
+        },
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": false,
+          "rolls": 1,
+          "value": 12.0
+        },
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 5.0
+        }
+      ]
+    },
+    {
+      "id": 26764,
+      "dbType": 5,
+      "slot": "Weapon",
+      "ourSlotId": 5,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 4,
+      "rarity": "Epic",
+      "ourRarityIndex": 3,
+      "level": 12,
+      "setId": 27,
+      "set": "Reflex",
+      "faction": null,
+      "mainStat": {
+        "statId": 2,
+        "stat": "ATK",
+        "isFlat": true,
+        "value": 170.0
+      },
+      "substats": [
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 5.0
+        },
+        {
+          "statId": 8,
+          "stat": "ACC",
+          "isFlat": false,
+          "rolls": 2,
+          "value": 17.0
+        },
+        {
+          "statId": 6,
+          "stat": "C.DMG",
+          "isFlat": true,
+          "rolls": 1,
+          "value": 23.0
+        }
+      ]
+    },
+    {
+      "id": 352847,
+      "dbType": 5,
+      "slot": "Weapon",
+      "ourSlotId": 5,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 4,
+      "rarity": "Epic",
+      "ourRarityIndex": 3,
+      "level": 0,
+      "setId": 4,
+      "set": "Speed",
+      "faction": null,
+      "mainStat": {
+        "statId": 2,
+        "stat": "ATK",
+        "isFlat": true,
+        "value": 35.0
+      },
+      "substats": [
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 5.0
+        },
+        {
+          "statId": 5,
+          "stat": "C.RATE",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 12.0
+        },
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": false,
+          "rolls": 0,
+          "value": 6.0
+        }
+      ]
+    },
+    {
+      "id": 5272,
+      "dbType": 6,
+      "slot": "Shield",
+      "ourSlotId": 6,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 5,
+      "rarity": "Legendary",
+      "ourRarityIndex": 4,
+      "level": 16,
+      "setId": 7,
+      "set": "Accuracy",
+      "faction": null,
+      "mainStat": {
+        "statId": 3,
+        "stat": "DEF",
+        "isFlat": true,
+        "value": 265.0
+      },
+      "substats": [
+        {
+          "statId": 6,
+          "stat": "C.DMG",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 12.0
+        },
+        {
+          "statId": 5,
+          "stat": "C.RATE",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 9.0
+        },
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": false,
+          "rolls": 2,
+          "value": 18.0
+        },
+        {
+          "statId": 3,
+          "stat": "DEF",
+          "isFlat": false,
+          "rolls": 2,
+          "value": 19.0
+        }
+      ]
+    },
+    {
+      "id": 80452,
+      "dbType": 6,
+      "slot": "Shield",
+      "ourSlotId": 6,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 4,
+      "rarity": "Epic",
+      "ourRarityIndex": 3,
+      "level": 12,
+      "setId": 51,
+      "set": "Bolster",
+      "faction": null,
+      "mainStat": {
+        "statId": 3,
+        "stat": "DEF",
+        "isFlat": true,
+        "value": 170.0
+      },
+      "substats": [
+        {
+          "statId": 8,
+          "stat": "ACC",
+          "isFlat": false,
+          "rolls": 0,
+          "value": 6.0
+        },
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 1,
+          "value": 12.0
+        },
+        {
+          "statId": 7,
+          "stat": "RES",
+          "isFlat": false,
+          "rolls": 2,
+          "value": 20.0
+        }
+      ]
+    },
+    {
+      "id": 352891,
+      "dbType": 6,
+      "slot": "Shield",
+      "ourSlotId": 6,
+      "isAccessory": false,
+      "rank": 6,
+      "dbRarity": 6,
+      "rarity": "Mythical",
+      "ourRarityIndex": 5,
+      "level": 0,
+      "setId": 4,
+      "set": "Speed",
+      "faction": null,
+      "mainStat": {
+        "statId": 3,
+        "stat": "DEF",
+        "isFlat": true,
+        "value": 35.0
+      },
+      "substats": [
+        {
+          "statId": 8,
+          "stat": "ACC",
+          "isFlat": false,
+          "rolls": 0,
+          "value": 7.0
+        },
+        {
+          "statId": 5,
+          "stat": "C.RATE",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 12.0
+        },
+        {
+          "statId": 6,
+          "stat": "C.DMG",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 10.0
+        },
+        {
+          "statId": 3,
+          "stat": "DEF",
+          "isFlat": false,
+          "rolls": 0,
+          "value": 6.0
+        }
+      ]
+    },
+    {
+      "id": 35461,
+      "dbType": 7,
+      "slot": "Ring",
+      "ourSlotId": 7,
+      "isAccessory": true,
+      "rank": 6,
+      "dbRarity": 5,
+      "rarity": "Legendary",
+      "ourRarityIndex": 4,
+      "level": 16,
+      "setId": 1003,
+      "set": "Reaction",
+      "faction": {
+        "id": 2,
+        "name": "High Elves"
+      },
+      "mainStat": {
+        "statId": 3,
+        "stat": "DEF",
+        "isFlat": true,
+        "value": 265.0
+      },
+      "substats": [
+        {
+          "statId": 3,
+          "stat": "DEF",
+          "isFlat": false,
+          "rolls": 1,
+          "value": 11.0
+        },
+        {
+          "statId": 2,
+          "stat": "ATK",
+          "isFlat": false,
+          "rolls": 1,
+          "value": 10.0
+        },
+        {
+          "statId": 2,
+          "stat": "ATK",
+          "isFlat": true,
+          "rolls": 1,
+          "value": 42.0
+        },
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": true,
+          "rolls": 1,
+          "value": 410.0
+        }
+      ]
+    },
+    {
+      "id": 2853,
+      "dbType": 7,
+      "slot": "Ring",
+      "ourSlotId": 7,
+      "isAccessory": true,
+      "rank": 5,
+      "dbRarity": 4,
+      "rarity": "Epic",
+      "ourRarityIndex": 3,
+      "level": 16,
+      "setId": 0,
+      "set": "(none)",
+      "faction": {
+        "id": 15,
+        "name": "Sylvan Watchers"
+      },
+      "mainStat": {
+        "statId": 1,
+        "stat": "HP",
+        "isFlat": true,
+        "value": 3480.0
+      },
+      "substats": [
+        {
+          "statId": 3,
+          "stat": "DEF",
+          "isFlat": false,
+          "rolls": 1,
+          "value": 11.0
+        },
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": false,
+          "rolls": 1,
+          "value": 12.0
+        },
+        {
+          "statId": 2,
+          "stat": "ATK",
+          "isFlat": false,
+          "rolls": 1,
+          "value": 12.0
+        },
+        {
+          "statId": 2,
+          "stat": "ATK",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 22.0
+        }
+      ]
+    },
+    {
+      "id": 40050,
+      "dbType": 8,
+      "slot": "Banner",
+      "ourSlotId": 9,
+      "isAccessory": true,
+      "rank": 6,
+      "dbRarity": 5,
+      "rarity": "Legendary",
+      "ourRarityIndex": 4,
+      "level": 16,
+      "setId": 1003,
+      "set": "Reaction",
+      "faction": {
+        "id": 9,
+        "name": "Demonspawn"
+      },
+      "mainStat": {
+        "statId": 3,
+        "stat": "DEF",
+        "isFlat": true,
+        "value": 265.0
+      },
+      "substats": [
+        {
+          "statId": 8,
+          "stat": "ACC",
+          "isFlat": false,
+          "rolls": 1,
+          "value": 11.0
+        },
+        {
+          "statId": 2,
+          "stat": "ATK",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 15.0
+        },
+        {
+          "statId": 6,
+          "stat": "C.DMG",
+          "isFlat": true,
+          "rolls": 2,
+          "value": 30.0
+        },
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": true,
+          "rolls": 1,
+          "value": 1074.0
+        }
+      ]
+    },
+    {
+      "id": 12080,
+      "dbType": 8,
+      "slot": "Banner",
+      "ourSlotId": 9,
+      "isAccessory": true,
+      "rank": 6,
+      "dbRarity": 5,
+      "rarity": "Legendary",
+      "ourRarityIndex": 4,
+      "level": 16,
+      "setId": 0,
+      "set": "(none)",
+      "faction": {
+        "id": 15,
+        "name": "Sylvan Watchers"
+      },
+      "mainStat": {
+        "statId": 8,
+        "stat": "ACC",
+        "isFlat": false,
+        "value": 40.0
+      },
+      "substats": [
+        {
+          "statId": 2,
+          "stat": "ATK",
+          "isFlat": true,
+          "rolls": 1,
+          "value": 38.0
+        },
+        {
+          "statId": 3,
+          "stat": "DEF",
+          "isFlat": true,
+          "rolls": 1,
+          "value": 51.0
+        },
+        {
+          "statId": 6,
+          "stat": "C.DMG",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 9.0
+        },
+        {
+          "statId": 5,
+          "stat": "C.RATE",
+          "isFlat": true,
+          "rolls": 2,
+          "value": 30.0
+        }
+      ]
+    },
+    {
+      "id": 35459,
+      "dbType": 9,
+      "slot": "Amulet",
+      "ourSlotId": 8,
+      "isAccessory": true,
+      "rank": 6,
+      "dbRarity": 5,
+      "rarity": "Legendary",
+      "ourRarityIndex": 4,
+      "level": 16,
+      "setId": 1003,
+      "set": "Reaction",
+      "faction": {
+        "id": 2,
+        "name": "High Elves"
+      },
+      "mainStat": {
+        "statId": 1,
+        "stat": "HP",
+        "isFlat": true,
+        "value": 6120.0
+      },
+      "substats": [
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": false,
+          "rolls": 2,
+          "value": 17.0
+        },
+        {
+          "statId": 3,
+          "stat": "DEF",
+          "isFlat": true,
+          "rolls": 1,
+          "value": 49.0
+        },
+        {
+          "statId": 2,
+          "stat": "ATK",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 18.0
+        },
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 1,
+          "value": 11.0
+        }
+      ]
+    },
+    {
+      "id": 13315,
+      "dbType": 9,
+      "slot": "Amulet",
+      "ourSlotId": 8,
+      "isAccessory": true,
+      "rank": 5,
+      "dbRarity": 5,
+      "rarity": "Legendary",
+      "ourRarityIndex": 4,
+      "level": 16,
+      "setId": 0,
+      "set": "(none)",
+      "faction": {
+        "id": 16,
+        "name": "Argonites"
+      },
+      "mainStat": {
+        "statId": 3,
+        "stat": "DEF",
+        "isFlat": true,
+        "value": 338.0
+      },
+      "substats": [
+        {
+          "statId": 3,
+          "stat": "DEF",
+          "isFlat": false,
+          "rolls": 1,
+          "value": 11.0
+        },
+        {
+          "statId": 4,
+          "stat": "SPD",
+          "isFlat": true,
+          "rolls": 2,
+          "value": 14.0
+        },
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": true,
+          "rolls": 0,
+          "value": 427.0
+        },
+        {
+          "statId": 1,
+          "stat": "HP",
+          "isFlat": false,
+          "rolls": 1,
+          "value": 12.0
+        }
+      ]
+    }
+  ]
+}
