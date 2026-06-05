@@ -29,10 +29,10 @@ model, so it's a second fan reimplementation — a proxy, not ground truth.
 
 ## RSL Helper DB notes (reverse-engineered 2026-06-05)
 
-Source: `…/RslHelper/Config/RSLHelper.db` (live) / `…/RSL_Helper_V4/RSLHelper.db`
+Source: a `*_RSLHelper.db` under `…/RslHelper/Config/` (live) or the RSL Helper install dir
 (~1.4 MB). Gear lives in the **`Artifacts`** table — armor *and* accessories. The
 `accessories`/`accessory_ids`/`presets` tables are an unused, empty loadout feature; `AccRecords`
-is arena history.
+holds non-gear records (its champion-id columns are null in this DB — not battle/arena history).
 
 ### Per-stat columns
 Main = `mid,mlvl,mfl,mlvlid,mgv`; substats `s1..s4` each = `sNid,sNlvl,sNfl,sNlvlid,sNgv`:

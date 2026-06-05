@@ -20,11 +20,13 @@ sit in swapped positions; resolved via equipped-champion stat lift (Champs.ACC/R
 
 Set ids (`aset`) match our ARTIFACT_SET_NAMES space directly. Accessory faction is in `accset` (1-17).
 """
-import sqlite3, json, os
+import sqlite3, json, os, glob
 
 OUT_DIR = os.path.dirname(os.path.abspath(__file__))
 # Source RslHelper.db lives in the git-ignored resources/ folder (see resources/README.md).
-SRC = os.path.join(OUT_DIR, "resources", "RSLHelper.db")
+# Glob so no account-specific filename is ever hardcoded or committed.
+_src = sorted(glob.glob(os.path.join(OUT_DIR, "resources", "*RSLHelper.db")))
+SRC = _src[0] if _src else os.path.join(OUT_DIR, "resources", "RSLHelper.db")
 DB_OUT = os.path.join(OUT_DIR, "known-gear.db")
 MAN_OUT = os.path.join(OUT_DIR, "known-gear.manifest.json")
 
