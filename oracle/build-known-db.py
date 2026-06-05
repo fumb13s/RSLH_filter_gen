@@ -22,8 +22,9 @@ Set ids (`aset`) match our ARTIFACT_SET_NAMES space directly. Accessory faction 
 """
 import sqlite3, json, os
 
-SRC = "/mnt/g/Games/Plarium/RSL_Helper_V4/RSLHelper.db"
 OUT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Source RslHelper.db lives in the git-ignored resources/ folder (see resources/README.md).
+SRC = os.path.join(OUT_DIR, "resources", "RSLHelper.db")
 DB_OUT = os.path.join(OUT_DIR, "known-gear.db")
 MAN_OUT = os.path.join(OUT_DIR, "known-gear.manifest.json")
 

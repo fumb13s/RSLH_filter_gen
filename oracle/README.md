@@ -30,7 +30,7 @@ model, so it's a second fan reimplementation — a proxy, not ground truth.
 ## RSL Helper DB notes (reverse-engineered 2026-06-05)
 
 Source: `…/RslHelper/Config/RSLHelper.db` (live) / `…/RSL_Helper_V4/RSLHelper.db`
-(~75 MB). Gear lives in the **`Artifacts`** table — armor *and* accessories. The
+(~1.4 MB). Gear lives in the **`Artifacts`** table — armor *and* accessories. The
 `accessories`/`accessory_ids`/`presets` tables are an unused, empty loadout feature; `AccRecords`
 is arena history.
 

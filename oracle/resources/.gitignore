@@ -1,0 +1,4 @@
+# Local-only oracle inputs: large / personal / third-party. NOT committed.
+*
+!.gitignore
+!README.md
