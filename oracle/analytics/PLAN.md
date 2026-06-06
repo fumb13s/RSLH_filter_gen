@@ -4,12 +4,12 @@
 
 **Goal:** Build the `oracle/analytics/` tool suite that decodes the `RSLHelper.db` gear snapshot and produces a supply-and-demand-aware keep/delete/focus triage report.
 
-**Architecture:** Plain Node ESM scripts in a flat `oracle/analytics/` dir. A shared `decode.mjs` (lifted from `probe.mjs`) turns DB rows into canonical items in *our* stat-id space; `sets.mjs`/`weights.mjs` hold the co-authored data; `score → supply → triage` are pure functions over decoded items; `census.mjs` + `analyze.mjs` aggregate and emit `out/report.{json,md}`. The full design is in `oracle/analytics/DESIGN.md`.
+**Architecture:** Plain Node ESM scripts in a flat `oracle/analytics/` dir. Shared DB-decode primitives live in `oracle/lib/decode.mjs` (extracted from `probe.mjs`, which is refactored to import them — no duplication) and turn DB rows into canonical items in *our* stat-id space; `sets.mjs`/`weights.mjs` hold the co-authored data; `score → supply → triage` are pure functions over decoded items; `census.mjs` + `analyze.mjs` aggregate and emit `out/report.{json,md}`. The full design is in `oracle/analytics/DESIGN.md`.
 
 **Tech Stack:** Node ≥ 22 (`node:sqlite` `DatabaseSync`; `BigInt` coercion), **vitest** for tests (folded into the root `npm test` via a broadened `include`), imports `@rslh/core` for `SLOT_STATS` + mappings.
 
 **Conventions for this plan:**
-- All modules are flat in `oracle/analytics/` (no `lib/` subdir) so relative imports stay simple. This deviates from DESIGN.md §5.1's `lib/` layout — intentional.
+- Analytics modules are flat in `oracle/analytics/` (no nested `lib/`). The one genuinely shared dependency — the DB-decode primitives — lives one level up in `oracle/lib/decode.mjs`, imported by **both** `oracle/analytics/` and `oracle/probe/` (DRY: one decoder, never two copies).
 - Modules import core via the package name: `import { SLOT_STATS } from "@rslh/core"` (resolves through the workspace symlink in root `node_modules` → `packages/core/dist`). Core must be built first: `npx tsc -b packages/core` — the pre-commit `npm run build && npm test` already does this.
 - Tests are **vitest** (`.test.mjs`), folded into `npm test` by broadening the root `vitest.config.ts` `include` (Task 0). Run all: `npm test`; iterate on one file: `npx vitest run <path>`.
 - `node:sqlite` loads on Node 22.14+ without `--experimental-sqlite` (one cosmetic `ExperimentalWarning` on stderr); the flag stays only on the `analyze.mjs` *run* command for older-Node portability.
@@ -23,7 +23,9 @@
 | File | Responsibility |
 |---|---|
 | `oracle/analytics/.gitignore` | ignore `out/` and `findings/` (derived from personal DB) |
-| `oracle/analytics/decode.mjs` | DB → canonical items; pure `decodeValue`/`decodeRow` + `readArtifacts(dbPath)` |
+| `oracle/lib/decode.mjs` | **shared** DB-decode primitives (`decodeValue`, stat map, `SUB` cols) — imported by probe + analytics |
+| `oracle/probe/probe.mjs` (**modify**) | drop inline decode primitives; import them from `lib/decode.mjs` |
+| `oracle/analytics/decode.mjs` | imports `lib/decode.mjs`; adds canonical-item `decodeRow` + `readArtifacts(dbPath)` |
 | `oracle/analytics/sets.mjs` | the §3.2 set annotation table + `getSet(id)` (fallback) + `expandRoles()` |
 | `oracle/analytics/weights.mjs` | desirability matrix, glyph thresholds, supply floors, cut lines |
 | `oracle/analytics/score.mjs` | `quality(item)` (best-matching-role) + `investment(item)` |
@@ -93,24 +95,31 @@ git commit -m "chore(analytics): scaffold dir, gitignore, vitest include"
 
 ---
 
-## Task 1: `decode.mjs` (the foundation)
+## Task 1: Shared decode (extract from probe) + analytics decoder
+
+The DB-decode math currently lives inline in `oracle/probe/probe.mjs`, which has no exports.
+Extract the shared primitives into one module both tools import — never two copies of code that
+must decode the same DB identically.
 
 **Files:**
-- Create: `oracle/analytics/decode.mjs`
+- Create: `oracle/lib/decode.mjs` (shared primitives)
+- Modify: `oracle/probe/probe.mjs` (import them; drop the inline copies)
+- Create: `oracle/analytics/decode.mjs` (imports shared; adds the canonical item + reader)
 - Test: `oracle/analytics/__tests__/decode.test.mjs`
 
-- [ ] **Step 1: Write `decode.mjs`**
+- [ ] **Step 1: Create `oracle/lib/decode.mjs`** (lifted verbatim from `probe.mjs`)
 
 ```js
-// DB row -> canonical item, in our stat-id space. Lifted from oracle/probe/probe.mjs.
-import { DatabaseSync } from "node:sqlite";
-
-const POW32 = 2 ** 32;
+// Shared DB-decode primitives for RSLHelper.db gear. Imported by oracle/probe (differential
+// probe vs Sellfile Creator) and oracle/analytics (gear triage) so the two never drift.
+export const POW32 = 2 ** 32;
+export const N = (v) => (v == null ? 0 : Number(v)); // node:sqlite returns BigInt
+// DB stat enum (1HP 2ATK 3DEF 4SPD 5RES 6ACC 7CRATE 8CDMG) -> our STAT_NAMES id.
 export const DBSTAT_TO_OURSTAT = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 7, 6: 8, 7: 5, 8: 6 };
-const PCT_ALWAYS = new Set([7, 8]);        // DB CR, CDMG -> always *100
-const PCT_WHEN_PCT = new Set([1, 2, 3]);   // DB HP/ATK/DEF -> *100 only when not flat
-const N = (v) => (v == null ? 0 : Number(v)); // node:sqlite returns BigInt
+export const PCT_ALWAYS = new Set([7, 8]);        // DB CR, CDMG -> always *100
+export const PCT_WHEN_PCT = new Set([1, 2, 3]);   // DB HP/ATK/DEF -> *100 only when not flat
 
+// value = lvlid/2**32, *100 for percentages. Same encoding for substat values AND glyphs.
 export function decodeValue(dbStatId, isFlat, rawBase) {
   const raw = N(rawBase);
   if (raw === 0) return 0;
@@ -121,9 +130,55 @@ export function decodeValue(dbStatId, isFlat, rawBase) {
   return Math.round(v * 1000) / 1000;
 }
 
-const SUBS = [1, 2, 3, 4].map((i) => ({
+// s1..s4 substat column names. `gv` (glyph value) is used by analytics; probe's SELECT lists
+// [id, fl, lvl, base] explicitly, so the extra field is invisible to it.
+export const SUB = [1, 2, 3, 4].map((i) => ({
   id: `s${i}id`, fl: `s${i}fl`, lvl: `s${i}lvl`, base: `s${i}lvlid`, gv: `s${i}gv`,
 }));
+```
+
+- [ ] **Step 2: Refactor `oracle/probe/probe.mjs` to import the primitives**
+
+Delete probe's inline `N`, `POW32`, `DBSTAT_TO_OURSTAT`, `PCT_ALWAYS`, `PCT_WHEN_PCT`,
+`decodeValue`, and `SUB` definitions. Keep the SFC-specific bits (`UwA`, `variantOf`, `mkStat`,
+the `ours`/`sfc` builders, worker boot, diff). The top of the file becomes:
+
+```js
+import { readFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+import { evaluateFilter, generateFilter, defaultRule, emptySubstat }
+  from "../../packages/core/dist/index.js";
+import { N, DBSTAT_TO_OURSTAT, decodeValue, SUB } from "../lib/decode.mjs";
+
+const here = (p) => new URL(p, import.meta.url);
+
+// accset -> faction (UwA): identity except 13->4 (Barbarians dup)
+const UwA = { 0: 0, 13: 4 };
+// SFC variant enum (probe-specific): (dbStatId << 8) | isFlat
+const variantOf = (dbStatId, isFlat) => (dbStatId << 8) | (isFlat ? 1 : 0);
+```
+
+Everything below is unchanged — it already calls `N`, `DBSTAT_TO_OURSTAT`, `decodeValue`, and
+`SUB`, now sourced from the import.
+
+- [ ] **Step 3: Verify probe still decodes (behavior-preserving)**
+
+Probe runs headless in Node (boots the SFC worker from the git-ignored `gen/`; it is **not** the
+RSL Helper harness).
+
+Run: `node oracle/probe/probe.mjs`
+Expected: prints `decoded 24 artifacts` and the same ~19–23/24 agreement as before — identical
+output, since it's the same functions relocated. (If `gen/` is absent, run `node --check
+oracle/probe/probe.mjs` to at least confirm it parses and the import resolves.)
+
+- [ ] **Step 4: Create `oracle/analytics/decode.mjs`** (imports shared; adds the canonical item)
+
+```js
+import { DatabaseSync } from "node:sqlite";
+import { N, DBSTAT_TO_OURSTAT, decodeValue, SUB } from "../lib/decode.mjs";
+
+// Re-export so tests/consumers can grab the primitive from this one module.
+export { decodeValue, N } from "../lib/decode.mjs";
 
 export function isCorrupt(row) {
   const id = N(row.ID), rarity = N(row.rarity), rank = N(row.rank);
@@ -138,7 +193,7 @@ export function decodeRow(row) {
     value: decodeValue(dbMain, mainFlat, row.mlvlid),
   };
   const substats = [];
-  for (const s of SUBS) {
+  for (const s of SUB) {
     const dbId = N(row[s.id]);
     if (dbId <= 0) continue;
     const isFlat = N(row[s.fl]) !== 0;
@@ -162,7 +217,7 @@ export function decodeRow(row) {
 }
 
 const COLS = ["ID", "type", "rank", "rarity", "lvl", "mid", "mfl", "mlvlid", "aset", "accset",
-  "ASCLEVEL", "cID", ...SUBS.flatMap((s) => [s.id, s.fl, s.lvl, s.base, s.gv])].join(",");
+  "ASCLEVEL", "cID", ...SUB.flatMap((s) => [s.id, s.fl, s.lvl, s.base, s.gv])].join(",");
 
 export function readArtifacts(dbPath) {
   const db = new DatabaseSync(dbPath);
@@ -177,7 +232,7 @@ export function readArtifacts(dbPath) {
 }
 ```
 
-- [ ] **Step 2: Write the test**
+- [ ] **Step 5: Write the test** (`decodeValue` is re-exported from `../decode.mjs`)
 
 ```js
 // oracle/analytics/__tests__/decode.test.mjs
@@ -225,20 +280,16 @@ test("decode matches known-gear manifest (24 items)", () => {
 });
 ```
 
-- [ ] **Step 3: Run — expect FAIL (asserts run against real data)**
+- [ ] **Step 6: Run — expect FAIL, iterate to PASS**
 
 Run: `npx vitest run oracle/analytics/__tests__/decode.test.mjs`
-Expected: tests execute; a specific `#id` assertion pinpoints any decode mismatch. (One `node:sqlite` `ExperimentalWarning` on stderr is expected.)
+Expected final: vitest reports **4 passed**. A specific `#id` assertion pinpoints any decode mismatch. (One `node:sqlite` `ExperimentalWarning` on stderr is expected.)
 
-- [ ] **Step 4: Iterate decode until all pass**
-
-Expected final: vitest reports **4 passed**.
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add oracle/analytics/decode.mjs oracle/analytics/__tests__/decode.test.mjs
-git commit -m "feat(analytics): decode DB rows to canonical items (+manifest test)"
+git add oracle/lib/decode.mjs oracle/probe/probe.mjs oracle/analytics/decode.mjs oracle/analytics/__tests__/decode.test.mjs
+git commit -m "feat(analytics): shared gear decode (extracted from probe) + analytics decoder"
 ```
 
 ---
@@ -997,7 +1048,7 @@ Not a code task — a review gate. After Task 8 runs on the real DB:
 ## Self-Review
 
 **Spec coverage** (DESIGN.md → task):
-- §2 data/decode → Task 1 (incl. corrupt-row filter, glyph + ascLevel + cID columns). ✓
+- §2 data/decode → Task 1: primitives extracted to shared `oracle/lib/decode.mjs` (probe refactored onto it, no duplication); analytics `decodeRow` adds the corrupt-row filter + glyph/ascLevel/cID. ✓
 - §3.1 roles, §3.2 set table → Tasks 2–3. ✓
 - §3.3 quality (best-matching role, slot-relative ceiling) → Task 4. ✓
 - §3.4 investment flag (ascended/glyphed; equipped = context only) → Task 4 (`investment`) + shown in report, never excludes. ✓
