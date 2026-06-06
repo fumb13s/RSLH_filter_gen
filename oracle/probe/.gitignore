@@ -1,0 +1,3 @@
+# Third-party-derived artifacts: the extracted Sellfile Creator worker + wasm, the
+# beautified bundle, and analysis outputs. Regenerated locally, never committed.
+gen/
