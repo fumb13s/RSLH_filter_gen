@@ -41,3 +41,10 @@ test("decode matches known-gear manifest (24 items)", () => {
     });
   }
 });
+
+test("Mythical bonus roll (sNmlvlid) is included in the substat value", () => {
+  const { items } = readArtifacts(here("../../known-gear.db"));
+  const myth = items.find((it) => it.id === 352891); // Mythical Shield
+  const res = myth.substats.find((s) => s.statId === 7); // RES: base 12 + Mythical bonus 10
+  expect(res.value).toBe(22);
+});

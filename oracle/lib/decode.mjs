@@ -7,7 +7,8 @@ export const DBSTAT_TO_OURSTAT = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 7, 6: 8, 7: 5, 8: 
 export const PCT_ALWAYS = new Set([7, 8]);        // DB CR, CDMG -> always *100
 export const PCT_WHEN_PCT = new Set([1, 2, 3]);   // DB HP/ATK/DEF -> *100 only when not flat
 
-// value = lvlid/2**32, *100 for percentages. Same encoding for substat values AND glyphs.
+// value = lvlid/2**32, *100 for percentages. Same encoding for substat base values, glyphs,
+// and the Mythical bonus roll (sNmlvlid).
 export function decodeValue(dbStatId, isFlat, rawBase) {
   const raw = N(rawBase);
   if (raw === 0) return 0;
@@ -18,8 +19,8 @@ export function decodeValue(dbStatId, isFlat, rawBase) {
   return Math.round(v * 1000) / 1000;
 }
 
-// s1..s4 substat column names. `gv` (glyph value) is used by analytics; probe's SELECT lists
-// [id, fl, lvl, base] explicitly, so the extra field is invisible to it.
+// s1..s4 substat column names. `gv` (glyph) and `myth` (Mythical bonus roll, sNmlvlid) are used
+// by analytics; probe's SELECT lists [id, fl, lvl, base] explicitly, so the extras are invisible to it.
 export const SUB = [1, 2, 3, 4].map((i) => ({
-  id: `s${i}id`, fl: `s${i}fl`, lvl: `s${i}lvl`, base: `s${i}lvlid`, gv: `s${i}gv`,
+  id: `s${i}id`, fl: `s${i}fl`, lvl: `s${i}lvl`, base: `s${i}lvlid`, gv: `s${i}gv`, myth: `s${i}mlvlid`,
 }));

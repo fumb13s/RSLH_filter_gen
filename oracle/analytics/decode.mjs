@@ -25,7 +25,8 @@ export function decodeRow(row) {
       statId: DBSTAT_TO_OURSTAT[dbId] ?? dbId,
       isFlat,
       rolls: N(row[s.lvl]),                  // raw 0-based upgrade count; base sub = 0 (probe's `|| 1` is SFC-only)
-      value: decodeValue(dbId, isFlat, row[s.base]),
+      // total value = base roll(s) + Mythical bonus roll (sNmlvlid); the 6th roll event on Mythical gear.
+      value: decodeValue(dbId, isFlat, N(row[s.base]) + N(row[s.myth])),
       glyph: decodeValue(dbId, isFlat, row[s.gv]),
     });
   }
@@ -41,7 +42,7 @@ export function decodeRow(row) {
 }
 
 const COLS = ["ID", "type", "rank", "rarity", "lvl", "mid", "mfl", "mlvlid", "aset", "accset",
-  "ASCLEVEL", "cID", ...SUB.flatMap((s) => [s.id, s.fl, s.lvl, s.base, s.gv])].join(",");
+  "ASCLEVEL", "cID", ...SUB.flatMap((s) => [s.id, s.fl, s.lvl, s.base, s.gv, s.myth])].join(",");
 
 export function readArtifacts(dbPath) {
   const db = new DatabaseSync(dbPath);
