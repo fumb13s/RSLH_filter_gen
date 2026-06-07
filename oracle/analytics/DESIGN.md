@@ -263,15 +263,25 @@ tools compose so the human can run one stage or the whole pipeline.
 - **`census.mjs`** — §4 distributions.
 - **`supply.mjs`** — §3.5 bucket counts, saturation, setless-dominated detection.
 - **`score.mjs`** — §3.3 quality + §3.4 investment flag per piece.
-- **`triage.mjs`** — §3.6–3.7: focus list + delete list with reasons.
-- **`analyze.mjs`** — orchestrates all of the above; writes `out/report.json` +
-  `out/report.md`.
+- **`triage.mjs`** — §3.6–3.8: focus list + delete list (junk + slot-balance) with reasons.
+- **`analyze.mjs`** — orchestrates all of the above; writes `out/<snapshot-date>-report.json` +
+  `out/<snapshot-date>-report.md`. With no arg it analyzes the newest `resources/*-RSLHelper.db`.
+- **`refresh.sh`** — **manual** snapshot refresh: copies the live RSL Helper DB
+  (`…/AppData/Roaming/RslHelper/Config/*_RSLHelper.db`, or `RSLHELPER_DB=`) into
+  `resources/<date>-RSLHelper.db`, integrity-checks it, and stops. RSL Helper holds the live file
+  open, so a sequential `cp` is required (a direct sqlite open hits `SQLITE_NOTADB`). Run
+  `analyze.mjs` yourself afterwards — deliberately not chained.
 
-`oracle/analytics/out/` is gitignored (derived from personal DB).
+**Dating convention:** snapshots, reports, and findings are all prefixed with the **account-data
+date** (the live DB's last-write day), *not* the day the tool was run — so re-analyzing an old
+snapshot keeps its true date. `analyze.mjs` reads that date from the snapshot's filename prefix
+(falling back to its mtime).
+
+`oracle/analytics/out/` and `resources/` are gitignored (derived from / containing the personal DB).
 
 ### 5.2 Interactive analysis writeup
 
-`oracle/analytics/findings/YYYY-MM-DD.md` — co-authored from the tool output: census highlights,
+`oracle/analytics/findings/<snapshot-date>.md` — co-authored from the tool output: census highlights,
 the biggest cull levers (setless 728; low-demand oversupplied buckets), the focus list, and
 concrete recommendations. Also gitignored (reflects personal inventory).
 

@@ -1,4 +1,4 @@
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { readArtifacts } from "./decode.mjs";
 import { census } from "./census.mjs";
@@ -7,7 +7,23 @@ import { CUTS, SUPPLY } from "./weights.mjs";
 import { ARTIFACT_SLOT_NAMES, statDisplayName, lookupName, ARTIFACT_SET_NAMES, FACTION_NAMES } from "@rslh/core";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
-const dbPath = process.argv[2] || here("../resources/RSLHelper.db");
+
+// Snapshot to analyze: explicit arg, else the newest date-prefixed snapshot in resources/.
+function resolveDb() {
+  if (process.argv[2]) return process.argv[2];
+  const dir = here("../resources");
+  const snaps = readdirSync(dir).filter((f) => /-RSLHelper\.db$/.test(f)).sort();
+  if (!snaps.length) { console.error(`no resources/*-RSLHelper.db snapshot found in ${dir}; run refresh.sh`); process.exit(1); }
+  return `${dir}/${snaps[snaps.length - 1]}`;
+}
+// The account-snapshot date drives the report (NOT today's date): the YYYY-MM-DD filename prefix,
+// falling back to the file's last-write day.
+function snapshotDate(p) {
+  const m = (p.split(/[\\/]/).pop() || "").match(/(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : statSync(p).mtime.toISOString().slice(0, 10);
+}
+const dbPath = resolveDb();
+const date = snapshotDate(dbPath);
 
 const { items, corrupt, total } = readArtifacts(dbPath);
 const cen = census(items);
@@ -58,7 +74,7 @@ function topGroups(arr, keyFn, n = 15) {
 const md = [];
 const P = (...lines) => md.push(...lines);
 
-P(`# Gear Vault Analytics — ${new Date().toISOString().slice(0, 10)}`, ``);
+P(`# Gear Vault Analytics — ${date}`, ``);
 P(`**${total} rows** (${corrupt.length} corrupt skipped) · equipped ${cen.equipped} · fully-ascended ${cen.ascended} · glyphed ${cen.glyphed} · accessories ${cen.accessories} (setless ${cen.setless})`, ``);
 
 P(`## Recommendation summary`, ``);
@@ -143,7 +159,7 @@ for (const slot of SLOTS) {
 const outDir = here("./out");
 mkdirSync(outDir, { recursive: true });
 const json = {
-  generatedFor: dbPath, total, corrupt,
+  snapshotDate: date, generatedFor: dbPath, total, corrupt,
   census: {
     ...cen, bySlot: Object.fromEntries(cen.bySlot), bySet: Object.fromEntries(cen.bySet),
     byRarity: Object.fromEntries(cen.byRarity), byLevel: Object.fromEntries(cen.byLevel),
@@ -161,6 +177,6 @@ const json = {
     potential: s.qPotential ? s.qPotential.score : null, reason: s.reason,
   })),
 };
-writeFileSync(here("./out/report.json"), JSON.stringify(json, null, 2));
-writeFileSync(here("./out/report.md"), md.join("\n"));
-console.log(`decoded ${items.length} (skipped ${corrupt.length}); delete ${deletes.length} (acc ${delAcc.length}, armor ${delArm.length}), focus ${focus.length}, upgrade ${upgrades.length}. Wrote out/report.{json,md}`);
+writeFileSync(here(`./out/${date}-report.json`), JSON.stringify(json, null, 2));
+writeFileSync(here(`./out/${date}-report.md`), md.join("\n"));
+console.log(`snapshot ${date}: decoded ${items.length} (skipped ${corrupt.length}); delete ${deletes.length} (acc ${delAcc.length}, armor ${delArm.length}), focus ${focus.length}, upgrade ${upgrades.length}. Wrote out/${date}-report.{json,md}`);
