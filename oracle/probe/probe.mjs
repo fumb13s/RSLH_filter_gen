@@ -1,37 +1,19 @@
 // Differential oracle probe (headless, no browser).
 // Decode known-gear.db -> feed the SAME gear + SAME .hsf to BOTH Sellfile
 // Creator's eval worker (Rust/WASM) and our evaluateFilter(), then diff verdicts.
-// Lives in the gitignored _deobf/ because it depends on the third-party worker+wasm.
+// DB-decode primitives are shared with oracle/analytics via ../lib/decode.mjs.
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { evaluateFilter, generateFilter, defaultRule, emptySubstat }
   from "../../packages/core/dist/index.js";
+import { N, DBSTAT_TO_OURSTAT, decodeValue, SUB } from "../lib/decode.mjs";
 
 const here = (p) => new URL(p, import.meta.url);
-const N = (v) => (v == null ? 0 : Number(v)); // node:sqlite hands back BigInt
 
-// ---- decode tables (from SFC's OwA decoder; confirmed against our RE) ----
-const POW32 = 2 ** 32;
-const DBSTAT_TO_OURSTAT = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 7, 6: 8, 7: 5, 8: 6 };
-const PCT_ALWAYS = new Set([7, 8]);          // DB CR, CDMG -> always *100
-const PCT_WHEN_PCT = new Set([1, 2, 3]);     // DB HP/ATK/DEF -> *100 only when not flat
 // accset -> faction (UwA): identity except 13->4 (Barbarians dup)
 const UwA = { 0: 0, 13: 4 };
-
-function decodeValue(dbStatId, isFlat, rawBase) {
-  const raw = N(rawBase);
-  if (raw === 0) return 0;
-  let v = raw / POW32;
-  const pct = PCT_ALWAYS.has(dbStatId) || (!isFlat && PCT_WHEN_PCT.has(dbStatId));
-  if (pct) return Math.round(v * 100 * 100) / 100;          // *100 then 2dp
-  if (dbStatId >= 1 && dbStatId <= 6) return Math.round(v);   // flat stats -> int
-  return Math.round(v * 1000) / 1000;
-}
+// SFC variant enum (probe-specific): (dbStatId << 8) | isFlat
 const variantOf = (dbStatId, isFlat) => (dbStatId << 8) | (isFlat ? 1 : 0);
-
-const SUB = [1, 2, 3, 4].map((i) => ({
-  id: `s${i}id`, fl: `s${i}fl`, lvl: `s${i}lvl`, base: `s${i}lvlid`,
-}));
 
 // ---- read + decode the gear ----
 const db = new DatabaseSync(here("../known-gear.db").pathname);
