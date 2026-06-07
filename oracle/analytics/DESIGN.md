@@ -142,6 +142,11 @@ Notes:
 
 ### 3.3 Quality score (intrinsic, per piece → 0–100)
 
+> **⚠️ Superseded — see §10 (Addendum, 2026-06-07).** Implementation revealed this
+> mean-normalized model saturated badly (82% of rings scored exactly 100) and never actually
+> wired in the main stat. It was rebuilt as a value-based model. This section is kept verbatim
+> as the original design record; the as-built scoring is §10.
+
 `bestRole(piece) = argmax over the set's roles` — this is the **synergy mechanism**: a crit
 substat is weighted by the role that fits the set best. On a DPS set crit uses DPS weights
 (high); on a Support-only set crit uses Support weights (low). Setless and "All" sets evaluate
@@ -307,3 +312,104 @@ implementation step, reviewed before the writeup is finalized.
   provisional until resolved.
 - **SFC maxed-Legendary-armor protection** — a separate oracle investigation, unrelated to this
   tool's `.hsf`-correct evaluation.
+
+## 10. Addendum — value-based scoring v2 (2026-06-07)
+
+> **Supersedes §3.3** (quality score) and **extends §6** (adds a second weight matrix +
+> mechanics-derived maxima). Everything else stands unchanged: §3.1 roles, §3.2 set table,
+> §3.4 investment, §3.5 supply, §3.6 keep-premium, §3.7 triage, §4 census. The sections above
+> are preserved verbatim as the original design record; this is the **as-built** model.
+
+Building §3.3 surfaced two fatal flaws, so the quality score was rebuilt from the game's roll
+mechanics rather than a normalized mean.
+
+### 10.1 Why §3.3 was rebuilt
+
+- **Saturation.** §3.3 divided a roll-weighted *mean* substat desirability by the *mean* of a
+  slot's top-4 achievable desirabilities. A mean is not a valid upper bound for a weighted mean,
+  and it under-shoots most where a slot's stats are least uniform — so **82% of rings, 63% of
+  banners, 49% of amulets scored exactly 100**, "focus" could only fire on the variable-main
+  armor slots, and per-slot percentiles were meaningless wherever scores piled at the ceiling.
+- **The main stat was never wired in.** §3.3 listed "main-stat fit" as a component but the build
+  shipped substats-only, so a flat-DEF-main boots with good subs outscored a SPD-main boots
+  (q100 vs q19) — exactly backwards.
+
+### 10.2 Decode prerequisite — the 6th roll event
+
+A substat accrues up to **6 roll events**: reveal + Mythical's bonus starting roll + 4 upgrades.
+The decoder read only `sNlvlid` (reveal + upgrades), silently dropping the Mythical bonus
+`sNmlvlid` (e.g. SPD subs capped at 30 instead of 34, 0 subs ≥ 31 instead of 5). Fixed:
+`value = decode(sNlvlid + sNmlvlid)`. (Main stats get **no** Mythical bonus — a main's value is a
+function of rank + level only, not rarity, confirmed against the vault.)
+
+### 10.3 Two desirability matrices (main ≠ sub)
+
+A stat's worth as a **main** differs from its worth as a **substat**, so there are two role×stat
+matrices:
+
+- **Substat `WEIGHTS`** (crit-led; §6) — unchanged. C.RATE = C.DMG as subs (you need crit rate to
+  crit); flat HP/ATK/DEF = 0.1.
+- **Main `MAIN_WEIGHTS`** (new): SPD 1.0 > **C.DMG 0.95 > C.RATE 0.9** > **dmg% 0.8** > ACC 0.5 >
+  off-% 0.2 > RES 0.15 > flat 0.1. Support: **HP% = ACC = RES = 0.8** (equal "in general"),
+  DEF% 0.6, SPD 1.0. (`dmg%` = ATK%/DEF%/HP% for ATK/DEF/HP-DPS.)
+- **Flat accessory main → %**: a flat HP/ATK/DEF *main* on a Ring/Amulet/Banner is a large
+  absolute stat, so it is scored as its % counterpart; on armor a flat main stays low.
+
+### 10.4 Value-completeness (magnitude is neutralized)
+
+Every stat contributes `desir × (value / theoreticalMax)`: the value is first normalized to
+[0,1] against **its own** ceiling, *then* weighted. Raw magnitude can't leak in — a maxed flat HP
+(3390) and a SPD (36) both read as "1.0 complete", and desirability does the ranking. A stat's
+contribution therefore lives in `[0, desir]`: flat HP can never exceed **0.10** no matter the
+number, while a single base SPD roll already contributes 0.17.
+
+- `mainMax(slot, stat)` — actual 6★ / +16 main ceilings, a small validated table (`mainstats.mjs`).
+- `subMax(stat) = MAX_ROLLS × maxPerRoll@6★` from core's `ROLL_RANGES`, with `MAX_ROLLS = 6`.
+  **Theoretical, not empirical** — a luckier future roll can never break the ceiling, so results
+  are reproducible across snapshots.
+
+### 10.5 The substat ceiling (`subCeiling`)
+
+The subComponent denominator is the **best *achievable* substat lineup** for the slot+role,
+computed from the roll budget (`rolls.mjs`): take the 4 highest-desirability achievable substats,
+then spend the budget (`STARTING_SUBSTATS` + `UPGRADE_LEVELS` = 9 events, one sub capped at
+`MAX_ROLLS`) greedily on the highest-desirability sub → rolls `[6,1,1,1]`, summed as
+desirability-weighted completeness.
+
+- **Slot-relative**: boots ceiling ≈ 1.43 (SPD + 2 crits + dmg%), ring ≈ 0.88 (only HP/ATK/DEF).
+  A ring is judged against what a *ring* can be, so flat-bound slots aren't unfairly crushed.
+- **Main-excluded**: a substat can never duplicate the main, so the item's main is removed from
+  the achievable pool (a SPD-main boots' subs are judged against the best *non-SPD* lineup). This
+  is why even a perfect boots tops out below 100 — SPD can be main *or* sub, not both.
+
+### 10.6 The score
+
+For each role in the set's roles, then argmax over roles:
+
+```
+mainComponent = mainFit × (mainValue / mainMax),  mainFit = mainDesir / maxMainDesir(slot, role)
+subComponent  = Σ_subs desir × (subValue / subMax)  ÷  subCeiling(slot, role, exclude = main)
+quality       = 100 × (W_main · mainComponent + W_sub · subComponent) / (W_main + W_sub)
+```
+
+Both components are value-completeness in [0,1]; `subComponent` is clamped to 1. `W_main : W_sub =
+1 : 1` (`BLEND`).
+
+### 10.7 The blend principle
+
+`W` is constrained by one rule: **best main + bad subs must rank below second-best main + perfect
+subs** (a SPD-main boots with junk subs is worth less than an ATK%-main boots that's perfectly
+rolled). Because the main tiers are deliberately close (1.0 / 0.95 / 0.9 / 0.8), this holds for
+`W_main : W_sub` up to ~4:1; **1:1** is chosen — intuitive and well clear of the boundary.
+
+### 10.8 Result
+
+Saturation eliminated (**0%** at q100 on every slot), focus spans all 9 slots, the SPD-boots
+misranking is inverted correctly (SPD boots 55 > flat-DEF boots 47), the cheap-vs-invested ring
+collapse is resolved (74 vs 18, was 100 vs 100). Real maxima land at ~91–95 — a perfect item
+(best main *and* fully-maxed subs) is unreachable, so 100 is asymptotic.
+
+### 10.9 Code map
+
+`weights.mjs` (`WEIGHTS`, `MAIN_WEIGHTS`, `BLEND`) · `mainstats.mjs` (`mainMax`) ·
+`rolls.mjs` (`MAX_ROLLS`, `subMax`, `subCeiling`) · `score.mjs` (`desir`, `mainDesir`, `quality`).
