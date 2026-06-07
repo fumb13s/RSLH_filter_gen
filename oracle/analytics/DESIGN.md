@@ -222,10 +222,23 @@ sets cull at low quality regardless of scarcity.
   demand) — the pieces to ascend / reroll / build around.
 - **Delete candidate** = low quality (below cut line) **and** bucket above its floor **and** low
   keep-premium; plus all setless-dominated accessories. Each delete row shows its **reason** and
-  its **investment badge**.
+  its **investment badge**. A second **slot-balance** pass (§3.8) then trims for inventory evenness.
 - **Keep (default)** = everything else.
 
 All thresholds are parameters (§6); the human reviews the ranked lists.
+
+### 3.8 Slot-balance (even the unequipped pool)
+
+A second delete pass that evens **unequipped** inventory across slots, so the kept pool isn't
+dominated by the structurally over-supplied slots (Weapon/Shield from fixed mains; Amulet/Banner
+from the 17-faction split). Within each **family separately** — armor (6 slots) and accessories
+(3 slots) — it computes a per-slot cap = that family's **mean kept-unequipped** count, then deletes
+**worst-quality-first** down to the cap. Protections: equipped mules are excluded (not part of the
+unequipped pool); **invested** (💎 ascended / 🔹 glyphed) pieces are never trimmed; and the §3.5
+**keep-floor** still binds (no bucket drops below its floor). `balanceFactor` (§6) scales the cap —
+`<1` more aggressive, `>1` gentler, `0` disables. On the current snapshot this caps the tall armor
+slots (Helmet/Weapon/Shield) at ~269 and Amulet at ~578 — predominantly cutting Weapon/Shield —
+while the naturally-short slots (Gloves/Chest/Boots) are left untouched.
 
 ## 4. Census (descriptive, no judgment)
 

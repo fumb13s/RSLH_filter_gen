@@ -46,6 +46,35 @@ test("focus tags the top couple per slot x archetype on demanded sets", () => {
   expect(focused).toEqual([1, 2]); // top-2 of the (Boots, ATK-DPS) group
 });
 
+test("slot-balance evens an oversupplied accessory slot to its family cap, worst-first", () => {
+  const items = [];
+  // 30 unequipped Amulets, one faction+set, demanded (so the junk rule never fires), rising quality.
+  for (let i = 0; i < 30; i++) {
+    items.push(mk(100 + i, 8, 66, main(8, 6, false), [sub(2, false, 0.2 + i * 0.02)],
+      { isAccessory: true, faction: 5 }));
+  }
+  const res = triage(items);
+  const kept = res.filter((r) => r.item.slot === 8 && r.verdict === "keep");
+  const del = res.filter((r) => r.item.slot === 8 && r.verdict === "delete");
+  expect(kept.length).toBe(10);                       // family cap = 30 / 3 accessory slots
+  expect(del.length).toBe(20);
+  expect(del.every((r) => r.slotBalanced)).toBe(true); // demanded set -> not the junk rule
+  expect(Math.min(...kept.map((r) => r.q.score))).toBeGreaterThanOrEqual(Math.max(...del.map((r) => r.q.score)));
+});
+
+test("slot-balance protects invested pieces from trimming", () => {
+  const items = [];
+  for (let i = 0; i < 30; i++) {
+    items.push(mk(100 + i, 8, 66, main(8, 6, false), [sub(2, false, 0.2 + i * 0.02)],
+      { isAccessory: true, faction: 5 }));
+  }
+  // a low-quality but ascended amulet — investment shields it from the balance trim.
+  items.push(mk(999, 8, 66, main(8, 6, false), [sub(2, false, 0.01)],
+    { isAccessory: true, faction: 5, ascLevel: 6 }));
+  const res = triage(items);
+  expect(res.find((r) => r.item.id === 999).verdict).toBe("keep");
+});
+
 test("upgrade tags under-leveled demanded gear, not leveled gear", () => {
   const crit = [sub(5, false), sub(6, false), sub(2, false)];
   const items = [

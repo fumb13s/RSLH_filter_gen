@@ -33,4 +33,7 @@ export const SUPPLY = { accessoryFloor: 4, armorBase: 4 }; // accessory flat 4; 
 // Triage cut lines. delete: oversupplied low-demand armor below slot-percentile `deletePct`
 // (plus all setless-dominated accessories). focus/upgrade: top `focusPerGroup` per slot x archetype
 // among demanded sets (premium >= focusPremium). upgrade restricted to level <= upgradeMaxLevel.
-export const CUTS = { deletePct: 70, lowPremium: 2, focusPremium: 4, focusPerGroup: 2, upgradeMaxLevel: 12 };
+// balanceFactor: slot-balance target = round(family mean of kept-unequipped x balanceFactor) per
+// slot, deleting worst-first to even the UNEQUIPPED pool within armor (6 slots) and accessories
+// (3 slots) separately; <1 is more aggressive (lower cap), >1 gentler, 0 disables.
+export const CUTS = { deletePct: 70, lowPremium: 2, focusPremium: 4, focusPerGroup: 2, upgradeMaxLevel: 12, balanceFactor: 1 };
