@@ -19,21 +19,34 @@ function slotSortedScores(scored) {
   return bySlot;
 }
 
-// Percentile rank of `value` among sorted (ascending) slot scores: slot min -> 0,
-// slot max -> 100; a tied group takes its lower-edge rank (# strictly below). A lone
-// piece (n <= 1) -> 100 ("top of slot"). This is DESIGN's per-slot percentile: "below
-// p25" catches the genuine bottom (incl. tied-junk groups), "at/above p85" the top.
+// Per-slot percentile rank (min -> 0, max -> 100; ties take the lower-edge rank; lone piece -> 100).
 function percentileOf(sorted, value) {
   const n = sorted.length;
   if (n <= 1) return 100;
-  let lo = 0, hi = n;                  // lower_bound: count strictly below `value`
+  let lo = 0, hi = n;
   while (lo < hi) { const mid = (lo + hi) >> 1; if (sorted[mid] < value) lo = mid + 1; else hi = mid; }
   return (lo / (n - 1)) * 100;
 }
 
-// triage(items) -> array of { item, q, inv, percentile, premium, belowFloor, verdict, reason }
+// Tag the top `n` of each (slot x role) group by scoreFn(s).
+function tagTopN(pool, roleFn, scoreFn, n, tag) {
+  const groups = new Map();
+  for (const s of pool) {
+    const k = `${s.item.slot}|${roleFn(s)}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(s);
+  }
+  for (const arr of groups.values()) {
+    arr.sort((a, b) => scoreFn(b) - scoreFn(a));
+    for (let i = 0; i < Math.min(n, arr.length); i++) arr[i][tag] = true;
+  }
+}
+
+// triage(items) -> array of { item, q, inv, percentile, premium, belowFloor, verdict, reason,
+// focus, upgrade, qPotential? }. verdict is delete|keep; focus/upgrade are highlight overlays on keeps.
 export function triage(items) {
-  const scored = items.map((item) => ({ item, q: quality(item), inv: investment(item) }));
+  const scored = items.map((item) =>
+    ({ item, q: quality(item), inv: investment(item), focus: false, upgrade: false }));
   const scoreById = new Map(scored.map((s) => [s.item.id, s.q.score]));
   const counts = bucketCounts(items);
   const dominated = setlessDominated(items, (it) => scoreById.get(it.id) ?? 0);
@@ -43,18 +56,26 @@ export function triage(items) {
     const p = percentileOf(sorted.get(s.item.slot), s.q.score);
     const premium = keepPremium(s.item.set);
     const belowFloor = atOrBelowFloor(s.item, counts);
-    let verdict = "keep", reason = "no rule — default keep";
+    let verdict = "keep", reason = "keep";
     if (dominated.has(s.item.id)) {
       verdict = "delete";
-      reason = "setless: matched/beaten by a set accessory in this faction+slot";
+      reason = "setless: dominated by a set accessory in the same faction + slot";
     } else if (p < CUTS.deletePct && !belowFloor && premium <= CUTS.lowPremium) {
       verdict = "delete";
-      reason = `bottom ${CUTS.deletePct}% of slot (p${Math.round(p)}), oversupplied, low keep-premium (${premium})`;
-    } else if (p >= CUTS.focusPct && premium >= CUTS.focusPremium) {
-      verdict = "focus";
-      reason = `top of slot (p${Math.round(p)}), demand/scarcity premium ${premium}`;
+      reason = `low quality (p${Math.round(p)} of slot), oversupplied, low-demand set (premium ${premium})`;
     }
     Object.assign(s, { percentile: p, premium, belowFloor, verdict, reason });
   }
+
+  // Focus: the best couple to build around per slot x archetype, among kept demanded-set gear.
+  tagTopN(scored.filter((s) => s.verdict === "keep" && s.premium >= CUTS.focusPremium),
+    (s) => s.q.role, (s) => s.q.score, CUTS.focusPerGroup, "focus");
+
+  // Upgrade: under-leveled kept demanded gear with the best *potential* if taken to 16.
+  const upPool = scored.filter((s) => s.verdict === "keep"
+    && s.item.level <= CUTS.upgradeMaxLevel && s.premium >= CUTS.focusPremium);
+  for (const s of upPool) s.qPotential = quality(s.item, true);
+  tagTopN(upPool, (s) => s.qPotential.role, (s) => s.qPotential.score, CUTS.focusPerGroup, "upgrade");
+
   return scored;
 }

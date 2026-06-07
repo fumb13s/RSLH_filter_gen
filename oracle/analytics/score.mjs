@@ -49,13 +49,18 @@ export function rolesForSet(setId) {
   return roles.length ? roles : ALL_ROLES; // setless / unknown -> judged at best of all roles
 }
 
+// Type-fit of the main stat, independent of how leveled it is.
+function mainFit(item, role) {
+  const m = item.mainStat;
+  return mainDesir(role, m.statId, m.isFlat, item.slot) / maxMainDesir(item.slot, role);
+}
+
 // mainComponent in [0,1] = type-fit x build-completeness (main value vs its 6★+16 ceiling).
 function mainComponent(item, role) {
   const m = item.mainStat;
-  const fit = mainDesir(role, m.statId, m.isFlat, item.slot) / maxMainDesir(item.slot, role);
   const max = mainMax(item.slot, m.statId, m.isFlat);
   const complete = max ? Math.min(1, m.value / max) : 1;
-  return fit * complete;
+  return mainFit(item, role) * complete;
 }
 
 // subComponent in [0,1] = the item's desirability-weighted substat value vs the best achievable
@@ -72,12 +77,32 @@ function subComponent(item, role) {
   return Math.min(1, num / ceil);
 }
 
-// quality(item) -> { role, score } in [0,100], best-matching role: a 1:1 blend of the main-stat
-// and substat components, each measured as value-completeness against its theoretical ceiling.
-export function quality(item) {
+// subTypeFit in [0,1] = how good the present substat *types* are vs the 4 best achievable types
+// (main excluded) — value-independent, since an upgrade's substat values get rolled in by +16.
+function subTypeFit(item, role) {
+  const cfg = SLOT_STATS[item.slot];
+  if (!cfg) return 0;
+  const m = item.mainStat;
+  const top = cfg.substats
+    .filter(([id, f]) => !(id === m.statId && f === m.isFlat))
+    .map(([id, f]) => desir(role, id, f))
+    .sort((a, b) => b - a).slice(0, 4)
+    .reduce((a, d) => a + d, 0);
+  if (!top) return 0;
+  let num = 0;
+  for (const s of item.substats) num += desir(role, s.statId, s.isFlat);
+  return Math.min(1, num / top);
+}
+
+// quality(item, potential?) -> { role, score } in [0,100], best-matching role. Default scores the
+// piece as-is (value-completeness of main + subs). potential=true scores it as if taken to 6★+16,
+// judged on TYPES only (main fit + present substat types), level-independent — the "worth leveling"
+// signal for the upgrade analysis.
+export function quality(item, potential = false) {
   let best = { role: ALL_ROLES[0], score: -1 };
   for (const role of rolesForSet(item.set)) {
-    const mc = mainComponent(item, role), sc = subComponent(item, role);
+    const mc = potential ? mainFit(item, role) : mainComponent(item, role);
+    const sc = potential ? subTypeFit(item, role) : subComponent(item, role);
     const score = Math.round(100 * (BLEND.main * mc + BLEND.sub * sc) / (BLEND.main + BLEND.sub));
     if (score > best.score) best = { role, score };
   }

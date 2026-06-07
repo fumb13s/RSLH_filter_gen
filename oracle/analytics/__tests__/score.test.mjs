@@ -63,6 +63,15 @@ test("best-role: a C.DMG-main amulet with crit subs picks a DPS role over Suppor
   expect(["ATK-DPS", "DEF-DPS", "HP-DPS"]).toContain(amulet.role);
 });
 
+test("potential (worth leveling) scores by type and is level-independent", () => {
+  const crit = [sub(5, false, 0.3), sub(6, false, 0.3)]; // crit types, barely rolled
+  const lo = quality(item(4, 66, main(4, 4, true, 0.2), crit, { level: 8 }), true);  // SPD boots, +8, low values
+  const hi = quality(item(4, 66, main(4, 4, true, 1.0), crit, { level: 16 }), true); // same types, +16, maxed
+  expect(lo.score).toBe(hi.score);                          // type-based -> level/value-independent
+  const flat = quality(item(4, 66, main(4, 3, true), crit, { level: 8 }), true);     // flat-DEF main instead
+  expect(lo.score).toBeGreaterThan(flat.score);             // SPD-main potential beats flat-DEF-main
+});
+
 test("investment: ascended at level 6, glyphed at SPD>=4", () => {
   const it = (over) => item(4, 6, main(4, 4, true), goodSubs, over);
   expect(investment(it({ ascLevel: 6 })).ascended).toBe(true);

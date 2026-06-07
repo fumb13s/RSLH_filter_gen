@@ -30,5 +30,7 @@ export const ASCENDED_LEVEL = 6;
 // Supply floors (DESIGN.md §3.5/§6), counting unequipped only.
 export const SUPPLY = { accessoryFloor: 4, armorBase: 4 }; // accessory flat 4; armor armorBase*demand
 
-// Triage cut lines (per-slot percentile) + keep-premium gates (DESIGN.md §3.6/§3.7).
-export const CUTS = { deletePct: 25, focusPct: 85, lowPremium: 2, focusPremium: 4 };
+// Triage cut lines. delete: oversupplied low-demand armor below slot-percentile `deletePct`
+// (plus all setless-dominated accessories). focus/upgrade: top `focusPerGroup` per slot x archetype
+// among demanded sets (premium >= focusPremium). upgrade restricted to level <= upgradeMaxLevel.
+export const CUTS = { deletePct: 70, lowPremium: 2, focusPremium: 4, focusPerGroup: 2, upgradeMaxLevel: 12 };
