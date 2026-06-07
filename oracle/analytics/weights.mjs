@@ -7,6 +7,22 @@ export const WEIGHTS = {
   "Support": { spd: 1.0, cr: 0.25, cd: 0.25, atkPct: 0.25, defPct: 0.6, hpPct: 0.8, res: 0.7, acc: 0.7, flat: 0.15 },
 };
 
+// MAIN-stat desirability — a SEPARATE matrix from the substat WEIGHTS, because a main's value
+// profile differs from a sub's: C.DMG main > C.RATE main (but they're equal as subs), and the
+// damage-scaling % main sits below the crits. dmg% = ATK%/DEF%/HP% for ATK/DEF/HP-DPS. Support
+// HP%/ACC/RES are equal "in general". Flat HP/ATK/DEF here is the armor case (low); on accessories
+// a flat main maps to its % counterpart in score.mjs (a main is a big absolute stat).
+export const MAIN_WEIGHTS = {
+  "ATK-DPS": { spd: 1.0, cd: 0.95, cr: 0.9, atkPct: 0.8, defPct: 0.2, hpPct: 0.2, acc: 0.5, res: 0.15, flat: 0.1 },
+  "DEF-DPS": { spd: 1.0, cd: 0.95, cr: 0.9, defPct: 0.8, atkPct: 0.2, hpPct: 0.2, acc: 0.5, res: 0.15, flat: 0.1 },
+  "HP-DPS": { spd: 1.0, cd: 0.95, cr: 0.9, hpPct: 0.8, atkPct: 0.2, defPct: 0.2, acc: 0.5, res: 0.15, flat: 0.1 },
+  "Support": { spd: 1.0, cd: 0.25, cr: 0.25, atkPct: 0.25, defPct: 0.6, hpPct: 0.8, acc: 0.8, res: 0.8, flat: 0.15 },
+};
+
+// Blend of the two [0,1] quality components. 1:1 holds the "best main + bad subs ranks below
+// second-best main + perfect subs" principle with margin (it survives up to ~4:1).
+export const BLEND = { main: 1, sub: 1 };
+
 // Investment: "highly glyphed" decoded-glyph thresholds (DESIGN.md §3.4).
 export const GLYPH_THRESHOLDS = { spd: 4, pct: 5, accRes: 8 };
 export const ASCENDED_LEVEL = 6;
