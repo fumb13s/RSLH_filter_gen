@@ -271,6 +271,14 @@ tools compose so the human can run one stage or the whole pipeline.
   `resources/<date>-RSLHelper.db`, integrity-checks it, and stops. RSL Helper holds the live file
   open, so a sequential `cp` is required (a direct sqlite open hits `SQLITE_NOTADB`). Run
   `analyze.mjs` yourself afterwards — deliberately not chained.
+- **`compare.mjs`** — diff two `out/<date>-report.json` snapshots (the two newest by default):
+  roster churn (acquired/sold), census + recommendation deltas, focus/upgrade membership changes,
+  leveled-up pieces, biggest quality swings.
+- **`set-analysis.mjs`** — ore-aware worth/garbage analysis for one set's corpus. Ore re-randomizes
+  a piece's main + substat types/values but preserves each substat's **roll count**, so the ceiling
+  is set by roll concentration: a `≥ORE_ROLLS`-roll substat is a re-aimable "gem"; a spread piece
+  can't be made elite even by a perfect ore. Honors the §3.5 keep-floor (below-floor accessories are
+  faction/supply spares, not garbage). Tiers: elite / ore-gem / scarce-slot / floor-protected / garbage.
 
 **Dating convention:** snapshots, reports, and findings are all prefixed with the **account-data
 date** (the live DB's last-write day), *not* the day the tool was run — so re-analyzing an old
