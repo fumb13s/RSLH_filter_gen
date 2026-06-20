@@ -231,14 +231,19 @@ All thresholds are parameters (§6); the human reviews the ranked lists.
 
 A second delete pass that evens **unequipped** inventory across slots, so the kept pool isn't
 dominated by the structurally over-supplied slots (Weapon/Shield from fixed mains; Amulet/Banner
-from the 17-faction split). Within each **family separately** — armor (6 slots) and accessories
-(3 slots) — it computes a per-slot cap = that family's **mean kept-unequipped** count, then deletes
-**worst-quality-first** down to the cap. Protections: equipped mules are excluded (not part of the
-unequipped pool); **invested** (💎 ascended / 🔹 glyphed) pieces are never trimmed; and the §3.5
-**keep-floor** still binds (no bucket drops below its floor). `balanceFactor` (§6) scales the cap —
-`<1` more aggressive, `>1` gentler, `0` disables. On the current snapshot this caps the tall armor
-slots (Helmet/Weapon/Shield) at ~269 and Amulet at ~578 — predominantly cutting Weapon/Shield —
-while the naturally-short slots (Gloves/Chest/Boots) are left untouched.
+from the 17-faction split). **Armor** (6 slots) is evened as one family. **Accessories** (3 slots)
+are evened **per faction**: ring/amulet/banner are faction-locked gear, so each faction is balanced
+against *its own* mean kept-unequipped count rather than the pooled accessory total — cross-faction
+totals are intentionally left alone (a faction with more usable champions keeps more accessories).
+The per-slot cap = the relevant pool's (armor family / per-faction accessory) **mean kept-unequipped**
+count, then deletes **worst-quality-first** down to the cap. Protections: equipped mules are excluded
+(not part of the unequipped pool); **invested** (💎 ascended / 🔹 glyphed) pieces are never trimmed;
+and the §3.5 **keep-floor** still binds (no bucket drops below its floor). `balanceFactor` (§6) scales
+the cap — `<1` more aggressive, `>1` gentler, `0` disables. On the current snapshot this caps the tall
+armor slots (Helmet/Weapon/Shield) at ~275 while leaving the short slots (Gloves/Chest/Boots) alone,
+and within each faction trims the oversupplied amulets/banners toward that faction's scarcer ring
+count. Because the keep-floor binds per faction × slot × set, heavily-multi-set factions stay somewhat
+lopsided — the floor, not the cap, is the binding constraint for tight per-faction parity.
 
 ## 4. Census (descriptive, no judgment)
 
