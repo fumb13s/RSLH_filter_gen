@@ -5,6 +5,7 @@ import { census } from "./census.mjs";
 import { triage } from "./triage.mjs";
 import { CUTS, SUPPLY } from "./weights.mjs";
 import { ARTIFACT_SLOT_NAMES, statDisplayName, lookupName, ARTIFACT_SET_NAMES, FACTION_NAMES } from "@rslh/core";
+import { rollStats, rollQualityMarkdown } from "./rollquality.mjs";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -28,6 +29,8 @@ const date = snapshotDate(dbPath);
 const { items, corrupt, total } = readArtifacts(dbPath);
 const cen = census(items);
 const scored = triage(items);
+// Good-roll metric per item (judged at its best-matching role); computed once, reused below.
+const rolls = new Map(scored.map((s) => [s.item.id, rollStats(s.item, s.q.role)]));
 
 const slotName = (id) => lookupName(ARTIFACT_SLOT_NAMES, id);
 const setName = (id) => (id === 0 ? "(setless)" : lookupName(ARTIFACT_SET_NAMES, id));
@@ -139,6 +142,14 @@ for (const role of ROLES) {
   P(``);
 }
 
+P(`## Roll-quality vs rating`, ``);
+P(`Good substats = the filter generator's presets per best-matching role; roll-events = initial + upgrades (rolls+1). How well the q-score tracks rolls landing in good substats.`, ``);
+const rqRows = scored
+  .map((s) => { const gr = rolls.get(s.item.id); return { score: s.q.score, role: s.q.role, isAccessory: s.item.isAccessory, level: s.item.level, good: gr.good, total: gr.total, frac: gr.frac }; })
+  .filter((r) => r.total > 0);
+P(...rollQualityMarkdown(rqRows));
+P(``);
+
 P(`## Appendix — full inventory by slot`, ``);
 P(`All ${scored.length} decoded items, best-first per slot. **Status:** ⚙ = equipped (mule context) · focus/upgrade = highlighted keep · else keep/delete. **Inv:** 💎 ascended · 🔹 glyphed.`, ``);
 const bySlotItems = new Map();
@@ -146,12 +157,13 @@ for (const s of scored) { if (!bySlotItems.has(s.item.slot)) bySlotItems.set(s.i
 for (const slot of SLOTS) {
   const arr = (bySlotItems.get(slot) || []).slice().sort((a, b) => b.q.score - a.q.score || a.item.id - b.item.id);
   P(`### ${slotName(slot)} — ${arr.length}`, ``);
-  P(`| ID | Set | Main | Substats | Lvl | q | Inv | Status |`, `|---|---|---|---|---|---|---|---|`);
+  P(`| ID | Set | Main | Substats | Lvl | q | Good | Inv | Status |`, `|---|---|---|---|---|---|---|---|---|`);
   for (const s of arr) {
     const it = s.item;
     const inv = `${s.inv.ascended ? "💎" : ""}${s.inv.glyphed ? "🔹" : ""}`;
     const status = `${it.equippedChampId > 0 ? "⚙ " : ""}${s.focus ? "focus" : s.upgrade ? "upgrade" : s.verdict}`;
-    P(`| ${it.id} | ${setFac(it)} | ${statDisplayName(it.mainStat.statId, it.mainStat.isFlat)} | ${subLine(it)} | ${it.level} | ${s.q.score} | ${inv} | ${status} |`);
+    const gr = rolls.get(it.id);
+    P(`| ${it.id} | ${setFac(it)} | ${statDisplayName(it.mainStat.statId, it.mainStat.isFlat)} | ${subLine(it)} | ${it.level} | ${s.q.score} | ${gr.good}/${gr.total} | ${inv} | ${status} |`);
   }
   P(``);
 }
@@ -171,7 +183,8 @@ const json = {
   },
   verdicts: scored.map((s) => ({
     id: s.item.id, slot: s.item.slot, set: s.item.set, faction: s.item.faction, level: s.item.level,
-    score: s.q.score, role: s.q.role, percentile: Math.round(s.percentile), premium: s.premium,
+    score: s.q.score, role: s.q.role, goodRolls: rolls.get(s.item.id).good, totalRolls: rolls.get(s.item.id).total,
+    percentile: Math.round(s.percentile), premium: s.premium,
     belowFloor: s.belowFloor, ascended: s.inv.ascended, glyphed: s.inv.glyphed,
     verdict: s.verdict, slotBalanced: s.slotBalanced, focus: s.focus, upgrade: s.upgrade,
     potential: s.qPotential ? s.qPotential.score : null, reason: s.reason,
