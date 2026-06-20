@@ -103,13 +103,27 @@ P(`**Oversupplied low-quality** — below slot-percentile ${CUTS.deletePct}, abo
 for (const [k, n] of topGroups(junkArm, (s) => `${slotName(s.item.slot)} · ${setName(s.item.set)}`)) P(`- ${k}: ${n}`);
 P(``);
 P(`### Slot-balance trims (${balDel.length})`, ``);
-P(`Evens the **unequipped** pool worst-first within each family (equipped mules excluded; invested 💎/🔹 pieces and below-floor buckets protected) — tall slots capped at the family mean: ~${familyCap(ARMOR, balDel)}/slot armor, ~${familyCap(ACC, balDel)}/slot accessories. By slot:`, ``);
+P(`Evens the **unequipped** pool worst-first (equipped mules excluded; invested 💎/🔹 pieces and below-floor buckets protected). **Armor** is one family — tall slots capped at the family mean (~${familyCap(ARMOR, balDel)}/slot). **Accessories** are evened **per faction**: ring/amulet/banner balanced within each faction (faction-locked gear), cross-faction totals left alone. By slot:`, ``);
 for (const [k, n] of topGroups(balDel, (s) => slotName(s.item.slot), 9)) P(`- ${k}: ${n}`);
 P(``);
 P(`Resulting unequipped distribution (the evened pool):`, ``);
 P(`| Slot | unequipped | deleted | kept-unequipped |`, `|---|---|---|---|`);
 for (const slot of SLOTS) { const r = slotRow(slot); P(`| ${slotName(slot)} | ${r.uneq} | ${r.delUneq} | ${r.kept} |`); }
 P(``);
+
+// Per-faction accessory balance — kept-unequipped Ring/Amulet/Banner within each faction (the
+// pool the per-faction pass evens). A balanced faction reads roughly flat across the three.
+const accKept = (faction, slot) => scored.filter((s) => s.item.faction === faction
+  && s.item.slot === slot && s.verdict === "keep" && s.item.equippedChampId === 0).length;
+const accFactions = [...new Set(items.filter((i) => i.isAccessory).map((i) => i.faction))]
+  .sort((a, b) => a - b)
+  .filter((f) => ACC.some((slot) => accKept(f, slot) > 0));
+if (accFactions.length) {
+  P(`Per-faction accessory balance (kept-unequipped — each faction's ring/amulet/banner evened):`, ``);
+  P(`| Faction | Ring | Amulet | Banner |`, `|---|--:|--:|--:|`);
+  for (const f of accFactions) P(`| ${facName(f)} | ${accKept(f, 7)} | ${accKept(f, 8)} | ${accKept(f, 9)} |`);
+  P(``);
+}
 P(`### Spot-check — worst 50 deletes (worst first)`, ``);
 for (const s of deletes.slice().sort((a, b) => a.q.score - b.q.score).slice(0, 50)) {
   const it = s.item, fac = it.isAccessory ? ` ${facName(it.faction)}` : "";

@@ -12,16 +12,44 @@ export function keepPremium(setId) {
   return demand + (demand >= 3 ? scarcity - 2 : 0);
 }
 
-// Count of kept UNEQUIPPED pieces in a slot (the pool the slot-balance pass evens out).
-function keptUnequippedInSlot(scored, slot) {
+// Count of kept UNEQUIPPED pieces in a slot (the pool the slot-balance pass evens out). When
+// `faction` is given, only that faction's pieces count (the per-faction accessory pass).
+function keptUnequippedInSlot(scored, slot, faction = null) {
   return scored.filter((s) => s.item.slot === slot
+    && (faction === null || s.item.faction === faction)
     && s.verdict === "keep" && s.item.equippedChampId === 0).length;
 }
 
-// Slot-balance: even the UNEQUIPPED pool within each slot family (armor / accessories) by deleting
-// worst-quality-first down to a per-family target (mean kept-unequipped x balanceFactor). Equipped
-// mules aren't part of the unequipped pool, and invested (ascended/glyphed) pieces and below-floor
-// buckets are protected. Mutates `scored`. (DESIGN.md §3.8)
+// Even one slot family (optionally restricted to a faction) toward its mean kept-unequipped count
+// (x balanceFactor), deleting worst-quality-first. Equipped mules aren't part of the pool; invested
+// (ascended/glyphed) pieces and below-floor buckets are protected. Mutates `scored` + `live`.
+function balanceFamily(scored, slots, live, faction = null) {
+  const kept = slots.reduce((n, sl) => n + keptUnequippedInSlot(scored, sl, faction), 0);
+  const cap = Math.round((kept / slots.length) * CUTS.balanceFactor);
+  const facTag = faction === null ? "" : ` (faction ${faction})`;
+  for (const slot of slots) {
+    let keptUneq = keptUnequippedInSlot(scored, slot, faction);
+    const pool = scored
+      .filter((s) => s.item.slot === slot && (faction === null || s.item.faction === faction)
+        && s.verdict === "keep" && s.item.equippedChampId === 0 && !s.inv.ascended && !s.inv.glyphed)
+      .sort((a, b) => a.q.score - b.q.score);
+    for (const s of pool) {
+      if (keptUneq <= cap) break;
+      const k = bucketKey(s.item);
+      if ((live.get(k) || 0) <= floorFor(s.item)) continue; // keep-floor protects spares
+      s.verdict = "delete";
+      s.slotBalanced = true;
+      s.reason = `slot-balance: oversupplied unequipped slot${facTag} (q${s.q.score}), trimmed worst-first toward ~${cap}`;
+      live.set(k, live.get(k) - 1);
+      keptUneq--;
+    }
+  }
+}
+
+// Slot-balance: even the UNEQUIPPED pool worst-quality-first. Armor (slots 1-6) is one family —
+// it isn't faction-locked. Accessories are evened PER FACTION: ring/amulet/banner are faction-bound
+// gear, so each faction's three slots are balanced against each other, while cross-faction totals are
+// left alone (a faction with more usable champions keeps more accessories). Mutates `scored`. (§3.8)
 export function slotBalance(scored, counts) {
   if (!CUTS.balanceFactor) return;
   // live unequipped count per bucket = static count minus unequipped deletes already taken.
@@ -32,27 +60,10 @@ export function slotBalance(scored, counts) {
       live.set(k, (live.get(k) || 0) - 1);
     }
   }
-  for (const slots of [ARMOR_SLOTS, ACC_SLOTS]) {
-    const kept = slots.reduce((n, sl) => n + keptUnequippedInSlot(scored, sl), 0);
-    const cap = Math.round((kept / slots.length) * CUTS.balanceFactor);
-    for (const slot of slots) {
-      let keptUneq = keptUnequippedInSlot(scored, slot);
-      const pool = scored
-        .filter((s) => s.item.slot === slot && s.verdict === "keep"
-          && s.item.equippedChampId === 0 && !s.inv.ascended && !s.inv.glyphed)
-        .sort((a, b) => a.q.score - b.q.score);
-      for (const s of pool) {
-        if (keptUneq <= cap) break;
-        const k = bucketKey(s.item);
-        if ((live.get(k) || 0) <= floorFor(s.item)) continue; // keep-floor protects spares
-        s.verdict = "delete";
-        s.slotBalanced = true;
-        s.reason = `slot-balance: oversupplied unequipped slot (q${s.q.score}), trimmed worst-first toward ~${cap}`;
-        live.set(k, live.get(k) - 1);
-        keptUneq--;
-      }
-    }
-  }
+  balanceFamily(scored, ARMOR_SLOTS, live);
+  const factions = [...new Set(scored.filter((s) => s.item.isAccessory).map((s) => s.item.faction))]
+    .sort((a, b) => a - b);
+  for (const faction of factions) balanceFamily(scored, ACC_SLOTS, live, faction);
 }
 
 function slotSortedScores(scored) {
