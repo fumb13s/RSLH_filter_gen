@@ -4,22 +4,47 @@ import { rollStats, isGoodSub, pearson, spearman, ranks, segmentStats, bucketSta
 
 // substat factory — only statId/isFlat/rolls matter to roll counting (value/glyph irrelevant)
 const sub = (statId, isFlat, rolls) => ({ statId, isFlat, rolls, value: 0, glyph: 0 });
-const item = (substats) => ({ substats });
+const item = (substats, slot = 4) => ({ slot, substats }); // default slot 4 = Boots (armor)
 
-test("good substats per role mirror the generator presets (nuker = no ACC, no flat)", () => {
-  // ATK-DPS = ATK Nuker: ATK%, SPD, C.RATE, C.DMG
-  expect(isGoodSub("ATK-DPS", 2, false)).toBe(true); // ATK%
-  expect(isGoodSub("ATK-DPS", 5, false)).toBe(true); // C.RATE
-  expect(isGoodSub("ATK-DPS", 4, true)).toBe(true);  // SPD
-  expect(isGoodSub("ATK-DPS", 8, true)).toBe(false); // ACC — NOT good for a nuker under the preset def
-  expect(isGoodSub("ATK-DPS", 1, true)).toBe(false); // flat HP
+test("armor good substats mirror the generator presets (nuker = no ACC, no flat)", () => {
+  // ATK-DPS = ATK Nuker on armor (slot 4 = Boots): ATK%, SPD, C.RATE, C.DMG
+  expect(isGoodSub(4, "ATK-DPS", 2, false)).toBe(true); // ATK%
+  expect(isGoodSub(4, "ATK-DPS", 5, false)).toBe(true); // C.RATE
+  expect(isGoodSub(4, "ATK-DPS", 4, true)).toBe(true);  // SPD
+  expect(isGoodSub(4, "ATK-DPS", 8, true)).toBe(false); // ACC — NOT good for an armor nuker
+  expect(isGoodSub(4, "ATK-DPS", 1, true)).toBe(false); // flat HP
 });
 
-test("Support good substats include DEF%, RES and ACC but not crit", () => {
-  expect(isGoodSub("Support", 3, false)).toBe(true); // DEF%
-  expect(isGoodSub("Support", 7, true)).toBe(true);  // RES
-  expect(isGoodSub("Support", 8, true)).toBe(true);  // ACC
-  expect(isGoodSub("Support", 5, false)).toBe(false); // C.RATE not good for support
+test("armor Support good substats include DEF%, RES and ACC but not crit", () => {
+  expect(isGoodSub(2, "Support", 3, false)).toBe(true);  // DEF% (slot 2 = Chest)
+  expect(isGoodSub(2, "Support", 7, true)).toBe(true);   // RES
+  expect(isGoodSub(2, "Support", 8, true)).toBe(true);   // ACC
+  expect(isGoodSub(2, "Support", 5, false)).toBe(false); // C.RATE not good for support
+});
+
+test("Ring good substats are role %s only (ring can't roll SPD/crit/ACC/RES)", () => {
+  expect(isGoodSub(7, "ATK-DPS", 2, false)).toBe(true);  // ATK%
+  expect(isGoodSub(7, "ATK-DPS", 4, true)).toBe(false);  // SPD not on rings
+  expect(isGoodSub(7, "ATK-DPS", 6, false)).toBe(false); // C.DMG not on rings
+  expect(isGoodSub(7, "Support", 1, false)).toBe(true);  // HP%
+  expect(isGoodSub(7, "Support", 3, false)).toBe(true);  // DEF%
+});
+
+test("Amulet DPS good = C.DMG + ACC; Support good = ACC/RES/flat HP/DEF", () => {
+  expect(isGoodSub(8, "ATK-DPS", 6, false)).toBe(true);  // C.DMG
+  expect(isGoodSub(8, "ATK-DPS", 8, true)).toBe(true);   // ACC
+  expect(isGoodSub(8, "ATK-DPS", 7, true)).toBe(false);  // RES not good for a DPS amulet
+  expect(isGoodSub(8, "Support", 8, true)).toBe(true);   // ACC
+  expect(isGoodSub(8, "Support", 7, true)).toBe(true);   // RES
+  expect(isGoodSub(8, "Support", 1, true)).toBe(true);   // flat HP
+  expect(isGoodSub(8, "Support", 6, false)).toBe(false); // C.DMG not good for a Support amulet
+});
+
+test("Banner good = role % + SPD (banner can't roll crit/ACC/RES)", () => {
+  expect(isGoodSub(9, "ATK-DPS", 2, false)).toBe(true);  // ATK%
+  expect(isGoodSub(9, "ATK-DPS", 4, true)).toBe(true);   // SPD
+  expect(isGoodSub(9, "ATK-DPS", 6, false)).toBe(false); // C.DMG not on banners
+  expect(isGoodSub(9, "Support", 4, true)).toBe(true);   // SPD
 });
 
 test("rollStats counts initial+upgrades (rolls+1) in good substats vs total", () => {
@@ -35,6 +60,12 @@ test("rollStats: zero substats -> frac 0, no divide-by-zero", () => {
   const r = rollStats(item([]), "ATK-DPS");
   expect(r.total).toBe(0);
   expect(r.frac).toBe(0);
+});
+
+test("rollStats is slot-aware: an ACC sub is good on a Support amulet but not a Support ring", () => {
+  const subs = [sub(8, true, 2)]; // one ACC sub -> 3 roll-events
+  expect(rollStats({ slot: 8, substats: subs }, "Support").good).toBe(3); // amulet: ACC good
+  expect(rollStats({ slot: 7, substats: subs }, "Support").good).toBe(0); // ring: ACC not good
 });
 
 test("pearson is +1 for a perfectly increasing line, -1 for decreasing", () => {

@@ -13,21 +13,54 @@ import { fileURLToPath } from "node:url";
 import { readArtifacts } from "./decode.mjs";
 import { quality } from "./score.mjs";
 
-// --- Good-substat definition (generator presets) ---------------------------
-// Mirror of SUBSTAT_PRESETS in packages/web/src/generator.ts, keyed by the analytics role
-// each preset corresponds to. [statId, isFlat] in OUR stat ids (1 HP, 2 ATK, 3 DEF, 4 SPD,
-// 5 C.RATE, 6 C.DMG, 7 RES, 8 ACC). The web package isn't cleanly importable from the oracle,
-// so the lists are duplicated here — keep in sync with generator.ts.
-export const ROLE_GOOD_SUBSTATS = {
+// --- Good-substat definition (slot-aware) ----------------------------------
+// [statId, isFlat] in OUR stat ids (1 HP, 2 ATK, 3 DEF, 4 SPD, 5 C.RATE, 6 C.DMG, 7 RES, 8 ACC).
+//
+// Armor (slots 1-6): the filter generator's SUBSTAT_PRESETS per role (packages/web/src/generator.ts;
+// duplicated here since the web package isn't cleanly importable — keep in sync).
+const ARMOR_GOOD = {
   "ATK-DPS": [[2, false], [4, true], [5, false], [6, false]],           // ATK Nuker: ATK%, SPD, C.RATE, C.DMG
   "DEF-DPS": [[3, false], [4, true], [5, false], [6, false]],           // DEF Nuker: DEF%, SPD, C.RATE, C.DMG
   "HP-DPS":  [[1, false], [4, true], [5, false], [6, false]],           // HP Nuker:  HP%,  SPD, C.RATE, C.DMG
   "Support": [[1, false], [3, false], [4, true], [7, true], [8, true]], // Support:   HP%, DEF%, SPD, RES, ACC
 };
 
-export function isGoodSub(role, statId, isFlat) {
-  const good = ROLE_GOOD_SUBSTATS[role];
-  return !!good && good.some(([s, f]) => s === statId && f === isFlat);
+// Accessories (7 Ring, 8 Amulet, 9 Banner) roll from restricted, distinct pools (core SLOT_STATS),
+// so they get their own good-substat lists rather than the armor presets:
+//   Ring   rolls HP/ATK/DEF (flat + %) only          -> the role's % only
+//   Amulet rolls flat HP/ATK/DEF, C.DMG, ACC, RES     -> DPS: C.DMG + ACC; Support: ACC/RES/flat HP/DEF
+//   Banner rolls HP/ATK/DEF (flat + %), SPD           -> the role's % + SPD
+// The amulet lists are a deliberate per-role choice (a DPS amulet's value is its C.DMG main + ACC; a
+// Support amulet wants ACC/RES/flat bulk). NB the metric does not model the MAIN stat — q's main
+// component covers that; a roll metric is substats-only by construction.
+const ACCESSORY_GOOD = {
+  7: { // Ring
+    "ATK-DPS": [[2, false]],                          // ATK%
+    "DEF-DPS": [[3, false]],                          // DEF%
+    "HP-DPS":  [[1, false]],                          // HP%
+    "Support": [[1, false], [3, false]],              // HP%, DEF%
+  },
+  8: { // Amulet
+    "ATK-DPS": [[6, false], [8, true]],               // C.DMG, ACC
+    "DEF-DPS": [[6, false], [8, true]],
+    "HP-DPS":  [[6, false], [8, true]],
+    "Support": [[8, true], [7, true], [1, true], [3, true]], // ACC, RES, flat HP, flat DEF
+  },
+  9: { // Banner
+    "ATK-DPS": [[2, false], [4, true]],               // ATK%, SPD
+    "DEF-DPS": [[3, false], [4, true]],               // DEF%, SPD
+    "HP-DPS":  [[1, false], [4, true]],               // HP%, SPD
+    "Support": [[1, false], [3, false], [4, true]],   // HP%, DEF%, SPD
+  },
+};
+
+// Good-substat list for a slot+role: accessories (7-9) use their own pools, armor uses the presets.
+export function goodSubsFor(slot, role) {
+  return (slot >= 7 ? ACCESSORY_GOOD[slot]?.[role] : ARMOR_GOOD[role]) ?? [];
+}
+
+export function isGoodSub(slot, role, statId, isFlat) {
+  return goodSubsFor(slot, role).some(([s, f]) => s === statId && f === isFlat);
 }
 
 // Roll-events in good substats vs total. A present substat = 1 (initial) + its upgrades;
@@ -37,7 +70,7 @@ export function rollStats(item, role) {
   for (const s of item.substats) {
     const events = (s.rolls ?? 0) + 1;
     total += events;
-    if (isGoodSub(role, s.statId, s.isFlat)) good += events;
+    if (isGoodSub(item.slot, role, s.statId, s.isFlat)) good += events;
   }
   return { good, total, frac: total ? good / total : 0 };
 }
@@ -162,7 +195,7 @@ function main() {
 
   const L = [`# Roll-quality vs rating — ${date}`, ``];
   L.push(`${scored.length} items (of ${total} rows; ${corrupt.length} corrupt, ${rows.length - scored.length} subless skipped).`);
-  L.push(`Good substats = generator presets per best-matching role; roll-events = initial + upgrades (rolls+1).`, ``);
+  L.push(`Good substats are slot-aware (armor = generator presets; accessories use their own restricted pools); roll-events = initial + upgrades (rolls+1).`, ``);
   L.push(...rollQualityMarkdown(scored));
   console.log(L.join("\n"));
 }

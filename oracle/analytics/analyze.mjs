@@ -143,7 +143,7 @@ for (const role of ROLES) {
 }
 
 P(`## Roll-quality vs rating`, ``);
-P(`Good substats = the filter generator's presets per best-matching role; roll-events = initial + upgrades (rolls+1). How well the q-score tracks rolls landing in good substats.`, ``);
+P(`Good substats are slot-aware (armor = the filter generator's presets; accessories use their own restricted pools). Roll-events = initial + upgrades (rolls+1). How well the q-score tracks rolls landing in good substats.`, ``);
 const rqRows = scored
   .map((s) => { const gr = rolls.get(s.item.id); return { score: s.q.score, role: s.q.role, isAccessory: s.item.isAccessory, level: s.item.level, good: gr.good, total: gr.total, frac: gr.frac }; })
   .filter((r) => r.total > 0);
