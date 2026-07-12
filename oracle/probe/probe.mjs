@@ -3,10 +3,9 @@
 // Creator's eval worker (Rust/WASM) and our evaluateFilter(), then diff verdicts.
 // DB-decode primitives are shared with oracle/analytics via ../lib/decode.mjs.
 import { readFileSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
 import { evaluateFilter, generateFilter, defaultRule, emptySubstat }
   from "../../packages/core/dist/index.js";
-import { N, DBSTAT_TO_OURSTAT, decodeValue, SUB } from "../lib/decode.mjs";
+import { N, DBSTAT_TO_OURSTAT, decodeValue, SUB, readArtifactRows } from "../lib/decode.mjs";
 
 const here = (p) => new URL(p, import.meta.url);
 
@@ -16,11 +15,10 @@ const UwA = { 0: 0, 13: 4 };
 const variantOf = (dbStatId, isFlat) => (dbStatId << 8) | (isFlat ? 1 : 0);
 
 // ---- read + decode the gear ----
-const db = new DatabaseSync(here("../known-gear.db").pathname);
-const rows = db.prepare(
-  `SELECT ID,type,rank,rarity,lvl,mid,mfl,mlvlid,${SUB.flatMap((s) => [s.id, s.fl, s.lvl, s.base]).join(",")},aset,accset
-   FROM Artifacts ORDER BY ID`,
-).all();
+const rows = readArtifactRows(
+  here("../known-gear.db").pathname,
+  `ID,type,rank,rarity,lvl,mid,mfl,mlvlid,${SUB.flatMap((s) => [s.id, s.fl, s.lvl, s.base]).join(",")},aset,accset`,
+);
 
 const mkStat = (source, dbId, isFlat, value) => ({
   source, statId: dbId, isFlat, variant: variantOf(dbId, isFlat),

@@ -1,10 +1,28 @@
 // oracle/analytics/__tests__/decode.test.mjs
 import { test, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { decodeValue, readArtifacts } from "../decode.mjs";
+import { SUB } from "../../lib/decode.mjs";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
+
+// Build a throwaway Artifacts DB with just the columns readArtifacts selects.
+const ALLCOLS = ["ID", "type", "rank", "rarity", "lvl", "mid", "mfl", "mlvlid", "aset", "accset",
+  "ASCLEVEL", "cID", ...SUB.flatMap((s) => [s.id, s.fl, s.lvl, s.base, s.gv, s.myth])];
+function makeTempDb(rows) {
+  const dir = mkdtempSync(join(tmpdir(), "oracle-decode-"));
+  const path = join(dir, "fixture.db");
+  const db = new DatabaseSync(path);
+  db.exec(`CREATE TABLE Artifacts (${ALLCOLS.map((c) => `${c} INTEGER`).join(",")})`);
+  const ins = db.prepare(`INSERT INTO Artifacts (${ALLCOLS.join(",")}) VALUES (${ALLCOLS.map(() => "?").join(",")})`);
+  for (const r of rows) ins.run(...ALLCOLS.map((c) => r[c] ?? 0));
+  db.close();
+  return { path, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
 
 test("decodeValue: percent stat x100 (ATK% 2576980377 -> 60)", () => {
   expect(decodeValue(2, false, 2576980377)).toBe(60);
@@ -47,4 +65,25 @@ test("Mythical bonus roll (sNmlvlid) is included in the substat value", () => {
   const myth = items.find((it) => it.id === 352891); // Mythical Shield
   const res = myth.substats.find((s) => s.statId === 7); // RES: base 12 + Mythical bonus 10
   expect(res.value).toBe(22);
+});
+
+// Regression: a real corrupt row appeared in the 2026-07-12 snapshot (ID 196608:
+// type=-2 rank=215 rarity=0 lvl=-1) carrying 64-bit garbage in s1gv/s1mlvlid that
+// exceeds Number.MAX_SAFE_INTEGER. node:sqlite throws on such a column unless the read
+// enables BigInt, so isCorrupt() never got a chance to drop it. readArtifacts must read
+// the row without throwing and then filter it out.
+test("readArtifacts: out-of-range 64-bit values don't crash the read; corrupt row is dropped", () => {
+  const valid = { ID: 1, type: 6, rank: 6, rarity: 5, lvl: 16, mid: 2, mfl: 0, mlvlid: 2576980377,
+    s1id: 1, s1fl: 0, s1lvl: 0, s1lvlid: 515396074 };
+  const corrupt = { ID: 196608, type: -2, rank: 215, rarity: 0, lvl: -1,
+    s1gv: 4879650197399715840n, s1mlvlid: 4875709547725307904n };
+  const { path, cleanup } = makeTempDb([valid, corrupt]);
+  try {
+    const res = readArtifacts(path); // previously threw a RangeError here
+    expect(res.total).toBe(2);
+    expect(res.corrupt).toContain(196608);
+    expect(res.items.map((it) => it.id)).toEqual([1]);
+  } finally {
+    cleanup();
+  }
 });

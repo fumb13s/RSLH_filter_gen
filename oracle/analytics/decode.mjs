@@ -1,5 +1,4 @@
-import { DatabaseSync } from "node:sqlite";
-import { N, DBSTAT_TO_OURSTAT, decodeValue, SUB } from "../lib/decode.mjs";
+import { N, DBSTAT_TO_OURSTAT, decodeValue, SUB, readArtifactRows } from "../lib/decode.mjs";
 
 // Re-export so tests/consumers can grab the primitive from this one module.
 export { decodeValue, N } from "../lib/decode.mjs";
@@ -45,9 +44,8 @@ const COLS = ["ID", "type", "rank", "rarity", "lvl", "mid", "mfl", "mlvlid", "as
   "ASCLEVEL", "cID", ...SUB.flatMap((s) => [s.id, s.fl, s.lvl, s.base, s.gv, s.myth])].join(",");
 
 export function readArtifacts(dbPath) {
-  const db = new DatabaseSync(dbPath);
-  const rows = db.prepare(`SELECT ${COLS} FROM Artifacts ORDER BY ID`).all();
-  db.close();
+  // BigInt-safe shared read (see readArtifactRows); isCorrupt() drops garbage rows just below.
+  const rows = readArtifactRows(dbPath, COLS);
   const items = [], corrupt = [];
   for (const row of rows) {
     if (isCorrupt(row)) { corrupt.push(N(row.ID)); continue; }

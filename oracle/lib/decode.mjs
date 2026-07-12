@@ -1,5 +1,7 @@
 // Shared DB-decode primitives for RSLHelper.db gear. Imported by oracle/probe (differential
 // probe vs Sellfile Creator) and oracle/analytics (gear triage) so the two never drift.
+import { DatabaseSync } from "node:sqlite";
+
 export const POW32 = 2 ** 32;
 export const N = (v) => (v == null ? 0 : Number(v)); // node:sqlite returns BigInt
 // DB stat enum (1HP 2ATK 3DEF 4SPD 5RES 6ACC 7CRATE 8CDMG) -> our STAT_NAMES id.
@@ -24,3 +26,17 @@ export function decodeValue(dbStatId, isFlat, rawBase) {
 export const SUB = [1, 2, 3, 4].map((i) => ({
   id: `s${i}id`, fl: `s${i}fl`, lvl: `s${i}lvl`, base: `s${i}lvlid`, gv: `s${i}gv`, myth: `s${i}mlvlid`,
 }));
+
+// The single Artifacts-table read mechanism, shared by probe + analytics — adjust gear reads here
+// only. Integers come back as BigInt (setReadBigInts): the live DB occasionally holds a corrupt row
+// with 64-bit garbage in sNgv/sNmlvlid that overflows a JS number, and node:sqlite throws on .all()
+// unless BigInt reads are on. N() coerces every column back to a Number downstream; callers filter
+// corrupt rows (see isCorrupt). `cols` is a comma-separated column list; rows are returned ORDER BY ID.
+export function readArtifactRows(dbPath, cols) {
+  const db = new DatabaseSync(dbPath);
+  const stmt = db.prepare(`SELECT ${cols} FROM Artifacts ORDER BY ID`);
+  stmt.setReadBigInts(true);
+  const rows = stmt.all();
+  db.close();
+  return rows;
+}
