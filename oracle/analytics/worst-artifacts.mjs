@@ -1,8 +1,8 @@
-// Worst NON-ACCESSORY items (slots 1–6: Helmet/Chest/Gloves/Boots/Weapon/Shield), EXCLUDING the
-// keepers — "triple rolls waiting for an ore in a good set" (= set-analysis ore-gems: a demanded
-// set + a 3+ roll substat, or a 2+ roll on the scarce Chest/Gloves slots). Ranks the rest worst-q
-// first and resolves the equipped champ, so what's left is genuinely trashable.
-//   node oracle/analytics/worst-items.mjs [limit=100] [snapshot.db]
+// Worst ARTIFACTS — the non-accessory items (slots 1–6: Helmet/Chest/Gloves/Boots/Weapon/Shield),
+// EXCLUDING the keepers: "triple rolls waiting for an ore in a good set" (= set-analysis ore-gems:
+// a demanded set + a 3+ roll substat, or a 2+ roll on the scarce Chest/Gloves slots). Ranks the
+// rest worst-q first and resolves the equipped champ, so what's left is genuinely trashable.
+//   node oracle/analytics/worst-artifacts.mjs [limit=100] [snapshot.db]
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
@@ -37,6 +37,8 @@ const goodSet = (it) => keepPremium(it.set) >= 4;                // demanded set
 const oreGem = (it) => { const mr = maxRoll(it); return mr >= 3 || (mr >= 2 && SCARCE.has(it.slot)); };
 const keeper = (it) => goodSet(it) && oreGem(it);               // triple-roll waiting for an ore in a good set
 
+// artifacts = non-accessory items (slots 1–6); accessories are slots 7–9.
+const isArtifact = (it) => it.slot >= 1 && it.slot <= 6;
 const slotName = (s) => lookupName(ARTIFACT_SLOT_NAMES, s);
 const setName = (s) => (s === 0 ? "(setless)" : lookupName(ARTIFACT_SET_NAMES, s) || `#${s}`);
 const RARITY = ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythical"];
@@ -44,13 +46,13 @@ const statStr = (st) => `${statDisplayName(st.statId, st.isFlat)} ${st.value}`;
 const subStr = (it) => it.substats.map((s) => `${statStr(s)}[${s.rolls}r]`).join(", ");
 const champOf = (it) => (it.equippedChampId > 0 ? (champName.get(it.equippedChampId) || `cID ${it.equippedChampId}?`) : "unequipped");
 
-const nonAcc = items.filter((it) => it.slot >= 1 && it.slot <= 6)
+const artifacts = items.filter(isArtifact)
   .map((it) => ({ it, q: quality(it).score, mr: maxRoll(it), good: goodSet(it), keep: keeper(it) }));
-const maxed = nonAcc.filter((a) => a.it.level === 16);
+const maxed = artifacts.filter((a) => a.it.level === 16);
 const worst = maxed.filter((a) => !a.keep).sort((a, b) => a.q - b.q).slice(0, LIMIT);
 
-console.log(`# Worst non-accessory items — snapshot ${dbPath.split(/[\\/]/).pop()}`);
-console.log(`non-accessory items ${nonAcc.length} · +16 ${maxed.length} · excluded good-set ore-gems ${maxed.filter((a) => a.keep).length} · showing worst ${worst.length} (q ${worst[0]?.q}..${worst[worst.length - 1]?.q})`);
+console.log(`# Worst artifacts (non-accessory items, slots 1–6) — snapshot ${dbPath.split(/[\\/]/).pop()}`);
+console.log(`artifacts ${artifacts.length} · +16 ${maxed.length} · excluded good-set ore-gems ${maxed.filter((a) => a.keep).length} · showing worst ${worst.length} (q ${worst[0]?.q}..${worst[worst.length - 1]?.q})`);
 console.log(`(good-set-but-not-a-gem marked *; sub "Stat v[Nr]" = value & extra-roll count)\n`);
 
 for (let i = 0; i < worst.length; i++) {
