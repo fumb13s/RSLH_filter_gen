@@ -158,7 +158,7 @@ Components:
    - `desirability` is a tunable **role × stat** matrix (defaults in §6). Flat variants get low
      desirability, **but** the score is then **normalized against the best achievable substat
      profile for that slot** (from `SLOT_STATS`). So an amulet — whose subs are flat by design —
-     is judged against other amulets, not against armor's %-subs. This is how "flat is only
+     is judged against other amulets, not against artifacts' %-subs. This is how "flat is only
      penalized where a % was possible" is realized.
    - `rollWeight(sub)` rewards upgrade rolls that landed in the sub (more invested rolls in a
      wanted stat = better).
@@ -190,16 +190,16 @@ a champ-demand refinement (§9).
   the raw id is correct regardless of the deferred faction *naming* question (§9) — counts and
   champ matches (`champ.Fraction == accset`) use the same id space; only display labels are
   provisional.
-- **Armor** bucketed by **(slot × set)** (and rolled up by slot for the census).
+- **Artifacts** bucketed by **(slot × set)** (and rolled up by slot for the census).
 - **Keep-floor** — a below-floor bucket is never nominated for deletion, even at low quality.
   Counts **only unequipped** pieces (worn is excluded, so the floor protects *spares*; a worn mule
   piece is still judged on its own merits). The two slot families use different floor shapes —
-  demand-scaling is the armor analog of the accessory faction split:
+  demand-scaling is the artifact analog of the accessory faction split:
   - **Accessories**: flat **4** per **(faction × slot × set)**, **excluding setless** (no floor —
     freely cullable). **No demand scaling** — accessories are already oversupplied; faction
     bucketing alone subdivides their supply.
-  - **Armor**: **`4 × demand`** per **(slot × set)** — no faction dimension, so demand-scaling
-    takes its place (keep more spares of high-demand armor sets).
+  - **Artifacts**: **`4 × demand`** per **(slot × set)** — no faction dimension, so demand-scaling
+    takes its place (keep more spares of high-demand artifact sets).
 - **Setless-dominated rule:** a setless accessory is a strong delete candidate when a
   set-bearing accessory in the **same (faction × slot)** has quality ≥ it ("as soon as you can
   match the stats with a real set, the setless one is redundant").
@@ -231,16 +231,16 @@ All thresholds are parameters (§6); the human reviews the ranked lists.
 
 A second delete pass that evens **unequipped** inventory across slots, so the kept pool isn't
 dominated by the structurally over-supplied slots (Weapon/Shield from fixed mains; Amulet/Banner
-from the 17-faction split). **Armor** (6 slots) is evened as one family. **Accessories** (3 slots)
+from the 17-faction split). **Artifacts** (6 slots) are evened as one family. **Accessories** (3 slots)
 are evened **per faction**: ring/amulet/banner are faction-locked gear, so each faction is balanced
 against *its own* mean kept-unequipped count rather than the pooled accessory total — cross-faction
 totals are intentionally left alone (a faction with more usable champions keeps more accessories).
-The per-slot cap = the relevant pool's (armor family / per-faction accessory) **mean kept-unequipped**
+The per-slot cap = the relevant pool's (artifact family / per-faction accessory) **mean kept-unequipped**
 count, then deletes **worst-quality-first** down to the cap. Protections: equipped mules are excluded
 (not part of the unequipped pool); **invested** (💎 ascended / 🔹 glyphed) pieces are never trimmed;
 and the §3.5 **keep-floor** still binds (no bucket drops below its floor). `balanceFactor` (§6) scales
 the cap — `<1` more aggressive, `>1` gentler, `0` disables. On the current snapshot this caps the tall
-armor slots (Helmet/Weapon/Shield) at ~275 while leaving the short slots (Gloves/Chest/Boots) alone,
+artifact slots (Helmet/Weapon/Shield) at ~275 while leaving the short slots (Gloves/Chest/Boots) alone,
 and within each faction trims the oversupplied amulets/banners toward that faction's scarcer ring
 count. Because the keep-floor binds per faction × slot × set, heavily-multi-set factions stay somewhat
 lopsided — the floor, not the cap, is the binding constraint for tight per-faction parity.
@@ -311,7 +311,7 @@ concrete recommendations. Also gitignored (reflects personal inventory).
 - **Investment glyph thresholds**: SPD +4, %-stat +5, ACC/RES +8; ascended = `ASCLEVEL 6`.
 - **Supply floor** (below-floor ⇒ not a delete candidate), counting unequipped only (worn excluded):
   - Accessories: flat **4** per (faction × slot × set), excluding setless — no demand scaling.
-  - Armor: **`4 × demand`** per (slot × set).
+  - Artifacts: **`4 × demand`** per (slot × set).
 - **Cut lines**: delete below slot-percentile 25; focus at/above slot-percentile 85 (starting
   points — calibrate against the snapshot).
 - **Keep-premium**: pressure = `demand + (demand ≥ 3 ? scarcity − 2 : 0)`.
@@ -346,7 +346,7 @@ implementation step, reviewed before the writeup is finalized.
 - **Faction id-space naming** — release-order vs game-internal id for ids 13–17. Bucketing and
   champ matching are unaffected (same raw id space); only human-readable faction *labels* are
   provisional until resolved.
-- **SFC maxed-Legendary-armor protection** — a separate oracle investigation, unrelated to this
+- **SFC maxed-Legendary-artifact protection** — a separate oracle investigation, unrelated to this
   tool's `.hsf`-correct evaluation.
 
 ## 10. Addendum — value-based scoring v2 (2026-06-07)
@@ -365,7 +365,7 @@ mechanics rather than a normalized mean.
   slot's top-4 achievable desirabilities. A mean is not a valid upper bound for a weighted mean,
   and it under-shoots most where a slot's stats are least uniform — so **82% of rings, 63% of
   banners, 49% of amulets scored exactly 100**, "focus" could only fire on the variable-main
-  armor slots, and per-slot percentiles were meaningless wherever scores piled at the ceiling.
+  artifact slots, and per-slot percentiles were meaningless wherever scores piled at the ceiling.
 - **The main stat was never wired in.** §3.3 listed "main-stat fit" as a component but the build
   shipped substats-only, so a flat-DEF-main boots with good subs outscored a SPD-main boots
   (q100 vs q19) — exactly backwards.
@@ -389,7 +389,7 @@ matrices:
   off-% 0.2 > RES 0.15 > flat 0.1. Support: **HP% = ACC = RES = 0.8** (equal "in general"),
   DEF% 0.6, SPD 1.0. (`dmg%` = ATK%/DEF%/HP% for ATK/DEF/HP-DPS.)
 - **Flat accessory main → %**: a flat HP/ATK/DEF *main* on a Ring/Amulet/Banner is a large
-  absolute stat, so it is scored as its % counterpart; on armor a flat main stays low.
+  absolute stat, so it is scored as its % counterpart; on an artifact a flat main stays low.
 
 ### 10.4 Value-completeness (magnitude is neutralized)
 

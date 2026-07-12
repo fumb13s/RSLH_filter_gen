@@ -13,7 +13,7 @@ model, so it's a second fan reimplementation — a proxy, not ground truth.
 ## Files
 - `build-known-db.py` — regenerates the DB + manifest by copying curated real rows out of a real
   `RslHelper.db`. The source-DB path is hardcoded near the top; edit it for your machine.
-- `known-gear.db` — SQLite gear DB, 24 known artifacts (all 9 slots; 18 armor + 6 accessories with
+- `known-gear.db` — SQLite gear DB, 24 known items (all 9 slots; 18 artifacts + 6 accessories with
   set + faction). Committed so the fixture is usable without a source DB present.
 - `known-gear.manifest.json` — every item fully decoded (the "known contents"): slot (+ our slot
   id), set, faction, rank, rarity, level, main + substats with display values + `ourStatId`.
@@ -30,7 +30,7 @@ model, so it's a second fan reimplementation — a proxy, not ground truth.
 ## RSL Helper DB notes (reverse-engineered 2026-06-05)
 
 Source: a `*_RSLHelper.db` under `…/RslHelper/Config/` (live) or the RSL Helper install dir
-(~1.4 MB). Gear lives in the **`Artifacts`** table — armor *and* accessories. The
+(~1.4 MB). Gear lives in the **`Artifacts`** table — artifacts *and* accessories. The
 `accessories`/`accessory_ids`/`presets` tables are an unused, empty loadout feature; `AccRecords`
 holds non-gear records (its champion-id columns are null in this DB — not battle/arena history).
 
@@ -73,9 +73,9 @@ Amulett/Banner`) — ground truth.
 
 ### Sets & faction
 - Gear **set** is in `aset` — same id space as our `ARTIFACT_SET_NAMES` (incl. 1000–1004
-  accessory-only sets; `0` = no set). True for armor and accessories.
+  accessory-only sets; `0` = no set). True for artifacts and accessories.
 - Accessory **faction** is in `accset` (1–17). Proven: `accset == equipped champ.Fraction` for all
-  1,286 equipped accessories; armor has `accset = 0`.
+  1,286 equipped accessories; artifacts have `accset = 0`.
 
 ### Rarity / rank
 DB `rarity` 1–6 (1 = Common … 6 = Mythical); our model rarity index = `dbRarity − 1`.

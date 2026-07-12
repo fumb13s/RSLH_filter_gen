@@ -41,8 +41,8 @@ artifacts}`) → `pipeline:done {matches}`. Per-item verdict = `matches[i].first
 (stat `variant` formula, value scaling, slot/set/faction tables): see `../README.md`.
 
 ## Known divergence (the screen working as intended)
-First run: 19–23/24 agree. The consistent disagreements are **fully-maxed Legendary armor**
+First run: 19–23/24 agree. The consistent disagreements are **fully-maxed Legendary artifacts**
 (slots 1–6, rank 6, Legendary, lvl 16): SFC keeps them (returns no match) while our
 evaluator applies the rule and sells. `.hsf` is the source of truth — SFC layers an extra
-"don't auto-sell your best armor" protection on top of the raw rules. Adjudicate against
+"don't auto-sell your best artifacts" protection on top of the raw rules. Adjudicate against
 RSL Helper's Sell Test before changing anything on our side.

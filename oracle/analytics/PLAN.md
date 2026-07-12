@@ -464,7 +464,7 @@ export const GLYPH_THRESHOLDS = { spd: 4, pct: 5, accRes: 8 };
 export const ASCENDED_LEVEL = 6;
 
 // Supply floors (DESIGN.md §3.5/§6), counting unequipped only.
-export const SUPPLY = { accessoryFloor: 4, armorBase: 4 }; // accessory flat 4; armor armorBase*demand
+export const SUPPLY = { accessoryFloor: 4, artifactBase: 4 }; // accessory flat 4; artifact artifactBase*demand
 
 // Triage cut lines (per-slot percentile) + keep-premium gates (DESIGN.md §3.6/§3.7).
 export const CUTS = { deletePct: 25, focusPct: 85, lowPremium: 2, focusPremium: 4 };
@@ -654,17 +654,17 @@ git commit -m "feat(analytics): quality score (best-matching role) + investment 
 import { getSet } from "./sets.mjs";
 import { SUPPLY } from "./weights.mjs";
 
-// Accessories bucket by faction x slot x set; armor by slot x set.
+// Accessories bucket by faction x slot x set; artifacts by slot x set.
 export function bucketKey(item) {
   return item.isAccessory
     ? `acc|${item.faction}|${item.slot}|${item.set}`
-    : `arm|${item.slot}|${item.set}`;
+    : `art|${item.slot}|${item.set}`;
 }
 
-// Floor: accessories flat 4 (setless = 0, no floor); armor 4 x demand.
+// Floor: accessories flat 4 (setless = 0, no floor); artifacts 4 x demand.
 export function floorFor(item) {
   if (item.isAccessory) return item.set === 0 ? 0 : SUPPLY.accessoryFloor;
-  return SUPPLY.armorBase * getSet(item.set).demand;
+  return SUPPLY.artifactBase * getSet(item.set).demand;
 }
 
 // Counts of UNEQUIPPED items per bucket (worn excluded — the floor protects spares).
@@ -709,23 +709,23 @@ import { test, expect } from "vitest";
 import { bucketKey, floorFor, bucketCounts, atOrBelowFloor, setlessDominated } from "../supply.mjs";
 
 const acc = (id, faction, slot, set, eq = 0) => ({ id, faction, slot, set, isAccessory: true, equippedChampId: eq });
-const arm = (id, slot, set, eq = 0) => ({ id, slot, set, faction: 0, isAccessory: false, equippedChampId: eq });
+const art = (id, slot, set, eq = 0) => ({ id, slot, set, faction: 0, isAccessory: false, equippedChampId: eq });
 
-test("floors: accessory flat 4, setless 0, armor 4xdemand", () => {
+test("floors: accessory flat 4, setless 0, artifact 4xdemand", () => {
   expect(floorFor(acc(1, 5, 7, 66))).toBe(4);  // Mercurial accessory
   expect(floorFor(acc(2, 5, 7, 0))).toBe(0);   // setless
-  expect(floorFor(arm(3, 1, 66))).toBe(20);    // Mercurial armor demand 5 -> 20
-  expect(floorFor(arm(4, 1, 49))).toBe(4);     // Killstroke demand 1 -> 4
+  expect(floorFor(art(3, 1, 66))).toBe(20);    // Mercurial artifact demand 5 -> 20
+  expect(floorFor(art(4, 1, 49))).toBe(4);     // Killstroke demand 1 -> 4
 });
 test("bucketCounts excludes worn", () => {
-  const items = [arm(1, 1, 48), arm(2, 1, 48, 999), arm(3, 1, 48)];
+  const items = [art(1, 1, 48), art(2, 1, 48, 999), art(3, 1, 48)];
   const c = bucketCounts(items);
-  expect(c.get(bucketKey(arm(1, 1, 48)))).toBe(2); // only the 2 unequipped
+  expect(c.get(bucketKey(art(1, 1, 48)))).toBe(2); // only the 2 unequipped
 });
 test("atOrBelowFloor protects thin buckets", () => {
-  const items = [arm(1, 1, 49), arm(2, 1, 49)]; // demand1 armor, floor 4, only 2 -> protected
+  const items = [art(1, 1, 49), art(2, 1, 49)]; // demand1 artifact, floor 4, only 2 -> protected
   const c = bucketCounts(items);
-  expect(atOrBelowFloor(arm(1, 1, 49), c)).toBe(true);
+  expect(atOrBelowFloor(art(1, 1, 49), c)).toBe(true);
 });
 test("setlessDominated: setless flagged when a set accessory matches/beats it", () => {
   const items = [acc(1, 5, 7, 0), acc(2, 5, 7, 60)]; // #1 setless, #2 set 60, same faction5/slot7
@@ -904,7 +904,7 @@ test("keepPremium is demand-led (scarcity only counts when demand>=3)", () => {
   expect(keepPremium(66)).toBe(6);  // Mercurial 5/5 -> 5 + (5-2)
   expect(keepPremium(0)).toBe(1);   // setless 3/1
 });
-test("low-quality oversupplied low-demand armor is a delete candidate", () => {
+test("low-quality oversupplied low-demand artifact is a delete candidate", () => {
   // 12 junk Killstroke (demand1, floor 4) boots so the bucket is above floor and percentiles populate
   const items = [];
   for (let i = 0; i < 12; i++) items.push(mk(100 + i, 4, 49, junk));
@@ -1052,7 +1052,7 @@ Not a code task — a review gate. After Task 8 runs on the real DB:
 - §3.1 roles, §3.2 set table → Tasks 2–3. ✓
 - §3.3 quality (best-matching role, slot-relative ceiling) → Task 4. ✓
 - §3.4 investment flag (ascended/glyphed; equipped = context only) → Task 4 (`investment`) + shown in report, never excludes. ✓
-- §3.5 supply (accessory faction×slot×set, armor slot×set, worn-excluded counts, setless-dominated) → Task 5. ✓
+- §3.5 supply (accessory faction×slot×set, artifact slot×set, worn-excluded counts, setless-dominated) → Task 5. ✓
 - §3.6 demand-led keep-premium → Task 7 (`keepPremium`). ✓
 - §3.7 triage (focus/delete/keep + reasons + badges) → Task 7 + Task 8 labels. ✓
 - §4 census → Task 6. ✓
@@ -1060,6 +1060,6 @@ Not a code task — a review gate. After Task 8 runs on the real DB:
 - §6 parameters → Task 3 (`weights.mjs`). ✓
 - §7 testing (decode vs manifest; scoring synergy + flat-amulet; census reconciliation) → Tasks 1,4,6 + per-module tests. ✓
 
-**Placeholder scan:** none — every code step has complete code; the only "TBD-like" item (§6 armor floor) was resolved to `4 × demand`.
+**Placeholder scan:** none — every code step has complete code; the only "TBD-like" item (§6 artifact floor) was resolved to `4 × demand`.
 
 **Type consistency:** canonical item shape (`{id, slot, set, rank, rarity, level, faction, isAccessory, mainStat:{statId,isFlat,value}, substats:[{statId,isFlat,rolls,value,glyph}], ascLevel, equippedChampId}`) is produced by `decodeRow` (Task 1) and consumed unchanged by score/supply/census/triage (Tasks 4–7). `quality()` returns `{role, score}`; `investment()` returns `{ascended, glyphed}`; `triage()` items carry `{item, q, inv, percentile, premium, belowFloor, verdict, reason}` — used consistently in `analyze.mjs`. Stat ids are our-space throughout (decode maps DB→ours once). ✓
