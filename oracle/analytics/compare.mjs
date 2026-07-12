@@ -71,7 +71,7 @@ P(delta("accessories", A.census.accessories, B.census.accessories));
 P(delta("setless", A.census.setless, B.census.setless), ``);
 
 P(`## Recommendations`);
-P(delta("delete", A.summary.delete, B.summary.delete) + `   [acc ${A.summary.deleteAccessories}→${B.summary.deleteAccessories}, armor ${A.summary.deleteArmor}→${B.summary.deleteArmor}]`);
+P(delta("delete", A.summary.delete, B.summary.delete) + `   [acc ${A.summary.deleteAccessories}→${B.summary.deleteAccessories}, artifacts ${A.summary.deleteArtifacts ?? A.summary.deleteArmor}→${B.summary.deleteArtifacts ?? B.summary.deleteArmor}]`);
 P(delta("· junk", A.summary.junk, B.summary.junk) + `   · slot-balance ${A.summary.slotBalance}→${B.summary.slotBalance}`);
 P(delta("focus", A.summary.focus, B.summary.focus));
 P(delta("upgrade", A.summary.upgrades, B.summary.upgrades), ``);

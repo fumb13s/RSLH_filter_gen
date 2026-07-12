@@ -4,18 +4,18 @@ import { rollStats, isGoodSub, pearson, spearman, ranks, segmentStats, bucketSta
 
 // substat factory — only statId/isFlat/rolls matter to roll counting (value/glyph irrelevant)
 const sub = (statId, isFlat, rolls) => ({ statId, isFlat, rolls, value: 0, glyph: 0 });
-const item = (substats, slot = 4) => ({ slot, substats }); // default slot 4 = Boots (armor)
+const item = (substats, slot = 4) => ({ slot, substats }); // default slot 4 = Boots (artifact)
 
-test("armor good substats mirror the generator presets (nuker = no ACC, no flat)", () => {
-  // ATK-DPS = ATK Nuker on armor (slot 4 = Boots): ATK%, SPD, C.RATE, C.DMG
+test("artifact good substats mirror the generator presets (nuker = no ACC, no flat)", () => {
+  // ATK-DPS = ATK Nuker on an artifact (slot 4 = Boots): ATK%, SPD, C.RATE, C.DMG
   expect(isGoodSub(4, "ATK-DPS", 2, false)).toBe(true); // ATK%
   expect(isGoodSub(4, "ATK-DPS", 5, false)).toBe(true); // C.RATE
   expect(isGoodSub(4, "ATK-DPS", 4, true)).toBe(true);  // SPD
-  expect(isGoodSub(4, "ATK-DPS", 8, true)).toBe(false); // ACC — NOT good for an armor nuker
+  expect(isGoodSub(4, "ATK-DPS", 8, true)).toBe(false); // ACC — NOT good for an artifact nuker
   expect(isGoodSub(4, "ATK-DPS", 1, true)).toBe(false); // flat HP
 });
 
-test("armor Support good substats include DEF%, RES and ACC but not crit", () => {
+test("artifact Support good substats include DEF%, RES and ACC but not crit", () => {
   expect(isGoodSub(2, "Support", 3, false)).toBe(true);  // DEF% (slot 2 = Chest)
   expect(isGoodSub(2, "Support", 7, true)).toBe(true);   // RES
   expect(isGoodSub(2, "Support", 8, true)).toBe(true);   // ACC

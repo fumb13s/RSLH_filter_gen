@@ -1,17 +1,17 @@
 import { getSet } from "./sets.mjs";
 import { SUPPLY } from "./weights.mjs";
 
-// Accessories bucket by faction x slot x set; armor by slot x set.
+// Accessories bucket by faction x slot x set; artifacts by slot x set.
 export function bucketKey(item) {
   return item.isAccessory
     ? `acc|${item.faction}|${item.slot}|${item.set}`
-    : `arm|${item.slot}|${item.set}`;
+    : `art|${item.slot}|${item.set}`;
 }
 
-// Floor: accessories flat 4 (setless = 0, no floor); armor 4 x demand.
+// Floor: accessories flat 4 (setless = 0, no floor); artifacts 4 x demand.
 export function floorFor(item) {
   if (item.isAccessory) return item.set === 0 ? 0 : SUPPLY.accessoryFloor;
-  return SUPPLY.armorBase * getSet(item.set).demand;
+  return SUPPLY.artifactBase * getSet(item.set).demand;
 }
 
 // Counts of UNEQUIPPED items per bucket (worn excluded — the floor protects spares).

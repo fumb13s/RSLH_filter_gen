@@ -10,7 +10,7 @@ export const WEIGHTS = {
 // MAIN-stat desirability — a SEPARATE matrix from the substat WEIGHTS, because a main's value
 // profile differs from a sub's: C.DMG main > C.RATE main (but they're equal as subs), and the
 // damage-scaling % main sits below the crits. dmg% = ATK%/DEF%/HP% for ATK/DEF/HP-DPS. Support
-// HP%/ACC/RES are equal "in general". Flat HP/ATK/DEF here is the armor case (low); on accessories
+// HP%/ACC/RES are equal "in general". Flat HP/ATK/DEF here is the artifact case (low); on accessories
 // a flat main maps to its % counterpart in score.mjs (a main is a big absolute stat).
 export const MAIN_WEIGHTS = {
   "ATK-DPS": { spd: 1.0, cd: 0.95, cr: 0.9, atkPct: 0.8, defPct: 0.2, hpPct: 0.2, acc: 0.5, res: 0.15, flat: 0.1 },
@@ -28,12 +28,12 @@ export const GLYPH_THRESHOLDS = { spd: 4, pct: 5, accRes: 8 };
 export const ASCENDED_LEVEL = 6;
 
 // Supply floors (DESIGN.md §3.5/§6), counting unequipped only.
-export const SUPPLY = { accessoryFloor: 4, armorBase: 4 }; // accessory flat 4; armor armorBase*demand
+export const SUPPLY = { accessoryFloor: 4, artifactBase: 4 }; // accessory flat 4; artifact artifactBase*demand
 
-// Triage cut lines. delete: oversupplied low-demand armor below slot-percentile `deletePct`
+// Triage cut lines. delete: oversupplied low-demand artifacts below slot-percentile `deletePct`
 // (plus all setless-dominated accessories). focus/upgrade: top `focusPerGroup` per slot x archetype
 // among demanded sets (premium >= focusPremium). upgrade restricted to level <= upgradeMaxLevel.
 // balanceFactor: slot-balance target = round(family mean of kept-unequipped x balanceFactor) per
-// slot, deleting worst-first to even the UNEQUIPPED pool within armor (6 slots) and accessories
+// slot, deleting worst-first to even the UNEQUIPPED pool within artifacts (6 slots) and accessories
 // (3 slots) separately; <1 is more aggressive (lower cap), >1 gentler, 0 disables.
 export const CUTS = { deletePct: 70, lowPremium: 2, focusPremium: 4, focusPerGroup: 2, upgradeMaxLevel: 12, balanceFactor: 1 };

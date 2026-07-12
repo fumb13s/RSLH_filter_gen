@@ -16,9 +16,9 @@ import { quality } from "./score.mjs";
 // --- Good-substat definition (slot-aware) ----------------------------------
 // [statId, isFlat] in OUR stat ids (1 HP, 2 ATK, 3 DEF, 4 SPD, 5 C.RATE, 6 C.DMG, 7 RES, 8 ACC).
 //
-// Armor (slots 1-6): the filter generator's SUBSTAT_PRESETS per role (packages/web/src/generator.ts;
+// Artifacts (slots 1-6): the filter generator's SUBSTAT_PRESETS per role (packages/web/src/generator.ts;
 // duplicated here since the web package isn't cleanly importable — keep in sync).
-const ARMOR_GOOD = {
+const ARTIFACT_GOOD = {
   "ATK-DPS": [[2, false], [4, true], [5, false], [6, false]],           // ATK Nuker: ATK%, SPD, C.RATE, C.DMG
   "DEF-DPS": [[3, false], [4, true], [5, false], [6, false]],           // DEF Nuker: DEF%, SPD, C.RATE, C.DMG
   "HP-DPS":  [[1, false], [4, true], [5, false], [6, false]],           // HP Nuker:  HP%,  SPD, C.RATE, C.DMG
@@ -26,7 +26,7 @@ const ARMOR_GOOD = {
 };
 
 // Accessories (7 Ring, 8 Amulet, 9 Banner) roll from restricted, distinct pools (core SLOT_STATS),
-// so they get their own good-substat lists rather than the armor presets:
+// so they get their own good-substat lists rather than the artifact presets:
 //   Ring   rolls HP/ATK/DEF (flat + %) only          -> the role's % only
 //   Amulet rolls flat HP/ATK/DEF, C.DMG, ACC, RES     -> DPS: C.DMG + ACC; Support: ACC/RES/flat HP/DEF
 //   Banner rolls HP/ATK/DEF (flat + %), SPD           -> the role's % + SPD
@@ -54,9 +54,9 @@ const ACCESSORY_GOOD = {
   },
 };
 
-// Good-substat list for a slot+role: accessories (7-9) use their own pools, armor uses the presets.
+// Good-substat list for a slot+role: accessories (7-9) use their own pools, artifacts use the presets.
 export function goodSubsFor(slot, role) {
-  return (slot >= 7 ? ACCESSORY_GOOD[slot]?.[role] : ARMOR_GOOD[role]) ?? [];
+  return (slot >= 7 ? ACCESSORY_GOOD[slot]?.[role] : ARTIFACT_GOOD[role]) ?? [];
 }
 
 export function isGoodSub(slot, role, statId, isFlat) {
@@ -138,7 +138,7 @@ export function bucketStats(rows) {
 const fmtR = (r) => (Number.isNaN(r) ? "  n/a" : (r >= 0 ? " " : "") + r.toFixed(3));
 const SEGMENTS = [
   ["overall", () => true],
-  ["armor", (r) => !r.isAccessory],
+  ["artifacts", (r) => !r.isAccessory],
   ["accessories", (r) => r.isAccessory],
   ["level 16", (r) => r.level === 16],
   ["ATK-DPS", (r) => r.role === "ATK-DPS"],
@@ -195,7 +195,7 @@ function main() {
 
   const L = [`# Roll-quality vs rating — ${date}`, ``];
   L.push(`${scored.length} items (of ${total} rows; ${corrupt.length} corrupt, ${rows.length - scored.length} subless skipped).`);
-  L.push(`Good substats are slot-aware (armor = generator presets; accessories use their own restricted pools); roll-events = initial + upgrades (rolls+1).`, ``);
+  L.push(`Good substats are slot-aware (artifacts = generator presets; accessories use their own restricted pools); roll-events = initial + upgrades (rolls+1).`, ``);
   L.push(...rollQualityMarkdown(scored));
   console.log(L.join("\n"));
 }

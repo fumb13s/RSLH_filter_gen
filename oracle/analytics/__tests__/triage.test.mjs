@@ -17,7 +17,7 @@ test("keepPremium is demand-led (scarcity only counts when demand>=3)", () => {
   expect(keepPremium(0)).toBe(1);   // setless 3/1
 });
 
-test("oversupplied low-demand armor lands in delete", () => {
+test("oversupplied low-demand artifact lands in delete", () => {
   const junk = [sub(1, true, 0.3), sub(3, true, 0.3)]; // flat HP/DEF, weak
   const good = [sub(4, true), sub(5, false), sub(6, false)];
   const items = [];

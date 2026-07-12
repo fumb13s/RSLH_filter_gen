@@ -21,7 +21,7 @@ export function desir(role, statId, isFlat) {
 }
 
 // Main-stat desirability (separate matrix). On accessories a flat HP/ATK/DEF main is a big
-// absolute stat, so it counts as its % counterpart; on armor a flat main stays low.
+// absolute stat, so it counts as its % counterpart; on an artifact a flat main stays low.
 export function mainDesir(role, statId, isFlat, slot) {
   const w = MAIN_WEIGHTS[role];
   const flatAsPct = slot >= 7 && isFlat && (statId === 1 || statId === 2 || statId === 3);

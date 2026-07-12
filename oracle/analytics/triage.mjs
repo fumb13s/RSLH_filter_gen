@@ -3,7 +3,7 @@ import { bucketCounts, bucketKey, floorFor, atOrBelowFloor, setlessDominated } f
 import { getSet } from "./sets.mjs";
 import { CUTS } from "./weights.mjs";
 
-const ARMOR_SLOTS = [1, 2, 3, 4, 5, 6];
+const ARTIFACT_SLOTS = [1, 2, 3, 4, 5, 6];
 const ACC_SLOTS = [7, 8, 9];
 
 // Demand-led keep-premium: scarcity boosts only when demand >= 3 (DESIGN.md §3.6).
@@ -46,7 +46,7 @@ function balanceFamily(scored, slots, live, faction = null) {
   }
 }
 
-// Slot-balance: even the UNEQUIPPED pool worst-quality-first. Armor (slots 1-6) is one family —
+// Slot-balance: even the UNEQUIPPED pool worst-quality-first. Artifacts (slots 1-6) are one family —
 // it isn't faction-locked. Accessories are evened PER FACTION: ring/amulet/banner are faction-bound
 // gear, so each faction's three slots are balanced against each other, while cross-faction totals are
 // left alone (a faction with more usable champions keeps more accessories). Mutates `scored`. (§3.8)
@@ -60,7 +60,7 @@ export function slotBalance(scored, counts) {
       live.set(k, (live.get(k) || 0) - 1);
     }
   }
-  balanceFamily(scored, ARMOR_SLOTS, live);
+  balanceFamily(scored, ARTIFACT_SLOTS, live);
   const factions = [...new Set(scored.filter((s) => s.item.isAccessory).map((s) => s.item.faction))]
     .sort((a, b) => a - b);
   for (const faction of factions) balanceFamily(scored, ACC_SLOTS, live, faction);
@@ -124,7 +124,7 @@ export function triage(items) {
     Object.assign(s, { percentile: p, premium, belowFloor, verdict, reason, slotBalanced: false });
   }
 
-  // Even the unequipped pool within armor / accessories (deletes worst-first toward family mean).
+  // Even the unequipped pool within artifacts / accessories (deletes worst-first toward family mean).
   slotBalance(scored, counts);
 
   // Focus: the best couple to build around per slot x archetype, among kept demanded-set gear.

@@ -40,7 +40,7 @@ const accLabel = (it) => `${facName(it.faction)} ${slotName(it.slot)}`;
 const setFac = (it) => (it.isAccessory ? `${setName(it.set)} / ${facName(it.faction)}` : setName(it.set));
 const ROLES = ["ATK-DPS", "DEF-DPS", "HP-DPS", "Support"];
 const SLOTS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-const ARMOR = [1, 2, 3, 4, 5, 6], ACC = [7, 8, 9];
+const ARTIFACT_SLOTS = [1, 2, 3, 4, 5, 6], ACC = [7, 8, 9];
 
 // Per-slot unequipped distribution (the pool the slot-balance pass evens out).
 function slotRow(slot) {
@@ -57,13 +57,13 @@ const deletes = scored.filter((s) => s.verdict === "delete");
 const focus = scored.filter((s) => s.focus);
 const upgrades = scored.filter((s) => s.upgrade);
 const delAcc = deletes.filter((s) => s.item.isAccessory);
-const delArm = deletes.filter((s) => !s.item.isAccessory);
+const delArt = deletes.filter((s) => !s.item.isAccessory);
 const balDel = deletes.filter((s) => s.slotBalanced);
 const junkDel = deletes.filter((s) => !s.slotBalanced);
 const setlessDel = junkDel.filter((s) => s.item.isAccessory && s.item.set === 0);
 const accOversupply = junkDel.filter((s) => s.item.isAccessory && s.item.set !== 0);
-const junkArm = junkDel.filter((s) => !s.item.isAccessory);
-const balArm = balDel.filter((s) => !s.item.isAccessory);
+const junkArt = junkDel.filter((s) => !s.item.isAccessory);
+const balArt = balDel.filter((s) => !s.item.isAccessory);
 const balAcc = balDel.filter((s) => s.item.isAccessory);
 const muleDel = deletes.filter((s) => s.item.equippedChampId > 0); // equipped junk (mule context)
 
@@ -81,9 +81,9 @@ P(`# Gear Vault Analytics — ${date}`, ``);
 P(`**${total} rows** (${corrupt.length} corrupt skipped) · equipped ${cen.equipped} · fully-ascended ${cen.ascended} · glyphed ${cen.glyphed} · accessories ${cen.accessories} (setless ${cen.setless})`, ``);
 
 P(`## Recommendation summary`, ``);
-P(`- **Delete: ${deletes.length}** — ${delAcc.length} accessories · ${delArm.length} armor`);
-P(`  - junk **${junkDel.length}**: ${setlessDel.length} setless-dominated + ${accOversupply.length} oversupplied accessories + ${junkArm.length} low-demand armor`);
-P(`  - slot-balance **${balDel.length}**: ${balArm.length} armor + ${balAcc.length} accessories — worst-first to even the unequipped pool`);
+P(`- **Delete: ${deletes.length}** — ${delAcc.length} accessories · ${delArt.length} artifacts`);
+P(`  - junk **${junkDel.length}**: ${setlessDel.length} setless-dominated + ${accOversupply.length} oversupplied accessories + ${junkArt.length} low-demand artifacts`);
+P(`  - slot-balance **${balDel.length}**: ${balArt.length} artifacts + ${balAcc.length} accessories — worst-first to even the unequipped pool`);
 P(`  - by pool: **${deletes.length - muleDel.length} unequipped** + ${muleDel.length} equipped mules (junk parked on champs — unequip-then-sell). The evened distribution below counts unequipped only.`);
 P(`- **Focus: ${focus.length}** — your best ${CUTS.focusPerGroup} per slot × archetype to build around`);
 P(`- **Upgrade: ${upgrades.length}** — under-leveled (≤${CUTS.upgradeMaxLevel}) demanded gear worth taking to 16`, ``);
@@ -98,12 +98,12 @@ if (accOversupply.length) {
   for (const [k, n] of topGroups(accOversupply, (s) => `${accLabel(s.item)} ${setName(s.item.set)}`)) P(`- ${k}: ${n}`);
   P(``);
 }
-P(`### Junk — armor (${junkArm.length})`, ``);
+P(`### Junk — artifacts (${junkArt.length})`, ``);
 P(`**Oversupplied low-quality** — below slot-percentile ${CUTS.deletePct}, above the keep-floor, on a low-demand set (premium ≤ ${CUTS.lowPremium}). By slot × set:`, ``);
-for (const [k, n] of topGroups(junkArm, (s) => `${slotName(s.item.slot)} · ${setName(s.item.set)}`)) P(`- ${k}: ${n}`);
+for (const [k, n] of topGroups(junkArt, (s) => `${slotName(s.item.slot)} · ${setName(s.item.set)}`)) P(`- ${k}: ${n}`);
 P(``);
 P(`### Slot-balance trims (${balDel.length})`, ``);
-P(`Evens the **unequipped** pool worst-first (equipped mules excluded; invested 💎/🔹 pieces and below-floor buckets protected). **Armor** is one family — tall slots capped at the family mean (~${familyCap(ARMOR, balDel)}/slot). **Accessories** are evened **per faction**: ring/amulet/banner balanced within each faction (faction-locked gear), cross-faction totals left alone. By slot:`, ``);
+P(`Evens the **unequipped** pool worst-first (equipped mules excluded; invested 💎/🔹 pieces and below-floor buckets protected). **Artifacts** are one family — tall slots capped at the family mean (~${familyCap(ARTIFACT_SLOTS, balDel)}/slot). **Accessories** are evened **per faction**: ring/amulet/banner balanced within each faction (faction-locked gear), cross-faction totals left alone. By slot:`, ``);
 for (const [k, n] of topGroups(balDel, (s) => slotName(s.item.slot), 9)) P(`- ${k}: ${n}`);
 P(``);
 P(`Resulting unequipped distribution (the evened pool):`, ``);
@@ -157,7 +157,7 @@ for (const role of ROLES) {
 }
 
 P(`## Roll-quality vs rating`, ``);
-P(`Good substats are slot-aware (armor = the filter generator's presets; accessories use their own restricted pools). Roll-events = initial + upgrades (rolls+1). How well the q-score tracks rolls landing in good substats.`, ``);
+P(`Good substats are slot-aware (artifacts = the filter generator's presets; accessories use their own restricted pools). Roll-events = initial + upgrades (rolls+1). How well the q-score tracks rolls landing in good substats.`, ``);
 const rqRows = scored
   .map((s) => { const gr = rolls.get(s.item.id); return { score: s.q.score, role: s.q.role, isAccessory: s.item.isAccessory, level: s.item.level, good: gr.good, total: gr.total, frac: gr.frac }; })
   .filter((r) => r.total > 0);
@@ -191,8 +191,8 @@ const json = {
     byRarity: Object.fromEntries(cen.byRarity), byLevel: Object.fromEntries(cen.byLevel),
   },
   summary: {
-    delete: deletes.length, deleteAccessories: delAcc.length, deleteArmor: delArm.length,
-    junk: junkDel.length, slotBalance: balDel.length, slotBalanceArmor: balArm.length, slotBalanceAccessories: balAcc.length,
+    delete: deletes.length, deleteAccessories: delAcc.length, deleteArtifacts: delArt.length,
+    junk: junkDel.length, slotBalance: balDel.length, slotBalanceArtifacts: balArt.length, slotBalanceAccessories: balAcc.length,
     setless: setlessDel.length, focus: focus.length, upgrades: upgrades.length,
   },
   verdicts: scored.map((s) => ({
@@ -206,4 +206,4 @@ const json = {
 };
 writeFileSync(here(`./out/${date}-report.json`), JSON.stringify(json, null, 2));
 writeFileSync(here(`./out/${date}-report.md`), md.join("\n"));
-console.log(`snapshot ${date}: decoded ${items.length} (skipped ${corrupt.length}); delete ${deletes.length} (acc ${delAcc.length}, armor ${delArm.length}), focus ${focus.length}, upgrade ${upgrades.length}. Wrote out/${date}-report.{json,md}`);
+console.log(`snapshot ${date}: decoded ${items.length} (skipped ${corrupt.length}); delete ${deletes.length} (acc ${delAcc.length}, artifacts ${delArt.length}), focus ${focus.length}, upgrade ${upgrades.length}. Wrote out/${date}-report.{json,md}`);

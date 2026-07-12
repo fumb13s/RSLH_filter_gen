@@ -17,10 +17,10 @@ test("substat desir: every % beats flat for ATK-DPS", () => {
   expect(desir("ATK-DPS", 2, false) > desir("ATK-DPS", 2, true)).toBe(true);
 });
 
-test("main desir: SPD top; C.DMG-main > C.RATE-main; flat armor main is junk", () => {
+test("main desir: SPD top; C.DMG-main > C.RATE-main; flat artifact main is junk", () => {
   expect(mainDesir("ATK-DPS", 4, true, 4)).toBe(1.0);                                   // SPD boots
   expect(mainDesir("ATK-DPS", 6, false, 3)).toBeGreaterThan(mainDesir("ATK-DPS", 5, false, 3)); // CD>CR gloves
-  expect(mainDesir("ATK-DPS", 3, true, 4)).toBe(0.1);                                   // flat-DEF boots main (armor)
+  expect(mainDesir("ATK-DPS", 3, true, 4)).toBe(0.1);                                   // flat-DEF boots main (artifact)
 });
 
 test("main desir: flat accessory main counts as %, and role synergy", () => {
