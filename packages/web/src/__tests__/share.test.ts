@@ -236,6 +236,19 @@ describe("share: round-trip", () => {
     expect(decoded.oreReroll?.assignments[18]).toBe(2);
   });
 
+  // Regression: Swift Parry (35), Deflection (36) and Mercurial (66) roll accessories in real
+  // gear data but were absent from ACCESSORY_SET_IDS, so decode rejected any share link
+  // selecting them.
+  it("preserves rare accessories for the later accessory-capable sets", async () => {
+    const state = defaultQuickState();
+    state.rareAccessories = { selections: { 35: [4], 36: [5], 66: [5, 10] } };
+
+    const decoded = await decodeState(await encodeState(state));
+    expect(decoded.rareAccessories?.selections[35]).toEqual([4]);
+    expect(decoded.rareAccessories?.selections[36]).toEqual([5]);
+    expect(decoded.rareAccessories?.selections[66]).toEqual([5, 10]);
+  });
+
   it("preserves sellRolls on tiers", async () => {
     const state: QuickGenState = {
       blocks: [{

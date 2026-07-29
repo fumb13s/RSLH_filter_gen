@@ -132,10 +132,12 @@ export const FACTION_NAMES: Record<number, string> = {
 
 /**
  * Set IDs that can roll accessories (Ring / Amulet / Banner).
- * Includes item+accessory sets (47-48, 58-65) and accessory-only sets (1000-1004).
+ * Includes item+accessory sets (35-36, 47-48, 58-66) and accessory-only sets (1000-1004).
+ * Verified against the Ring/Amulet/Banner rows of the RslHelper.db snapshots in
+ * oracle/resources/ — see the ACCESSORY_SET_IDS tests for the observed-id list.
  */
 export const ACCESSORY_SET_IDS: readonly number[] = [
-  47, 48, 58, 59, 60, 61, 62, 63, 64, 65,
+  35, 36, 47, 48, 58, 59, 60, 61, 62, 63, 64, 65, 66,
   1000, 1001, 1002, 1003, 1004,
 ] as const;
 

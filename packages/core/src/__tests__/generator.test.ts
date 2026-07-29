@@ -14,6 +14,7 @@ import {
   emptySubstat,
 } from "../types.js";
 import {
+  ACCESSORY_SET_IDS,
   ARTIFACT_SET_NAMES,
   ARTIFACT_SLOT_NAMES,
   STAT_NAMES,
@@ -226,6 +227,32 @@ describe("lookupName", () => {
 
   it("returns Unknown(N) for unmapped IDs", () => {
     expect(lookupName(ARTIFACT_SET_NAMES, 9999)).toBe("Unknown(9999)");
+  });
+});
+
+describe("ACCESSORY_SET_IDS", () => {
+  // Sets observed on real Ring/Amulet/Banner rows in the RslHelper.db snapshots under
+  // oracle/resources/. The list gates the accessory dropdown (quick-generator) and the
+  // share-link allowlist (share.ts), so a missing id silently rejects valid shared filters.
+  const OBSERVED_ON_ACCESSORIES = [
+    35, 36, 47, 48, 58, 59, 60, 61, 62, 63, 64, 65, 66,
+    1000, 1001, 1002, 1003, 1004,
+  ];
+
+  it("includes every set seen on accessories in real gear data", () => {
+    expect([...ACCESSORY_SET_IDS].sort((a, b) => a - b)).toEqual(OBSERVED_ON_ACCESSORIES);
+  });
+
+  it("names every listed set", () => {
+    for (const id of ACCESSORY_SET_IDS) {
+      expect(lookupName(ARTIFACT_SET_NAMES, id)).not.toBe(`Unknown(${id})`);
+    }
+  });
+
+  it("is ascending and duplicate-free", () => {
+    const ids = [...ACCESSORY_SET_IDS];
+    expect(ids).toEqual([...new Set(ids)]);
+    expect(ids).toEqual([...ids].sort((a, b) => a - b));
   });
 });
 
