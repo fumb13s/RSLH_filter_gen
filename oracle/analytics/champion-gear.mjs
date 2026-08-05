@@ -10,7 +10,12 @@
 //                 Omit for summary mode: one line per geared champion, worst first.
 //     snapshot.db an arg ending in .db or containing a slash (default: newest snapshot).
 
-import { keepPremium } from "./triage.mjs";
+import { readdirSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { DatabaseSync } from "node:sqlite";
+import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, FACTION_NAMES, lookupName } from "@rslh/core";
+import { readArtifacts } from "./decode.mjs";
+import { keepPremium, triage } from "./triage.mjs";
 import { quality, qualityAtRole } from "./score.mjs";
 import { rollStats } from "./rollquality.mjs";
 import { ALL_ROLES } from "./sets.mjs";
@@ -28,6 +33,11 @@ export const CHAMP_ROLE_LABEL = { 0: "Attack", 1: "Defense", 2: "HP", 3: "Suppor
 // raw, NOT via Number(): the column has no NOT NULL constraint, and Number(null) is 0, which would
 // quietly grade a role-less champion as Attack instead of suppressing the flag.
 export const champRole = (row) => CHAMP_ROLE[row?.Role] ?? null;
+
+// The readable half of the same lookup, for the report header ("Attack (ATK-DPS)"). Indexed raw for
+// the reason above: through Number() a null Role would read "Attack" while champRole beside it read
+// unknown, and the header would contradict itself.
+export const champLabel = (row) => CHAMP_ROLE_LABEL[row?.Role] ?? "?";
 
 // p in [0,1], index-based (no interpolation) to match the analytics' existing percentile style.
 export function quantile(values, p) {
@@ -193,3 +203,121 @@ export function analyzeChampionGear(champRow, items, ctx) {
   for (const r of ratings) tally[r.verdict]++;
   return { champ: champRow, role, ratings, tally };
 }
+
+// --- CLI --------------------------------------------------------------------
+
+// roleGap resolves its argmax by ALL_ROLES order, so at a tie its `bestRole` is an arbitrary pick
+// among equals — and ties are routine rather than theoretical: both score components are
+// Math.min(1, ...)-capped, so well-rolled gear saturates more than one role at 100. Naming one of
+// them as though it were the answer sends the reader hunting for the wrong archetype, so the note
+// names every role that reaches the maximum. (The wearer's own role is never among them: it ties
+// only at gap 0, and rateItem reports anything below CUTS.roleGapFlag as no gap at all.)
+export function roleGapNote(rating) {
+  const rg = rating.roleGap;
+  if (!rg) return "";
+  const top = rg.atChampRole + rg.gap;
+  const best = ALL_ROLES.filter((r) => qualityAtRole(rating.item, r) === top);
+  return `  [role: better as ${best.join("/")}, +${rg.gap}]`;
+}
+
+// An arg ending .db or containing a separator is the snapshot; the first other arg is the selector.
+export function parseArgs(argv) {
+  const dbArg = argv.find((a) => a.endsWith(".db") || a.includes("/") || a.includes("\\"));
+  return { selector: argv.find((a) => a !== dbArg) ?? null, dbArg };
+}
+
+// All digits -> the exact Champs.ID (IDs are opaque, so a substring match on one means nothing);
+// any other text -> a case-insensitive Name substring; null -> everyone.
+export function selectChamps(rows, selector) {
+  if (selector === null) return rows;
+  if (/^\d+$/.test(selector)) return rows.filter((r) => Number(r.ID) === Number(selector));
+  const nf = selector.toLowerCase();
+  return rows.filter((r) => r.Name.toLowerCase().includes(nf));
+}
+
+// Empty-Name rows are placeholders (they hold no gear, and they are the one place Role disagrees
+// across copies of a name), so they never reach the matcher.
+export function readChampRows(dbPath) {
+  const db = new DatabaseSync(dbPath);
+  const st = db.prepare("SELECT ID, Name, Role, Rarity, Rang, Lvl FROM Champs");
+  st.setReadBigInts(true);
+  const rows = st.all().map((r) => Object.fromEntries(
+    Object.entries(r).map(([k, v]) => [k, typeof v === "bigint" ? Number(v) : v])));
+  db.close();
+  return rows.filter((r) => typeof r.Name === "string" && r.Name.trim() !== "");
+}
+
+// Champs.Rarity is 1-indexed (1=Common … 6=Mythical) — NOT the 0-indexed scheme the artifact rows
+// use. (0 = a handful of untyped rows.)
+const RARITY = { 0: "?", 1: "Common", 2: "Uncommon", 3: "Rare", 4: "Epic", 5: "Legendary", 6: "Mythical" };
+const slotName = (s) => lookupName(ARTIFACT_SLOT_NAMES, s);
+const setName = (s) => (s === 0 ? "(setless)" : lookupName(ARTIFACT_SET_NAMES, s) || `#${s}`);
+
+function resolveDb(arg) {
+  if (arg) return arg;
+  const dir = fileURLToPath(new URL("../resources", import.meta.url));
+  const snaps = readdirSync(dir).filter((f) => /-RSLHelper\.db$/.test(f)).sort();
+  if (!snaps.length) { console.error(`no snapshot found in ${dir}; run refresh.sh`); process.exit(1); }
+  return `${dir}/${snaps[snaps.length - 1]}`;
+}
+
+function printChampion(g) {
+  const c = g.champ;
+  console.log(`\n${c.Name} #${c.ID} — ${champLabel(c)} (${g.role ?? "?"})`
+    + ` · ${RARITY[c.Rarity] ?? "?"} ${c.Rang}★ +${c.Lvl}`);
+  for (const r of g.ratings) {
+    const it = r.item;
+    const fac = it.isAccessory ? `  [${lookupName(FACTION_NAMES, it.faction)}]` : "";
+    console.log(` ${r.verdict.padEnd(10)} ${slotName(it.slot).padEnd(7)} ${setName(it.set).padEnd(13)}`
+      + ` +${String(it.level).padStart(2)}  q${String(r.q).padStart(2)}  p${String(r.percentile).padStart(2)}`
+      + `  ceil ${String(r.ceiling).padStart(3)}  ${r.rolls.good}/${r.rolls.total}`
+      + `  prem ${r.premium}${fac}${roleGapNote(r)}`);
+    console.log(`              ${r.reason}`);
+  }
+}
+
+function main() {
+  const { selector, dbArg } = parseArgs(process.argv.slice(2));
+  const dbPath = resolveDb(dbArg);
+  const rows = readChampRows(dbPath);
+  const { items } = readArtifacts(dbPath);
+  const scored = triage(items);
+  // The same `items` array feeds both — rateItem refuses an item buildContext never saw.
+  const ctx = buildContext(items, scored);
+
+  const geared = new Set(items.filter((it) => it.equippedChampId > 0).map((it) => it.equippedChampId));
+  const matched = selectChamps(rows, selector);
+  const targets = matched.filter((r) => geared.has(Number(r.ID))).sort((a, b) => a.ID - b.ID);
+
+  if (selector !== null && !matched.length) {
+    console.error(`no champion matches "${selector}".`);
+    const near = rows.filter((r) => r.Name.toLowerCase().startsWith(String(selector).slice(0, 3).toLowerCase()));
+    if (near.length) console.error(`did you mean: ${[...new Set(near.map((r) => r.Name))].slice(0, 8).join(", ")}?`);
+    process.exit(1);
+  }
+  if (!targets.length) {
+    console.error(selector === null
+      ? "no champion in this snapshot holds any gear."
+      : `"${selector}" matched ${matched.length} copies, none of which hold any gear.`);
+    process.exit(1);
+  }
+
+  console.log(`# Champion gear — snapshot ${dbPath.split(/[\\/]/).pop()}`);
+  console.log(`cuts: KEEP <=${ctx.cuts.keepCut} · SELL >=${ctx.cuts.sellCut}`
+    + `   (p${Math.round(CUTS.gearKeepQuantile * 100)}/p${Math.round(CUTS.gearSellQuantile * 100)}`
+    + ` of ${ctx.cuts.n} triage-keep equipped pieces)`);
+
+  const groups = targets.map((c) => analyzeChampionGear(c, items, ctx));
+  if (selector === null) {
+    groups.sort((a, b) => b.tally.SELL - a.tally.SELL || b.ratings.length - a.ratings.length);
+    console.log(`${groups.length} geared champions, most sellable first\n`);
+    for (const g of groups) {
+      console.log(`${g.champ.Name} #${g.champ.ID} (${champLabel(g.champ)})`
+        + `  ${g.ratings.length} slots · ${g.tally.SELL} SELL · ${g.tally.BORDERLINE} BORDERLINE · ${g.tally.KEEP} KEEP`);
+    }
+  } else {
+    for (const g of groups) printChampion(g);
+  }
+}
+
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) main();

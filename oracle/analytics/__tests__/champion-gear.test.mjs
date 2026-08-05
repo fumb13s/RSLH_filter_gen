@@ -1,6 +1,6 @@
 // oracle/analytics/__tests__/champion-gear.test.mjs
 import { test, expect } from "vitest";
-import { CHAMP_ROLE, CHAMP_ROLE_LABEL, champRole, quantile, inReplacementPool, bucketKeyFor, buildPoolIndex, betterCount, roleGap, verdictFor, resolveCuts, buildContext, rateItem, analyzeChampionGear } from "../champion-gear.mjs";
+import { CHAMP_ROLE, CHAMP_ROLE_LABEL, champRole, champLabel, quantile, inReplacementPool, bucketKeyFor, buildPoolIndex, betterCount, roleGap, verdictFor, resolveCuts, buildContext, rateItem, analyzeChampionGear, roleGapNote, selectChamps, parseArgs } from "../champion-gear.mjs";
 import { subMax } from "../rolls.mjs";
 import { quality, qualityAtRole } from "../score.mjs";
 import { rollStats } from "../rollquality.mjs";
@@ -906,4 +906,95 @@ test("analyzeChampionGear rates gear for a champion with an unrecognised role", 
   expect(g.ratings.length).toBe(1);
   expect(g.ratings[0].verdict).toBe("SELL");
   expect(g.ratings[0].roleGap).toBe(null);
+});
+
+// --- CLI: role-gap note, champion selection, argument routing ----------------
+
+// The header prints the label beside the archetype, so the two have to agree about an unknown Role.
+// Indexed RAW, like champRole: Number(null) is 0, which would print "Attack (?)" — the label
+// asserting Attack while the archetype next to it says unknown. That is the trap champRole was
+// fixed for, and the fix doesn't carry over to a second lookup written the other way.
+test("champLabel mirrors champRole's handling of a missing or unrecognised Role", () => {
+  expect(champLabel(champ({ Role: 0 }))).toBe("Attack");
+  expect(champLabel(champ({ Role: 3 }))).toBe("Support");
+  expect(champLabel(champ({ Role: 9 }))).toBe("?");
+  expect(champLabel(champ({ Role: null }))).toBe("?");
+  expect(champLabel({ ID: 999, Name: "No role column" })).toBe("?");
+});
+
+// roleGap resolves its argmax by ALL_ROLES order, so at a tie `bestRole` is an arbitrary pick among
+// equals — and ties are routine rather than theoretical, because both score components are
+// Math.min(1, ...)-capped and well-rolled gear saturates more than one role at 100. Printing one of
+// them as though it were the answer sends the reader hunting for the wrong archetype.
+test("roleGapNote names every tied best role, not just the one roleGap picked", () => {
+  const it = gear({ set: 4, substats: [sub(7, true, 0.9), sub(8, true, 0.9), sub(1, false, 0.9)] });
+  expect(qualityAtRole(it, "HP-DPS")).toBe(qualityAtRole(it, "Support"));   // the tie is real
+  const rg = roleGap(it, "ATK-DPS");
+  expect(rg.bestRole).toBe("HP-DPS");                                       // ...and arbitrarily broken
+  expect(roleGapNote({ item: it, roleGap: rg })).toBe("  [role: better as HP-DPS/Support, +20]");
+});
+
+// The control: an outright winner is still named on its own. Without this, listing all four roles
+// (or every role above the wearer's) would satisfy the tie test above.
+test("roleGapNote names a single best role on its own", () => {
+  const it = gear({ set: 4, substats: [sub(7, true, 0.5), sub(8, true, 0.5), sub(1, false, 0.5)] });
+  const rg = roleGap(it, "ATK-DPS");
+  expect(qualityAtRole(it, "Support")).toBeGreaterThan(qualityAtRole(it, "HP-DPS")); // no tie here
+  expect(roleGapNote({ item: it, roleGap: rg })).toBe("  [role: better as Support, +32]");
+});
+
+test("roleGapNote is empty when the rating carries no role gap", () => {
+  expect(roleGapNote({ item: gear(), roleGap: null })).toBe("");
+});
+
+// Two copies of one name, two names that CONTAIN another name, and an ID that has 110 as a prefix.
+const roster = [
+  { ID: 110, Name: "Elhain", Role: 0 },
+  { ID: 1101, Name: "Kael", Role: 0 },
+  { ID: 42277, Name: "Elhain", Role: 0 },
+  { ID: 76414, Name: "Supreme Elhain", Role: 0 },
+  { ID: 117731, Name: "Dark Elhain", Role: 1 },
+  { ID: 900, Name: "Kael", Role: 0 },
+];
+
+// #1101 is what makes this an EXACT-ID test: matching IDs as substrings (or as a prefix) would take
+// it too, and every other ID in the roster is unrelated enough to hide that.
+test("selectChamps: an all-digits selector is an exact ID, not an ID substring", () => {
+  expect(selectChamps(roster, "110").map((r) => r.ID)).toEqual([110]);
+  expect(selectChamps(roster, "1101").map((r) => r.ID)).toEqual([1101]);
+});
+
+test("selectChamps: a text selector is a case-insensitive name substring", () => {
+  expect(selectChamps(roster, "elhain").map((r) => r.ID))
+    .toEqual([110, 42277, 76414, 117731]);
+  expect(selectChamps(roster, "DARK").map((r) => r.ID)).toEqual([117731]);
+});
+
+test("selectChamps: a null selector returns the whole roster", () => {
+  expect(selectChamps(roster, null).length).toBe(6);
+});
+
+// readChampRows coerces the BigInts node:sqlite hands back, but selectChamps is exported and can be
+// handed raw rows — and 110n === 110 is false, so an uncoerced compare finds nothing at all.
+test("selectChamps: an exact-ID selector matches an ID that arrives as a BigInt", () => {
+  expect(selectChamps([{ ID: 110n, Name: "Elhain", Role: 0 }], "110").length).toBe(1);
+});
+
+test("parseArgs: routes digits and names to the selector, .db and paths to the snapshot", () => {
+  expect(parseArgs(["110"])).toEqual({ selector: "110", dbArg: undefined });
+  expect(parseArgs(["Elhain"])).toEqual({ selector: "Elhain", dbArg: undefined });
+  expect(parseArgs(["snap.db"])).toEqual({ selector: null, dbArg: "snap.db" });
+  expect(parseArgs(["Elhain", "a/b.db"])).toEqual({ selector: "Elhain", dbArg: "a/b.db" });
+  expect(parseArgs(["../x/y.db", "110"])).toEqual({ selector: "110", dbArg: "../x/y.db" });
+  expect(parseArgs([])).toEqual({ selector: null, dbArg: undefined });
+});
+
+// Every path-shaped arg above ALSO ends in ".db", so both separator clauses are deletable — the
+// suffix clause on its own passes all six. A path has to route to the snapshot on its separator
+// alone, or a copy saved without the extension gets read as a champion name instead.
+test("parseArgs: an extensionless path is still the snapshot, on either separator", () => {
+  expect(parseArgs(["oracle/resources/snap"]))
+    .toEqual({ selector: null, dbArg: "oracle/resources/snap" });
+  expect(parseArgs(["Elhain", "C:\\snaps\\latest"]))
+    .toEqual({ selector: "Elhain", dbArg: "C:\\snaps\\latest" });
 });
