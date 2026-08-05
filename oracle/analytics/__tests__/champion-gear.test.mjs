@@ -460,6 +460,68 @@ test("verdictFor: an uncalibrated cut set keeps everything instead of selling it
   }
 });
 
+// The REACHABLE form of the same failure, and the one that matters: a sell cut of 0 needs only a
+// p75 of zero, not an empty population. Any vault where three quarters of the worn, uncondemned gear
+// has no strictly-better spare in its bucket lands here — normal for a small or new vault, given how
+// narrow inReplacementPool is (same slot, same main, same faction for accessories, premium >= 4).
+// A single upgrade path would then clear the SELL cut. Degenerate cuts have to fall to BORDERLINE.
+test("verdictFor: a zero sell cut cannot condemn, however many upgrade paths there are", () => {
+  for (const pop of [[60, 0], [0, 0, 0, 0, 0, 0, 5]]) {
+    const c = resolveCuts(pop);
+    expect(c, `${pop}`).toMatchObject({ keepCut: 0, sellCut: 0 });   // degenerate, but n > 0
+    expect(c.n, `${pop}`).toBeGreaterThan(0);
+    for (const better of [1, 2, 60, 400]) {
+      const r = verdictFor({ triageVerdict: "keep", triageReason: "keep", better }, c);
+      expect(r.verdict, `${pop} @ ${better}`).toBe("BORDERLINE");
+      expect(r.reason, `${pop} @ ${better}`).toBe(`${better} upgrade path${better === 1 ? "" : "s"}`);
+    }
+  }
+});
+
+// ...while the KEEP signal at zero upgrade paths survives, which is why the guard sits on the SELL
+// branch rather than short-circuiting the whole function: "nothing in the vault beats this" is real
+// information even when the cuts themselves are degenerate.
+test("verdictFor: a zero sell cut still keeps a piece with no upgrade paths", () => {
+  const c = resolveCuts([60, 0]);
+  expect(verdictFor({ triageVerdict: "keep", triageReason: "keep", better: 0 }, c))
+    .toEqual({ verdict: "KEEP", reason: "0 upgrade paths" });
+});
+
+// The control: a positive sell cut still sells. The guard must not disable the SELL branch at large.
+test("verdictFor: a calibrated population still condemns at the sell cut", () => {
+  const c = resolveCuts([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  expect(c).toEqual({ keepCut: 4, sellCut: 6, n: 10 });
+  const v = (better) => verdictFor({ triageVerdict: "keep", triageReason: "keep", better }, c).verdict;
+  expect(v(1)).toBe("KEEP");
+  expect(v(6)).toBe("SELL");
+  expect(v(60)).toBe("SELL");
+});
+
+test("verdictFor: a degenerate cut set still lets a triage delete through", () => {
+  const r = verdictFor({
+    triageVerdict: "delete",
+    triageReason: "setless: dominated by a set accessory in the same faction + slot",
+    better: 60,
+  }, resolveCuts([60, 0]));
+  expect(r.verdict).toBe("SELL");
+  expect(r.reason).toContain("setless");
+});
+
+// Why a zero sell cut can be treated as "no SELL band" rather than "sell everything": the two cuts
+// are quantiles of one ascending array at p50 and p75, so the keep cut is never the higher of the
+// two, and upgrade-path counts are never negative. sellCut === 0 therefore forces keepCut === 0,
+// and the fall-through catches exactly the counts above zero.
+test("resolveCuts never puts the keep cut above the sell cut", () => {
+  const pops = [[0], [5, 5], [60, 0], [0, 0, 0, 0, 0, 0, 5], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]];
+  for (let i = 0; i < 200; i++) {
+    pops.push(Array.from({ length: 1 + (i % 17) }, (_, k) => (i * 7 + k * 13) % 40));
+  }
+  for (const pop of pops) {
+    const c = resolveCuts(pop);
+    expect(c.keepCut, `${pop}`).toBeLessThanOrEqual(c.sellCut);
+  }
+});
+
 test("verdictFor: an uncalibrated cut set still lets a triage delete through", () => {
   const r = verdictFor({
     triageVerdict: "delete",
@@ -542,7 +604,7 @@ test("buildContext calibrates on equipped gear only", () => {
   const ctx = buildContext(items, keepAll(items));
 
   expect(ctx.cuts).toEqual({ keepCut: 4, sellCut: 4, n: 1 });   // with the spares folded in: 0, 0, 5
-  expect(rateItem(worn, ctx, "ATK-DPS").verdict).toBe("KEEP");  // ...which would read SELL instead
+  expect(rateItem(worn, ctx, "ATK-DPS").verdict).toBe("KEEP");  // ...which reads BORDERLINE instead
 });
 
 // ...and on gear the vault report hasn't already condemned. A condemned piece is on its way out;
@@ -560,7 +622,7 @@ test("buildContext leaves triage-condemned gear out of the calibration populatio
   const ctx = buildContext(items, scored);
 
   expect(ctx.cuts).toEqual({ keepCut: 4, sellCut: 4, n: 1 });   // with the condemned piece: 0, 0, 2
-  expect(rateItem(worn, ctx, "ATK-DPS").verdict).toBe("KEEP");  // ...which would read SELL instead
+  expect(rateItem(worn, ctx, "ATK-DPS").verdict).toBe("KEEP");  // ...which reads BORDERLINE instead
 });
 
 // The other face of the empty population: nothing equipped at all, so there is nothing to calibrate
@@ -613,6 +675,9 @@ test("rateItem reads roll quality at the item's own role, not the champion's", (
 
   expect(rollStats(worn, "Support").good).not.toBe(rollStats(worn, "ATK-DPS").good);  // they differ
   expect(rateItem(worn, ctx, "Support").rolls).toEqual(rollStats(worn, "ATK-DPS"));
+  // ...and the reported role is the item's too. This is the only fixture where the two disagree, so
+  // it's the only place `role: s.q.role` can be told apart from `role: champRoleName`.
+  expect(rateItem(worn, ctx, "Support").role).toBe("ATK-DPS");
 });
 
 // roleGap is a FLAG, not a measurement: below the threshold rateItem reports null rather than a
@@ -651,6 +716,19 @@ test("rateItem refuses to rate an item the context has no ceiling for", () => {
   expect(() => rateItem(stranger, ctx, "ATK-DPS")).toThrow(/77/);
 });
 
+// The mirror case. A missing triage row is the same caller error and deserves the same diagnosis:
+// without a guard it surfaces as a bare "Cannot read properties of undefined (reading 'verdict')"
+// naming neither the item nor the context — and buildContext tolerates the identical absence with
+// `?.` when it calibrates, so nothing upstream has already complained.
+test("rateItem refuses to rate an item the context has no triage row for", () => {
+  const inCtx = gear({ id: 1, equippedChampId: 110 });
+  const stranger = gear({ id: 77, equippedChampId: 110 });
+  const ctx = buildContext([inCtx, stranger], keepAll([inCtx]));   // ceiling present, row absent
+  expect(ctx.ceiling.get(77)).toBe(quality(stranger, true).score);
+
+  expect(() => rateItem(stranger, ctx, "ATK-DPS")).toThrow(/77/);
+});
+
 test("analyzeChampionGear rates only the champion's own gear and orders it worst-first", () => {
   // Two worn pieces plus a big pool of spares that out-ceiling one of them. The spares carry crit
   // substat TYPES and the worn piece carries none, so the spares' potential is strictly higher —
@@ -672,10 +750,32 @@ test("analyzeChampionGear rates only the champion's own gear and orders it worst
 
   expect(g.role).toBe("ATK-DPS");
   expect(g.ratings.length).toBe(2);
-  expect(g.ratings.map((r) => r.item.id)).toEqual([1, 2]);   // more upgrade paths first
+  expect(g.ratings.map((r) => r.item.id)).toEqual([1, 2]);   // worse verdict first
   expect(g.ratings[0].better).toBeGreaterThan(g.ratings[1].better);
   expect(g.ratings[1].better).toBe(0);                        // no C.DMG-main gloves in the pool
   expect(g.tally.SELL + g.tally.BORDERLINE + g.tally.KEEP).toBe(2);
+});
+
+// ...and the verdicts that fixture actually produces, which it asserts nothing about. Two equipped
+// pieces at 60 and 0 upgrade paths put BOTH quantiles at 0 — the degenerate shape. The piece with 60
+// spares ahead of it is genuinely replaceable and sorts first, but a two-item population is not the
+// evidence needed to condemn it, so it comes back BORDERLINE carrying its count.
+test("analyzeChampionGear: degenerate cuts flag a replaceable piece without condemning it", () => {
+  const spares = [];
+  for (let i = 0; i < 60; i++) {
+    spares.push(gear({ id: 100 + i, level: 16, substats: [sub(5, false, 0.9), sub(6, false, 0.9)] }));
+  }
+  const wornReplaceable = gear({ id: 1, equippedChampId: 110, level: 16 });
+  const wornScarce = gear({ id: 2, equippedChampId: 110, slot: 3, level: 16,
+    mainStat: { statId: 6, isFlat: false, value: 80 } });
+  const items = [...spares, wornReplaceable, wornScarce];
+  const ctx = buildContext(items, keepAll(items));
+
+  expect(ctx.cuts).toEqual({ keepCut: 0, sellCut: 0, n: 2 });
+  const g = analyzeChampionGear(champ(), items, ctx);
+  expect(g.ratings.map((r) => [r.item.id, r.better, r.verdict]))
+    .toEqual([[1, 60, "BORDERLINE"], [2, 0, "KEEP"]]);
+  expect(g.tally).toEqual({ SELL: 0, BORDERLINE: 1, KEEP: 1 });
 });
 
 // The canonical main stat of each artifact slot, so a multi-slot fixture stays a legal item (and,

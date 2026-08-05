@@ -105,17 +105,24 @@ export function roleGap(item, champRoleName) {
 // the replacement pool only counts demanded sets while setlessDominated compares against ANY
 // set-bearing accessory. Without this override the metric inverts exactly those pieces.
 //
-// `cuts.n` is the size of the population the cuts were calibrated on. At 0 the quantiles collapse to
-// keepCut = sellCut = 0, and 0 is a cut BOTH branches below match: only a zero count would read
-// KEEP, so a vault too small — or too thoroughly condemned — to calibrate would be told to sell
-// nearly everything. Advisory tooling has to fail toward KEEP, and say so rather than quoting a
-// count as if it were evidence. Cuts handed in without an `n` are a caller stating them outright.
+// DEGENERATE CUTS MUST NOT CONDEMN. sellCut is a p75, so it is 0 whenever three quarters of the
+// calibration population has no strictly-better spare — routine for a small or new vault, given how
+// narrow inReplacementPool is — and a bare `better >= 0` then sells every piece with a single
+// upgrade path. Requiring a POSITIVE sell cut drops those to BORDERLINE, which still carries the
+// count. The KEEP branch needs no such guard: both cuts come off one ascending array at p50 and p75,
+// so keepCut is never the higher of the two, and at sellCut 0 only a genuine zero count is kept —
+// "nothing in the vault beats this" is real information worth keeping.
+//
+// `cuts.n === 0` is that failure's limit: no population at all, which through buildContext means
+// every equipped piece was already condemned above. It can't support evidence of any kind, so it
+// keeps outright with a reason that says so rather than quoting a count. Cuts handed in without an
+// `n` are a caller stating them outright, and stay calibrated.
 export function verdictFor({ triageVerdict, triageReason, better }, cuts) {
   if (triageVerdict === "delete") return { verdict: "SELL", reason: `triage: ${triageReason}` };
-  if (cuts.n === 0) return { verdict: "KEEP", reason: "uncalibrated: no equipped gear to compare against" };
+  if (cuts.n === 0) return { verdict: "KEEP", reason: "uncalibrated: nothing to compare against" };
   const reason = `${better} upgrade path${better === 1 ? "" : "s"}`;
   if (better <= cuts.keepCut) return { verdict: "KEEP", reason };
-  if (better >= cuts.sellCut) return { verdict: "SELL", reason };
+  if (cuts.sellCut > 0 && better >= cuts.sellCut) return { verdict: "SELL", reason };
   return { verdict: "BORDERLINE", reason };
 }
 
@@ -149,15 +156,18 @@ export function buildContext(items, scored) {
 export function rateItem(item, ctx, champRoleName) {
   const s = ctx.byId.get(item.id);
   const ceil = ctx.ceiling.get(item.id);
-  // A ceiling the context doesn't hold is `undefined`, and `arr[mid] <= undefined` is false all the
-  // way down betterCount's binary search — the piece would come back maximally replaceable and get
-  // sold, silently. quality(item, true).score itself can't be non-finite: at potential it reads stat
-  // TYPES only (never a decoded value), every weight is a finite constant, an unrecognised stat id
-  // or slot scores 0, and the divisor is a max over the slot's own primaries with a `|| 1` guard.
-  // So this only fires on an item buildContext never saw, and that is a caller error.
-  if (!Number.isFinite(ceil)) {
-    throw new Error(`champion-gear: no ceiling for item ${item.id} — rateItem needs an item buildContext saw`);
-  }
+  // Both lookups have to be there, and each fails badly in its own way. A missing ceiling is
+  // `undefined`, which loses every `arr[mid] <= ceiling` comparison in betterCount's binary search:
+  // the piece comes back maximally replaceable and gets sold, silently. A missing triage row throws
+  // a bare "Cannot read properties of undefined" naming neither item nor context, and buildContext
+  // tolerates that same absence with `?.` while calibrating, so nothing upstream has complained
+  // either. quality(item, true).score itself can't be non-finite: at potential it reads stat TYPES
+  // only (never a decoded value), every weight is a finite constant, an unrecognised stat id or slot
+  // scores 0, and the divisor is a max over the slot's own primaries with a `|| 1` guard. So these
+  // only fire on an item buildContext never saw, and that is a caller error.
+  const seen = `rateItem needs an item buildContext saw`;
+  if (!s) throw new Error(`champion-gear: no triage row for item ${item.id} — ${seen}`);
+  if (!Number.isFinite(ceil)) throw new Error(`champion-gear: no ceiling for item ${item.id} — ${seen}`);
   const better = betterCount(ctx.index, item, ceil);
   const { verdict, reason } = verdictFor(
     { triageVerdict: s.verdict, triageReason: s.reason, better }, ctx.cuts);
