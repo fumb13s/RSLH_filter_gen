@@ -11,6 +11,8 @@
 //     snapshot.db an arg ending in .db or containing a slash (default: newest snapshot).
 
 import { keepPremium } from "./triage.mjs";
+import { qualityAtRole } from "./score.mjs";
+import { ALL_ROLES } from "./sets.mjs";
 import { CUTS } from "./weights.mjs";
 
 // Champs.Role is the game's champion type and maps 1:1 onto the analytics archetypes. Verified
@@ -80,4 +82,18 @@ export function betterCount(index, item, ceiling) {
     if (arr[mid] <= ceiling) lo = mid + 1; else hi = mid;
   }
   return arr.length - lo;
+}
+
+// How miscast is this piece for the champion wearing it? gap = the item's best score across ALL
+// FOUR archetypes (unrestricted by the set annotation — this is about the item's stats, not its
+// set) minus its score at the champion's own role. Caller flags at CUTS.roleGapFlag.
+export function roleGap(item, champRoleName) {
+  if (!champRoleName) return null;
+  const atChampRole = qualityAtRole(item, champRoleName);
+  let best = { role: champRoleName, score: atChampRole };
+  for (const role of ALL_ROLES) {
+    const score = qualityAtRole(item, role);
+    if (score > best.score) best = { role, score };
+  }
+  return { gap: best.score - atChampRole, bestRole: best.role, atChampRole };
 }

@@ -38,4 +38,9 @@ export const SUPPLY = { accessoryFloor: 4, artifactBase: 4 }; // accessory flat 
 // balanceFactor: slot-balance target = round(family mean of kept-unequipped x balanceFactor) per
 // slot, deleting worst-first to even the UNEQUIPPED pool within artifacts (6 slots) and accessories
 // (3 slots) separately; <1 is more aggressive (lower cap), >1 gentler, 0 disables.
-export const CUTS = { junkKeepFrac: 0.30, junkKeepFloor: 4, lowPremium: 2, focusPremium: 4, focusPerGroup: 2, upgradeMaxLevel: 12, balanceFactor: 1 };
+// gearKeepQuantile/gearSellQuantile/roleGapFlag drive champion-gear.mjs (see its header).
+export const CUTS = { junkKeepFrac: 0.30, junkKeepFloor: 4, lowPremium: 2, focusPremium: 4, focusPerGroup: 2, upgradeMaxLevel: 12, balanceFactor: 1,
+  // champion-gear.mjs: KEEP at/below the p50 of the vault's own equipped-gear upgrade-path counts,
+  // SELL at/above p75 (runtime quantiles, so they self-calibrate as the vault grows). roleGapFlag is
+  // in score points — the shoulder of the gap distribution, where ~25% of equipped gear sits.
+  gearKeepQuantile: 0.50, gearSellQuantile: 0.75, roleGapFlag: 10 };
