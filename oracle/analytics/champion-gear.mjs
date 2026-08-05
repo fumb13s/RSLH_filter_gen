@@ -10,6 +10,9 @@
 //                 Omit for summary mode: one line per geared champion, worst first.
 //     snapshot.db an arg ending in .db or containing a slash (default: newest snapshot).
 
+import { keepPremium } from "./triage.mjs";
+import { CUTS } from "./weights.mjs";
+
 // Champs.Role is the game's champion type and maps 1:1 onto the analytics archetypes. Verified
 // against the 2026-07-12 snapshot: Role=1 champs are uniformly DEF-scaling, Role=2 top the HP
 // medians, Role=3 bottom the crit medians. It's static champion data — bare level-1 copies already
@@ -28,4 +31,26 @@ export function quantile(values, p) {
   if (!values.length) return 0;
   const a = values.slice().sort((x, y) => x - y);
   return a[Math.floor((a.length - 1) * p)];
+}
+
+// Could `candidate` (an unequipped spare) actually take `item`'s place on its champion?
+//   same slot · same MAIN stat (a C.DMG glove isn't replaced by an HP glove; for Weapon/Helmet/
+//   Shield the main is slot-fixed so this is a natural no-op) · same FACTION for accessories
+//   (a hard game constraint) · on a set you'd actually build on.
+export function inReplacementPool(candidate, item) {
+  if (candidate.equippedChampId !== 0) return false;
+  if (candidate.slot !== item.slot) return false;
+  if (candidate.mainStat.statId !== item.mainStat.statId) return false;
+  if (candidate.mainStat.isFlat !== item.mainStat.isFlat) return false;
+  if (item.isAccessory && candidate.faction !== item.faction) return false;
+  return keepPremium(candidate.set) >= CUTS.focusPremium;
+}
+
+// Index key matching inReplacementPool's slot/main/faction clauses. The equipped and demanded-set
+// clauses are applied when the index is BUILT (they're properties of the candidate alone), so they
+// deliberately don't appear here.
+export function bucketKeyFor(item) {
+  const m = item.mainStat;
+  const base = `${item.slot}|${m.statId}|${m.isFlat ? 1 : 0}`;
+  return item.isAccessory ? `${base}|${item.faction}` : base;
 }
