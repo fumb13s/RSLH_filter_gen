@@ -17,14 +17,13 @@ test("keepPremium is demand-led (scarcity only counts when demand>=3)", () => {
   expect(keepPremium(0)).toBe(1);   // setless 3/1
 });
 
-test("oversupplied low-demand artifact lands in delete", () => {
-  const junk = [sub(1, true, 0.3), sub(3, true, 0.3)]; // flat HP/DEF, weak
-  const good = [sub(4, true), sub(5, false), sub(6, false)];
+test("low-demand oversupplied set: worst spares trimmed, best kept per (set x slot)", () => {
   const items = [];
-  for (let i = 0; i < 12; i++) items.push(mk(100 + i, 4, 49, main(4, 3, true), junk)); // Killstroke, flat-DEF main
-  items.push(mk(1, 4, 49, main(4, 4, true), good)); // one good piece lifts the top of the slot
+  // 12 unequipped Killstroke (low-demand) Boots of rising quality (higher id = better roll).
+  for (let i = 0; i < 12; i++) items.push(mk(100 + i, 4, 49, main(4, 3, true), [sub(4, true, 0.15 + i * 0.06)]));
   const res = triage(items);
-  expect(res.find((r) => r.item.id === 100).verdict).toBe("delete");
+  expect(res.find((r) => r.item.id === 100).verdict).toBe("delete"); // worst spare -> trimmed
+  expect(res.find((r) => r.item.id === 111).verdict).toBe("keep");   // best spare + floor bench -> kept
 });
 
 test("setless accessory dominated by a set accessory is delete", () => {

@@ -99,7 +99,7 @@ if (accOversupply.length) {
   P(``);
 }
 P(`### Junk — artifacts (${junkArt.length})`, ``);
-P(`**Oversupplied low-quality** — below slot-percentile ${CUTS.deletePct}, above the keep-floor, on a low-demand set (premium ≤ ${CUTS.lowPremium}). By slot × set:`, ``);
+P(`**Trimmed spares** — for each low-demand set (premium ≤ ${CUTS.lowPremium}) × slot, keep the best max(${Math.round(CUTS.junkKeepFrac * 100)}%, ${CUTS.junkKeepFloor}) unequipped by quality and delete the rest. By slot × set:`, ``);
 for (const [k, n] of topGroups(junkArt, (s) => `${slotName(s.item.slot)} · ${setName(s.item.set)}`)) P(`- ${k}: ${n}`);
 P(``);
 P(`### Slot-balance trims (${balDel.length})`, ``);

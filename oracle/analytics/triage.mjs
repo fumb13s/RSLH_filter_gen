@@ -99,6 +99,29 @@ function tagTopN(pool, roleFn, scoreFn, n, tag) {
   }
 }
 
+// Junk rule: per (set x slot) bucket of UNEQUIPPED low-demand ARTIFACTS, keep the best
+// max(ceil(junkKeepFrac * N), junkKeepFloor) by quality; delete the rest. Quality-ranked within the
+// set, so a limited-but-off-meta set keeps its best pieces + a floor bench instead of being swept.
+function junkTrim(scored) {
+  const buckets = new Map();
+  for (const s of scored) {
+    if (s.verdict !== "keep") continue;                       // setless already handled (accessories)
+    if (s.item.slot < 1 || s.item.slot > 6) continue;         // artifacts (non-accessory) only
+    if (s.item.equippedChampId > 0) continue;                 // unequipped spares only
+    if (keepPremium(s.item.set) > CUTS.lowPremium) continue;  // low-demand sets only
+    const k = bucketKey(s.item);
+    (buckets.get(k) ?? buckets.set(k, []).get(k)).push(s);
+  }
+  for (const arr of buckets.values()) {
+    arr.sort((a, b) => b.q.score - a.q.score);                // best first
+    const keep = Math.max(Math.ceil(CUTS.junkKeepFrac * arr.length), CUTS.junkKeepFloor);
+    for (let i = keep; i < arr.length; i++) {
+      arr[i].verdict = "delete";
+      arr[i].reason = `low-demand set: spare #${i + 1} of ${arr.length} in this slot (keep best max ${Math.round(CUTS.junkKeepFrac * 100)}% / ${CUTS.junkKeepFloor})`;
+    }
+  }
+}
+
 // triage(items) -> array of { item, q, inv, percentile, premium, belowFloor, verdict, reason,
 // focus, upgrade, qPotential? }. verdict is delete|keep; focus/upgrade are highlight overlays on keeps.
 export function triage(items) {
@@ -117,12 +140,12 @@ export function triage(items) {
     if (dominated.has(s.item.id)) {
       verdict = "delete";
       reason = "setless: dominated by a set accessory in the same faction + slot";
-    } else if (p < CUTS.deletePct && !belowFloor && premium <= CUTS.lowPremium) {
-      verdict = "delete";
-      reason = `low quality (p${Math.round(p)} of slot), oversupplied, low-demand set (premium ${premium})`;
     }
     Object.assign(s, { percentile: p, premium, belowFloor, verdict, reason, slotBalanced: false });
   }
+
+  // Junk: per low-demand set x slot, keep the best spares (max %, floor) and trim the rest.
+  junkTrim(scored);
 
   // Even the unequipped pool within artifacts / accessories (deletes worst-first toward family mean).
   slotBalance(scored, counts);

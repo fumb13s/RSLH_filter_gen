@@ -30,10 +30,12 @@ export const ASCENDED_LEVEL = 6;
 // Supply floors (DESIGN.md §3.5/§6), counting unequipped only.
 export const SUPPLY = { accessoryFloor: 4, artifactBase: 4 }; // accessory flat 4; artifact artifactBase*demand
 
-// Triage cut lines. delete: oversupplied low-demand artifacts below slot-percentile `deletePct`
-// (plus all setless-dominated accessories). focus/upgrade: top `focusPerGroup` per slot x archetype
-// among demanded sets (premium >= focusPremium). upgrade restricted to level <= upgradeMaxLevel.
+// Triage cut lines. delete (junk): for each low-demand (premium <= lowPremium) set x slot, keep the
+// best max(ceil(junkKeepFrac * N), junkKeepFloor) UNEQUIPPED spares by quality and delete the rest —
+// so a limited-but-off-meta set keeps its best pieces + a floor bench instead of being swept (plus
+// all setless-dominated accessories). focus/upgrade: top `focusPerGroup` per slot x archetype among
+// demanded sets (premium >= focusPremium). upgrade restricted to level <= upgradeMaxLevel.
 // balanceFactor: slot-balance target = round(family mean of kept-unequipped x balanceFactor) per
 // slot, deleting worst-first to even the UNEQUIPPED pool within artifacts (6 slots) and accessories
 // (3 slots) separately; <1 is more aggressive (lower cap), >1 gentler, 0 disables.
-export const CUTS = { deletePct: 70, lowPremium: 2, focusPremium: 4, focusPerGroup: 2, upgradeMaxLevel: 12, balanceFactor: 1 };
+export const CUTS = { junkKeepFrac: 0.30, junkKeepFloor: 4, lowPremium: 2, focusPremium: 4, focusPerGroup: 2, upgradeMaxLevel: 12, balanceFactor: 1 };
