@@ -94,16 +94,20 @@ function subTypeFit(item, role) {
   return Math.min(1, num / top);
 }
 
-// quality(item, potential?) -> { role, score } in [0,100], best-matching role. Default scores the
-// piece as-is (value-completeness of main + subs). potential=true scores it as if taken to 6★+16,
-// judged on TYPES only (main fit + present substat types), level-independent — the "worth leveling"
-// signal for the upgrade analysis.
+// Score `item` at ONE specific role. Default scores it as-is (value-completeness of main + subs);
+// potential=true scores it as if taken to 6★+16, judged on TYPES only (level-independent).
+export function qualityAtRole(item, role, potential = false) {
+  const mc = potential ? mainFit(item, role) : mainComponent(item, role);
+  const sc = potential ? subTypeFit(item, role) : subComponent(item, role);
+  return Math.round(100 * (BLEND.main * mc + BLEND.sub * sc) / (BLEND.main + BLEND.sub));
+}
+
+// quality(item, potential?) -> { role, score } in [0,100], best-matching role among those the
+// item's set is annotated for. See qualityAtRole for what `potential` changes.
 export function quality(item, potential = false) {
   let best = { role: ALL_ROLES[0], score: -1 };
   for (const role of rolesForSet(item.set)) {
-    const mc = potential ? mainFit(item, role) : mainComponent(item, role);
-    const sc = potential ? subTypeFit(item, role) : subComponent(item, role);
-    const score = Math.round(100 * (BLEND.main * mc + BLEND.sub * sc) / (BLEND.main + BLEND.sub));
+    const score = qualityAtRole(item, role, potential);
     if (score > best.score) best = { role, score };
   }
   return best;

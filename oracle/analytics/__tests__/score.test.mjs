@@ -1,6 +1,6 @@
 // oracle/analytics/__tests__/score.test.mjs
 import { test, expect } from "vitest";
-import { quality, investment, desir, mainDesir } from "../score.mjs";
+import { quality, qualityAtRole, investment, desir, mainDesir } from "../score.mjs";
 import { subMax } from "../rolls.mjs";
 import { mainMax } from "../mainstats.mjs";
 
@@ -70,6 +70,28 @@ test("potential (worth leveling) scores by type and is level-independent", () =>
   expect(lo.score).toBe(hi.score);                          // type-based -> level/value-independent
   const flat = quality(item(4, 66, main(4, 3, true), crit, { level: 8 }), true);     // flat-DEF main instead
   expect(lo.score).toBeGreaterThan(flat.score);             // SPD-main potential beats flat-DEF-main
+});
+
+test("qualityAtRole: quality() equals the max over the set's allowed roles", () => {
+  // Cruel (29) allows the three DPS roles but not Support.
+  const it = item(4, 29, main(4, 4, true), goodSubs);
+  const best = quality(it);
+  const dps = ["ATK-DPS", "DEF-DPS", "HP-DPS"].map((r) => qualityAtRole(it, r));
+  expect(best.score).toBe(Math.max(...dps));
+  expect(qualityAtRole(it, best.role)).toBe(best.score);
+});
+
+test("qualityAtRole: honours the potential flag the same way quality() does", () => {
+  const it = item(4, 29, main(4, 4, true, 0.2), goodSubs, { level: 8 });
+  const best = quality(it, true);
+  const dps = ["ATK-DPS", "DEF-DPS", "HP-DPS"].map((r) => qualityAtRole(it, r, true));
+  expect(best.score).toBe(Math.max(...dps));
+});
+
+test("qualityAtRole: a support-statted piece scores higher as Support than as ATK-DPS", () => {
+  const supportish = [sub(7, true, 0.9), sub(8, true, 0.9), sub(1, false, 0.9)]; // RES / ACC / HP%
+  const it = item(4, 4, main(4, 4, true), supportish);
+  expect(qualityAtRole(it, "Support")).toBeGreaterThan(qualityAtRole(it, "ATK-DPS"));
 });
 
 test("investment: ascended at level 6, glyphed at SPD>=4", () => {
