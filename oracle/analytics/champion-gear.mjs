@@ -54,3 +54,30 @@ export function bucketKeyFor(item) {
   const base = `${item.slot}|${m.statId}|${m.isFlat ? 1 : 0}`;
   return item.isAccessory ? `${base}|${item.faction}` : base;
 }
+
+// Bucket the UNEQUIPPED demanded-set pool by bucketKeyFor, holding each bucket's ceilings in an
+// ascending array so betterCount is a binary search instead of a scan. `ceilingOf(item) -> number`.
+export function buildPoolIndex(items, ceilingOf) {
+  const buckets = new Map();
+  for (const it of items) {
+    if (it.equippedChampId !== 0) continue;
+    if (keepPremium(it.set) < CUTS.focusPremium) continue;
+    const k = bucketKeyFor(it);
+    if (!buckets.has(k)) buckets.set(k, []);
+    buckets.get(k).push(ceilingOf(it));
+  }
+  for (const arr of buckets.values()) arr.sort((a, b) => a - b);
+  return buckets;
+}
+
+// Upgrade paths for this slot: pool members whose ceiling is STRICTLY higher (ties are not upgrades).
+export function betterCount(index, item, ceiling) {
+  const arr = index.get(bucketKeyFor(item));
+  if (!arr || !arr.length) return 0;
+  let lo = 0, hi = arr.length;                       // first index with arr[i] > ceiling
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] <= ceiling) lo = mid + 1; else hi = mid;
+  }
+  return arr.length - lo;
+}

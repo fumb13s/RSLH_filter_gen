@@ -1,6 +1,6 @@
 // oracle/analytics/__tests__/champion-gear.test.mjs
 import { test, expect } from "vitest";
-import { CHAMP_ROLE, CHAMP_ROLE_LABEL, champRole, quantile, inReplacementPool, bucketKeyFor } from "../champion-gear.mjs";
+import { CHAMP_ROLE, CHAMP_ROLE_LABEL, champRole, quantile, inReplacementPool, bucketKeyFor, buildPoolIndex, betterCount } from "../champion-gear.mjs";
 
 // Minimal Champs row: an Attack champion unless overridden.
 const champ = (o = {}) => ({ ID: 110, Name: "Elhain", Role: 0, Rarity: 3, Rang: 6, Lvl: 60, ...o });
@@ -145,4 +145,100 @@ test("bucketKeyFor agrees with inReplacementPool over every slot/main/faction co
   // Non-degenerate, and both branches occur: the 8 artifacts form 4 main-stat groups of 2 (faction
   // is not in their key) = 16 ordered pairs; the 8 accessories each match only themselves = 8.
   expect(accepted).toBe(24);
+});
+
+// ceilingOf stub: read the ceiling straight off a `ceil` property on the test item.
+const ceilOf = (it) => it.ceil;
+
+test("buildPoolIndex: only unequipped demanded-set spares get indexed, ceilings ascending", () => {
+  const items = [
+    gear({ id: 1, ceil: 90 }),
+    gear({ id: 2, ceil: 70 }),
+    gear({ id: 3, ceil: 80 }),
+    gear({ id: 4, ceil: 99, equippedChampId: 55 }),  // equipped -> excluded
+    gear({ id: 5, ceil: 99, set: 9 }),               // Lifesteal, premium 1 -> excluded
+  ];
+  const idx = buildPoolIndex(items, ceilOf);
+  expect(idx.get(bucketKeyFor(gear()))).toEqual([70, 80, 90]);
+});
+
+test("buildPoolIndex: separates buckets by slot, main stat and accessory faction", () => {
+  const items = [
+    gear({ id: 1, ceil: 50 }),
+    gear({ id: 2, ceil: 60, slot: 5 }),
+    acc({ id: 3, ceil: 70, faction: 2 }),
+    acc({ id: 4, ceil: 80, faction: 3 }),
+  ];
+  const idx = buildPoolIndex(items, ceilOf);
+  expect(idx.get(bucketKeyFor(gear()))).toEqual([50]);
+  expect(idx.get(bucketKeyFor(gear({ slot: 5 })))).toEqual([60]);
+  expect(idx.get(bucketKeyFor(acc({ faction: 2 })))).toEqual([70]);
+  expect(idx.get(bucketKeyFor(acc({ faction: 3 })))).toEqual([80]);
+});
+
+test("betterCount: counts strictly higher ceilings, ties excluded", () => {
+  const idx = buildPoolIndex(
+    [70, 80, 80, 90].map((c, i) => gear({ id: i + 1, ceil: c })), ceilOf);
+  const it = gear({ id: 99 });
+  expect(betterCount(idx, it, 60)).toBe(4);
+  expect(betterCount(idx, it, 70)).toBe(3);   // its own tie excluded
+  expect(betterCount(idx, it, 80)).toBe(1);   // both 80s excluded
+  expect(betterCount(idx, it, 90)).toBe(0);
+  expect(betterCount(idx, it, 95)).toBe(0);
+});
+
+test("betterCount: an empty or missing bucket means zero upgrade paths", () => {
+  const idx = buildPoolIndex([], ceilOf);
+  expect(betterCount(idx, gear(), 10)).toBe(0);
+});
+
+test("betterCount agrees with a brute-force scan over inReplacementPool", () => {
+  const pool = [];
+  for (let i = 0; i < 40; i++) {
+    pool.push(gear({
+      id: i + 1,
+      ceil: (i * 7) % 100,
+      slot: i % 3 === 0 ? 5 : 4,
+      set: i % 5 === 0 ? 9 : 66,
+      equippedChampId: i % 7 === 0 ? 55 : 0,
+    }));
+  }
+  const idx = buildPoolIndex(pool, ceilOf);
+  const target = gear({ id: 999, ceil: 50 });
+  const brute = pool.filter((c) => inReplacementPool(c, target) && ceilOf(c) > 50).length;
+  expect(betterCount(idx, target, 50)).toBe(brute);
+});
+
+// The tie test above probes a 4-element bucket at 5 thresholds, which is too coarse to pin the
+// binary search: an off-by-one (`hi = mid - 1`) agrees on all five and still miscounts elsewhere.
+// Sweep every threshold over a longer bucket with duplicates and gaps against the naive scan the
+// search stands in for.
+test("betterCount matches a naive scan at every threshold", () => {
+  const ceilings = [10, 20, 20, 30, 40, 55, 55, 55, 70, 90, 91, 92, 100];
+  const idx = buildPoolIndex(ceilings.map((c, i) => gear({ id: i + 1, ceil: c })), ceilOf);
+  const it = gear({ id: 999 });
+  for (let c = -5; c <= 105; c++) {
+    expect(betterCount(idx, it, c), `ceiling ${c}`).toBe(ceilings.filter((x) => x > c).length);
+  }
+});
+
+// Ceilings must be read THROUGH the callback: Task 6 passes the level-independent quality score,
+// which is computed, not a column on the row. `ceilOf` is identity on `ceil`, so it can't tell a
+// hardcoded `it.ceil` apart from a real call — this reads a different property so it can. The
+// reversed input order also pins the sort as applying to the callback's output.
+test("buildPoolIndex reads ceilings through the ceilingOf callback", () => {
+  const items = [gear({ id: 1, ceil: 10, score: 80 }), gear({ id: 2, ceil: 20, score: 60 })];
+  const idx = buildPoolIndex(items, (it) => it.score);
+  expect(idx.get(bucketKeyFor(gear()))).toEqual([60, 80]);
+});
+
+// CUTS.focusPremium is 4 and sets sit exactly on it (19, 39, 42, ...), so the demanded-set cut is
+// inclusive at a live value. Every other test here uses premium 1 or 8, which leaves the boundary
+// free to slip by one and silently drop a whole class of demanded sets out of the pool.
+test("buildPoolIndex admits sets exactly at the premium cut", () => {
+  const items = [
+    gear({ id: 1, ceil: 50, set: 19 }),  // premium 4 == focusPremium -> indexed
+    gear({ id: 2, ceil: 60, set: 15 }),  // premium 2 -> excluded
+  ];
+  expect(buildPoolIndex(items, ceilOf).get(bucketKeyFor(gear()))).toEqual([50]);
 });
