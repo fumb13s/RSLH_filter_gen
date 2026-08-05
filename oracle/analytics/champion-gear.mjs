@@ -11,7 +11,8 @@
 //     snapshot.db an arg ending in .db or containing a slash (default: newest snapshot).
 
 import { keepPremium } from "./triage.mjs";
-import { qualityAtRole } from "./score.mjs";
+import { quality, qualityAtRole } from "./score.mjs";
+import { rollStats } from "./rollquality.mjs";
 import { ALL_ROLES } from "./sets.mjs";
 import { CUTS } from "./weights.mjs";
 
@@ -96,4 +97,89 @@ export function roleGap(item, champRoleName) {
     if (score > best.score) best = { role, score };
   }
   return { gap: best.score - atChampRole, bestRole: best.role, atChampRole };
+}
+
+// The triage verdict WINS OUTRIGHT. For equipped gear the only rule that can fire is
+// setless-domination (junkTrim and slotBalance both skip equipped items), and it is load-bearing:
+// 488 of 4192 equipped pieces are setless-dominated yet sit at a MEDIAN of 0 upgrade paths, because
+// the replacement pool only counts demanded sets while setlessDominated compares against ANY
+// set-bearing accessory. Without this override the metric inverts exactly those pieces.
+//
+// `cuts.n` is the size of the population the cuts were calibrated on. At 0 the quantiles collapse to
+// keepCut = sellCut = 0, and 0 is a cut BOTH branches below match: only a zero count would read
+// KEEP, so a vault too small — or too thoroughly condemned — to calibrate would be told to sell
+// nearly everything. Advisory tooling has to fail toward KEEP, and say so rather than quoting a
+// count as if it were evidence. Cuts handed in without an `n` are a caller stating them outright.
+export function verdictFor({ triageVerdict, triageReason, better }, cuts) {
+  if (triageVerdict === "delete") return { verdict: "SELL", reason: `triage: ${triageReason}` };
+  if (cuts.n === 0) return { verdict: "KEEP", reason: "uncalibrated: no equipped gear to compare against" };
+  const reason = `${better} upgrade path${better === 1 ? "" : "s"}`;
+  if (better <= cuts.keepCut) return { verdict: "KEEP", reason };
+  if (better >= cuts.sellCut) return { verdict: "SELL", reason };
+  return { verdict: "BORDERLINE", reason };
+}
+
+// Cut points are quantiles of the vault's OWN equipped gear, so they self-calibrate as it grows.
+// Global rather than per-slot on purpose: per-slot quantiles rate a weapon with 149 upgrade paths
+// as KEEP (the weapon slot's own p50 is 181). Holding more spare weapons than spare gloves genuinely
+// does make weapons more disposable. `n` is the population size — see verdictFor for what 0 means.
+export function resolveCuts(betterCounts) {
+  return {
+    keepCut: quantile(betterCounts, CUTS.gearKeepQuantile),
+    sellCut: quantile(betterCounts, CUTS.gearSellQuantile),
+    n: betterCounts.length,
+  };
+}
+
+// One pass over the vault: ceilings, the pool index, the triage lookup, and the resolved cuts.
+// `scored` is the output of triage(items). Ceilings are quality-at-POTENTIAL — level-independent,
+// substat TYPES only — because the pool is spares that would have to be leveled: the question is
+// which of them would finish better, not which is further along today.
+export function buildContext(items, scored) {
+  const ceiling = new Map(items.map((it) => [it.id, quality(it, true).score]));
+  const index = buildPoolIndex(items, (it) => ceiling.get(it.id));
+  const byId = new Map(scored.map((s) => [s.item.id, s]));
+  // Calibrate on equipped gear the triage hasn't already condemned.
+  const counts = items
+    .filter((it) => it.equippedChampId > 0 && byId.get(it.id)?.verdict === "keep")
+    .map((it) => betterCount(index, it, ceiling.get(it.id)));
+  return { ceiling, index, byId, cuts: resolveCuts(counts) };
+}
+
+export function rateItem(item, ctx, champRoleName) {
+  const s = ctx.byId.get(item.id);
+  const ceil = ctx.ceiling.get(item.id);
+  // A ceiling the context doesn't hold is `undefined`, and `arr[mid] <= undefined` is false all the
+  // way down betterCount's binary search — the piece would come back maximally replaceable and get
+  // sold, silently. quality(item, true).score itself can't be non-finite: at potential it reads stat
+  // TYPES only (never a decoded value), every weight is a finite constant, an unrecognised stat id
+  // or slot scores 0, and the divisor is a max over the slot's own primaries with a `|| 1` guard.
+  // So this only fires on an item buildContext never saw, and that is a caller error.
+  if (!Number.isFinite(ceil)) {
+    throw new Error(`champion-gear: no ceiling for item ${item.id} — rateItem needs an item buildContext saw`);
+  }
+  const better = betterCount(ctx.index, item, ceil);
+  const { verdict, reason } = verdictFor(
+    { triageVerdict: s.verdict, triageReason: s.reason, better }, ctx.cuts);
+  const rg = roleGap(item, champRoleName);
+  return {
+    item, better, ceiling: ceil, verdict, reason,
+    q: s.q.score, role: s.q.role, percentile: Math.round(s.percentile),
+    premium: keepPremium(item.set), rolls: rollStats(item, s.q.role),
+    roleGap: rg && rg.gap >= CUTS.roleGapFlag ? rg : null,
+  };
+}
+
+const VERDICT_ORDER = { SELL: 0, BORDERLINE: 1, KEEP: 2 };
+
+export function analyzeChampionGear(champRow, items, ctx) {
+  const role = champRole(champRow);
+  const ratings = items
+    .filter((it) => it.equippedChampId === Number(champRow.ID))
+    .map((it) => rateItem(it, ctx, role))
+    .sort((a, b) => VERDICT_ORDER[a.verdict] - VERDICT_ORDER[b.verdict]
+      || b.better - a.better || a.item.slot - b.item.slot);
+  const tally = { SELL: 0, BORDERLINE: 0, KEEP: 0 };
+  for (const r of ratings) tally[r.verdict]++;
+  return { champ: champRow, role, ratings, tally };
 }

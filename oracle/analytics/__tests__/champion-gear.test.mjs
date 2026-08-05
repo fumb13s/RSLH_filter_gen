@@ -1,8 +1,10 @@
 // oracle/analytics/__tests__/champion-gear.test.mjs
 import { test, expect } from "vitest";
-import { CHAMP_ROLE, CHAMP_ROLE_LABEL, champRole, quantile, inReplacementPool, bucketKeyFor, buildPoolIndex, betterCount, roleGap } from "../champion-gear.mjs";
+import { CHAMP_ROLE, CHAMP_ROLE_LABEL, champRole, quantile, inReplacementPool, bucketKeyFor, buildPoolIndex, betterCount, roleGap, verdictFor, resolveCuts, buildContext, rateItem, analyzeChampionGear } from "../champion-gear.mjs";
 import { subMax } from "../rolls.mjs";
-import { qualityAtRole } from "../score.mjs";
+import { quality, qualityAtRole } from "../score.mjs";
+import { rollStats } from "../rollquality.mjs";
+import { keepPremium } from "../triage.mjs";
 import { ALL_ROLES } from "../sets.mjs";
 import { CUTS } from "../weights.mjs";
 
@@ -389,4 +391,419 @@ test("roleGap: a tie among equal-scoring roles resolves to the champion's own ro
     expect(roleGap(it, role).bestRole, role).toBe(role);
     expect(roleGap(it, role).gap, role).toBe(0);
   }
+});
+
+// --- verdict, cut resolution, context ---------------------------------------
+
+const cuts = { keepCut: 10, sellCut: 50 };
+
+test("verdictFor: KEEP at/below keepCut, SELL at/above sellCut, BORDERLINE between", () => {
+  const v = (better) => verdictFor({ triageVerdict: "keep", triageReason: "keep", better }, cuts).verdict;
+  expect(v(0)).toBe("KEEP");
+  expect(v(10)).toBe("KEEP");          // boundary is inclusive
+  expect(v(11)).toBe("BORDERLINE");
+  expect(v(49)).toBe("BORDERLINE");
+  expect(v(50)).toBe("SELL");          // boundary is inclusive
+  expect(v(400)).toBe("SELL");
+});
+
+test("verdictFor: a triage delete overrides even zero upgrade paths", () => {
+  const r = verdictFor({
+    triageVerdict: "delete",
+    triageReason: "setless: dominated by a set accessory in the same faction + slot",
+    better: 0,
+  }, cuts);
+  expect(r.verdict).toBe("SELL");
+  expect(r.reason).toContain("setless");
+});
+
+// The override has to precede BOTH cut branches, not just the KEEP one. At a count in the SELL band
+// the verdict comes back SELL either way and only the REASON gives the ordering away, so demoting
+// the override to (say) the BORDERLINE fallthrough is invisible to the test above.
+test("verdictFor: a triage delete keeps its own reason in every band", () => {
+  const condemned = "setless: dominated by a set accessory in the same faction + slot";
+  for (const better of [0, 10, 11, 49, 50, 400]) {
+    const r = verdictFor({ triageVerdict: "delete", triageReason: condemned, better }, cuts);
+    expect(r.verdict, `better ${better}`).toBe("SELL");
+    expect(r.reason, `better ${better}`).toBe(`triage: ${condemned}`);
+  }
+});
+
+test("verdictFor: reason names the upgrade-path count, singular for one", () => {
+  expect(verdictFor({ triageVerdict: "keep", triageReason: "keep", better: 1 }, cuts).reason)
+    .toBe("1 upgrade path");
+  expect(verdictFor({ triageVerdict: "keep", triageReason: "keep", better: 6 }, cuts).reason)
+    .toBe("6 upgrade paths");
+});
+
+// ...and the same count-shaped reason in all three bands, zero included — nothing about a KEEP or a
+// SELL changes what the number means.
+test("verdictFor: the count is the reason in every band", () => {
+  const reason = (better) => verdictFor({ triageVerdict: "keep", triageReason: "keep", better }, cuts).reason;
+  expect(reason(0)).toBe("0 upgrade paths");
+  expect(reason(11)).toBe("11 upgrade paths");
+  expect(reason(50)).toBe("50 upgrade paths");
+});
+
+// An empty calibration population leaves keepCut = sellCut = 0, and 0 is a cut BOTH branches match:
+// `better <= 0` catches only a zero count, so every piece with even one upgrade path would read
+// SELL. A vault too small (or too thoroughly condemned) to calibrate must not be told to sell nearly
+// everything, so a population size of 0 short-circuits to KEEP — with a reason that says calibration
+// wasn't possible rather than dressing up a count as evidence.
+test("verdictFor: an uncalibrated cut set keeps everything instead of selling it", () => {
+  const none = resolveCuts([]);
+  for (const better of [0, 1, 400]) {
+    const r = verdictFor({ triageVerdict: "keep", triageReason: "keep", better }, none);
+    expect(r.verdict, `better ${better}`).toBe("KEEP");
+    expect(r.reason, `better ${better}`).toContain("uncalibrated");
+    expect(r.reason, `better ${better}`).not.toContain("upgrade path");
+  }
+});
+
+test("verdictFor: an uncalibrated cut set still lets a triage delete through", () => {
+  const r = verdictFor({
+    triageVerdict: "delete",
+    triageReason: "setless: dominated by a set accessory in the same faction + slot",
+    better: 0,
+  }, resolveCuts([]));
+  expect(r.verdict).toBe("SELL");
+  expect(r.reason).toContain("setless");
+});
+
+// A hand-built cut pair carries no population size, and that is a caller saying "use these cuts" —
+// not an uncalibrated vault. `cuts` above is exactly that shape, so this pins the guard to a
+// population size of 0 specifically rather than to any falsy `n`.
+test("verdictFor: cuts supplied without a population size are honoured", () => {
+  const sell = { triageVerdict: "keep", triageReason: "keep", better: 400 };
+  expect(verdictFor(sell, cuts).verdict).toBe("SELL");
+  expect(verdictFor(sell, { ...cuts, n: 3 }).verdict).toBe("SELL");
+});
+
+test("resolveCuts reads the quantiles off the supplied population", () => {
+  const c = resolveCuts([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  expect(c.n).toBe(10);
+  expect(c.keepCut).toBe(quantile([0,1,2,3,4,5,6,7,8,9], CUTS.gearKeepQuantile));
+  expect(c.sellCut).toBe(quantile([0,1,2,3,4,5,6,7,8,9], CUTS.gearSellQuantile));
+});
+
+// The assertions above are written through quantile(), which keeps them honest about WHICH quantile
+// each cut is but leaves both free to move together. These are the literal values, and they also say
+// the keep cut is the LOWER of the two — a swap would open a KEEP band wider than the SELL band's
+// floor and inverts the middle of the distribution.
+test("resolveCuts puts the keep cut below the sell cut, at the documented p50/p75", () => {
+  const c = resolveCuts([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  expect(c.keepCut).toBe(4);
+  expect(c.sellCut).toBe(6);
+});
+
+test("resolveCuts survives an empty population", () => {
+  expect(resolveCuts([])).toEqual({ keepCut: 0, sellCut: 0, n: 0 });
+});
+
+// n is the population SIZE, not its number of distinct values: it's the flag verdictFor reads to
+// decide whether the cuts mean anything, and every population above has distinct entries, so a
+// de-duplicating implementation would pass them all. A one-item population is calibrated (thinly),
+// not uncalibrated.
+test("resolveCuts counts the whole population, duplicates included", () => {
+  expect(resolveCuts([3, 3, 3]).n).toBe(3);
+  expect(resolveCuts([0]).n).toBe(1);
+});
+
+// A triage() output that condemns nothing, with q at each item's own best-matching role.
+const keepAll = (items) => items.map((it) => ({
+  item: it, q: quality(it), percentile: 50, verdict: "keep", reason: "keep",
+}));
+
+// Ceilings are the item's POTENTIAL (level-independent, substat TYPES only), not its as-built score:
+// the pool is spares that would have to be leveled, and the question is "would this finish better".
+// This +4 spare carries three good substat types against the worn piece's two, so it out-ceilings it
+// 92 to 79 — while as built it scores 18 against the worn piece's 100 and would count for nothing.
+test("buildContext ceilings are the item's potential, not its as-built score", () => {
+  const lowSpare = gear({ id: 200, level: 4, mainStat: { statId: 4, isFlat: true, value: 12 },
+    substats: [sub(5, false, 0.05), sub(6, false, 0.05), sub(2, false, 0.05)] });
+  const worn = gear({ id: 1, equippedChampId: 110, substats: [sub(5, false, 0.9), sub(6, false, 0.9)] });
+  const items = [lowSpare, worn];
+  const ctx = buildContext(items, keepAll(items));
+
+  expect(ctx.ceiling.get(200)).toBe(quality(lowSpare, true).score);
+  expect(ctx.ceiling.get(200)).toBeGreaterThan(ctx.ceiling.get(1));       // 92 > 79 at potential
+  expect(quality(lowSpare).score).toBeLessThan(quality(worn).score);      // 18 < 100 as built
+  expect(betterCount(ctx.index, worn, ctx.ceiling.get(1))).toBe(1);       // so it IS an upgrade path
+});
+
+// The calibration population is EQUIPPED gear only. Folding the spares in floods it with zeros — a
+// spare rarely beats its own bucket-mates — which drags both cuts to 0 and turns every worn piece
+// with a single upgrade path into a SELL.
+test("buildContext calibrates on equipped gear only", () => {
+  const spares = [0, 1, 2, 3].map((i) =>
+    gear({ id: 100 + i, substats: [sub(5, false, 0.9), sub(6, false, 0.9)] }));  // ceiling 79 each
+  const worn = gear({ id: 1, equippedChampId: 110 });                            // no subs -> 50
+  const items = [...spares, worn];
+  const ctx = buildContext(items, keepAll(items));
+
+  expect(ctx.cuts).toEqual({ keepCut: 4, sellCut: 4, n: 1 });   // with the spares folded in: 0, 0, 5
+  expect(rateItem(worn, ctx, "ATK-DPS").verdict).toBe("KEEP");  // ...which would read SELL instead
+});
+
+// ...and on gear the vault report hasn't already condemned. A condemned piece is on its way out;
+// letting its upgrade-path count set the cuts calibrates the advice against gear being sold.
+test("buildContext leaves triage-condemned gear out of the calibration population", () => {
+  const spares = [0, 1, 2, 3].map((i) =>
+    gear({ id: 100 + i, substats: [sub(5, false, 0.9), sub(6, false, 0.9)] }));
+  const worn = gear({ id: 1, equippedChampId: 110 });                          // better 4
+  const condemned = gear({ id: 2, equippedChampId: 110, slot: 3,               // better 0 (empty bucket)
+    mainStat: { statId: 6, isFlat: false, value: 80 } });
+  const items = [...spares, worn, condemned];
+  const scored = keepAll(items);
+  Object.assign(scored.find((s) => s.item.id === 2),
+    { verdict: "delete", reason: "setless: dominated by a set accessory in the same faction + slot" });
+  const ctx = buildContext(items, scored);
+
+  expect(ctx.cuts).toEqual({ keepCut: 4, sellCut: 4, n: 1 });   // with the condemned piece: 0, 0, 2
+  expect(rateItem(worn, ctx, "ATK-DPS").verdict).toBe("KEEP");  // ...which would read SELL instead
+});
+
+// The other face of the empty population: nothing equipped at all, so there is nothing to calibrate
+// on. This spare has 9 strictly-better bucket-mates and would read SELL against the zeroed cuts.
+test("rateItem: an uncalibrated context keeps a piece the triage did not condemn", () => {
+  const spares = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) =>
+    gear({ id: 100 + i, substats: [sub(5, false, 0.9), sub(6, false, 0.9)] }));
+  const plain = gear({ id: 1 });
+  const items = [...spares, plain];
+  const ctx = buildContext(items, keepAll(items));
+
+  expect(ctx.cuts.n).toBe(0);
+  const r = rateItem(plain, ctx, "ATK-DPS");
+  expect(r.better).toBe(9);
+  expect(r.verdict).toBe("KEEP");
+  expect(r.reason).toContain("uncalibrated");
+});
+
+// Every field here feeds a column of the CLI's output line, and nothing else in this file reads one.
+test("rateItem carries the triage row's own numbers through", () => {
+  const worn = gear({ id: 1, equippedChampId: 110, set: 29,
+    substats: [sub(5, false, 0.9), sub(6, false, 0.9)] });
+  const scored = [{ item: worn, q: { score: 63, role: "ATK-DPS" }, percentile: 61.6,
+    verdict: "keep", reason: "keep" }];
+  const ctx = buildContext([worn], scored);
+  const r = rateItem(worn, ctx, "ATK-DPS");
+
+  expect(r.item).toBe(worn);
+  expect(r.q).toBe(63);
+  expect(r.role).toBe("ATK-DPS");
+  expect(r.percentile).toBe(62);                          // rounded, not truncated
+  expect(r.premium).toBe(keepPremium(29));                // Cruel, 6
+  expect(r.ceiling).toBe(quality(worn, true).score);
+  expect(r.better).toBe(0);
+  expect(r.verdict).toBe("KEEP");
+  expect(r.rolls).toEqual(rollStats(worn, "ATK-DPS"));
+  expect(r.rolls.good).toBe(10);                          // non-degenerate: 2 subs x (4 upgrades + 1)
+});
+
+// The roll metric is read at the ITEM's best-matching role — the role its q-score was computed at —
+// not at the champion's. It answers "were these rolls spent well for what this piece is", which is
+// the question the q column already answers; re-asking it at the wearer's role would double-count
+// the miscast that roleGap reports separately.
+test("rateItem reads roll quality at the item's own role, not the champion's", () => {
+  const worn = gear({ id: 1, equippedChampId: 110,
+    substats: [sub(5, false, 0.9), sub(6, false, 0.9)] });
+  const scored = [{ item: worn, q: { score: 63, role: "ATK-DPS" }, percentile: 50,
+    verdict: "keep", reason: "keep" }];
+  const ctx = buildContext([worn], scored);
+
+  expect(rollStats(worn, "Support").good).not.toBe(rollStats(worn, "ATK-DPS").good);  // they differ
+  expect(rateItem(worn, ctx, "Support").rolls).toEqual(rollStats(worn, "ATK-DPS"));
+});
+
+// roleGap is a FLAG, not a measurement: below the threshold rateItem reports null rather than a
+// small gap, so the CLI has nothing to print. CUTS.roleGapFlag is inclusive, and this fixture sits
+// exactly on it — RES at 0.4 of its theoretical max reads a gap of exactly 10 on an Attack champion.
+test("rateItem flags a role gap at the threshold and suppresses one below it", () => {
+  const at = gear({ id: 1, equippedChampId: 110, set: 4, substats: [sub(7, true, 0.4)] });
+  const below = gear({ id: 2, equippedChampId: 110, set: 4, substats: [sub(7, true, 0.3)] });
+  expect(roleGap(at, "ATK-DPS").gap).toBe(CUTS.roleGapFlag);              // ON the boundary
+  expect(roleGap(below, "ATK-DPS").gap).toBeLessThan(CUTS.roleGapFlag);
+  const items = [at, below];
+  const ctx = buildContext(items, keepAll(items));
+
+  expect(rateItem(at, ctx, "ATK-DPS").roleGap).toEqual(roleGap(at, "ATK-DPS"));
+  expect(rateItem(below, ctx, "ATK-DPS").roleGap).toBe(null);
+});
+
+// An unrecognised Champs.Role suppresses the flag rather than scoring the piece against a default.
+test("rateItem leaves roleGap null when the champion's role is unknown", () => {
+  const worn = gear({ id: 1, equippedChampId: 110, set: 4, substats: [sub(7, true, 1)] });
+  expect(roleGap(worn, "ATK-DPS").gap).toBeGreaterThan(CUTS.roleGapFlag);  // it WOULD flag
+  const ctx = buildContext([worn], keepAll([worn]));
+  expect(rateItem(worn, ctx, null).roleGap).toBe(null);
+});
+
+// A ceiling the context doesn't hold reads as `undefined`, and `arr[mid] <= undefined` is false all
+// the way down betterCount's binary search — the piece would come back maximally replaceable (every
+// spare in its bucket counted as an upgrade) and get sold, silently. Rating an item the context
+// never saw is a caller error, and it has to be loud.
+test("rateItem refuses to rate an item the context has no ceiling for", () => {
+  const inCtx = gear({ id: 1, equippedChampId: 110 });
+  const stranger = gear({ id: 77, equippedChampId: 110 });
+  const ctx = buildContext([inCtx], keepAll([inCtx]));
+  ctx.byId.set(77, keepAll([stranger])[0]);        // triage row present, ceiling absent
+
+  expect(() => rateItem(stranger, ctx, "ATK-DPS")).toThrow(/77/);
+});
+
+test("analyzeChampionGear rates only the champion's own gear and orders it worst-first", () => {
+  // Two worn pieces plus a big pool of spares that out-ceiling one of them. The spares carry crit
+  // substat TYPES and the worn piece carries none, so the spares' potential is strictly higher —
+  // identical items would tie, and ties are not upgrades.
+  const spares = [];
+  for (let i = 0; i < 60; i++) {
+    spares.push(gear({ id: 100 + i, level: 16, substats: [sub(5, false, 0.9), sub(6, false, 0.9)] }));
+  }
+  const wornReplaceable = gear({ id: 1, equippedChampId: 110, level: 16 });
+  const wornScarce = gear({ id: 2, equippedChampId: 110, slot: 3, level: 16,
+    mainStat: { statId: 6, isFlat: false, value: 80 } });
+  const items = [...spares, wornReplaceable, wornScarce];
+
+  const scored = items.map((it) => ({
+    item: it, q: { score: 50, role: "ATK-DPS" }, percentile: 50, verdict: "keep", reason: "keep",
+  }));
+  const ctx = buildContext(items, scored);
+  const g = analyzeChampionGear({ ID: 110, Name: "Elhain", Role: 0 }, items, ctx);
+
+  expect(g.role).toBe("ATK-DPS");
+  expect(g.ratings.length).toBe(2);
+  expect(g.ratings.map((r) => r.item.id)).toEqual([1, 2]);   // more upgrade paths first
+  expect(g.ratings[0].better).toBeGreaterThan(g.ratings[1].better);
+  expect(g.ratings[1].better).toBe(0);                        // no C.DMG-main gloves in the pool
+  expect(g.tally.SELL + g.tally.BORDERLINE + g.tally.KEEP).toBe(2);
+});
+
+// The canonical main stat of each artifact slot, so a multi-slot fixture stays a legal item (and,
+// incidentally, lands in a bucket of its own — see buildFakeCtx).
+const MAIN_BY_SLOT = {
+  1: { statId: 1, isFlat: true, value: 4080 },   // Helmet  flat HP
+  2: { statId: 8, isFlat: true, value: 96 },     // Chest   ACC
+  3: { statId: 6, isFlat: false, value: 80 },    // Gloves  C.DMG
+  4: { statId: 4, isFlat: true, value: 45 },     // Boots   SPD
+  5: { statId: 2, isFlat: true, value: 265 },    // Weapon  flat ATK
+  6: { statId: 3, isFlat: true, value: 265 },    // Shield  flat DEF
+};
+const worn = (slot, o = {}) => gear({ slot, mainStat: MAIN_BY_SLOT[slot], equippedChampId: 110, ...o });
+
+// A context assembled by hand: each entry states its piece's upgrade-path count outright (a pool
+// bucket holding that many strictly-better ceilings) instead of arranging a vault that happens to
+// calibrate that way. Sorting and tallying are about ORDER and COUNTS, not about the arithmetic that
+// produced them, and buildContext's own calibration is pinned by its own tests above.
+function buildFakeCtx(entries, fakeCuts) {
+  const ceiling = new Map(), byId = new Map(), index = new Map();
+  for (const { item, better, verdict = "keep", reason = "keep" } of entries) {
+    const key = bucketKeyFor(item);
+    if (index.has(key)) throw new Error(`buildFakeCtx: ${key} is taken — give each item its own slot`);
+    ceiling.set(item.id, 50);
+    index.set(key, Array.from({ length: better }, () => 60));
+    byId.set(item.id, { item, q: quality(item), percentile: 50, verdict, reason });
+  }
+  return { ceiling, index, byId, cuts: fakeCuts };
+}
+
+test("analyzeChampionGear ignores gear worn by other champions and gear in the bank", () => {
+  const mine = worn(1, { id: 1 });
+  const alsoMine = worn(2, { id: 2 });
+  const theirs = worn(3, { id: 3, equippedChampId: 220 });
+  const bench = worn(4, { id: 4, equippedChampId: 0 });
+  const items = [mine, alsoMine, theirs, bench];
+  const ctx = buildFakeCtx(items.map((item) => ({ item, better: 0 })), { keepCut: 0, sellCut: 9, n: 4 });
+
+  const row = champ();
+  const g = analyzeChampionGear(row, items, ctx);
+  expect(g.ratings.map((r) => r.item.id)).toEqual([1, 2]);
+  expect(g.champ).toBe(row);
+  expect(g.role).toBe("ATK-DPS");
+});
+
+// node:sqlite hands integer columns back as BigInt when a reader turns that on (oracle/lib/decode.mjs
+// does, because corrupt gear rows overflow a JS number), so Champs.ID can arrive as 110n. `===`
+// against a decoded item's plain-number cID is false for a BigInt, and the champion would come back
+// wearing nothing at all.
+test("analyzeChampionGear matches a Champs.ID that arrives as a BigInt", () => {
+  const mine = worn(1, { id: 1 });
+  const ctx = buildFakeCtx([{ item: mine, better: 0 }], { keepCut: 0, sellCut: 9, n: 1 });
+  expect(analyzeChampionGear({ ID: 110n, Name: "Elhain", Role: 0 }, [mine], ctx).ratings.length).toBe(1);
+});
+
+test("analyzeChampionGear tallies each verdict separately", () => {
+  const keep = worn(1, { id: 1 });
+  const border = worn(2, { id: 2 });
+  const sell = worn(3, { id: 3 });
+  const items = [keep, border, sell];
+  const ctx = buildFakeCtx(
+    [{ item: keep, better: 0 }, { item: border, better: 5 }, { item: sell, better: 9 }],
+    { keepCut: 1, sellCut: 9, n: 3 });
+
+  const g = analyzeChampionGear(champ(), items, ctx);
+  expect(g.ratings.map((r) => r.verdict)).toEqual(["SELL", "BORDERLINE", "KEEP"]);
+  expect(g.tally).toEqual({ SELL: 1, BORDERLINE: 1, KEEP: 1 });
+});
+
+// The verdict key outranks the upgrade-path key. A triage-condemned piece with NO upgrade paths
+// still sorts ahead of a keeper with several — it's the one the user can act on. Both the
+// upgrade-path key and the slot key order this pair the other way round, as does the input order, so
+// only the verdict key produces this answer.
+test("analyzeChampionGear sorts by verdict ahead of upgrade paths", () => {
+  const condemned = worn(5, { id: 1 });
+  const keeper = worn(4, { id: 2 });
+  const ctx = buildFakeCtx([
+    { item: condemned, better: 0, verdict: "delete", reason: "setless: dominated by a set accessory in the same faction + slot" },
+    { item: keeper, better: 3 },
+  ], { keepCut: 3, sellCut: 9, n: 4 });
+
+  const g = analyzeChampionGear(champ(), [keeper, condemned], ctx);
+  expect(g.ratings.map((r) => r.verdict)).toEqual(["SELL", "KEEP"]);
+  expect(g.ratings.map((r) => r.item.id)).toEqual([1, 2]);
+});
+
+// Within one verdict: most upgrade paths first (the most replaceable piece is the most actionable),
+// then slot ASCENDING. All three pieces here land in the same band, so the verdict key can't order
+// them; the input order, a reversed upgrade-path key, a dropped one, and a reversed slot key each
+// produce a different sequence.
+test("analyzeChampionGear breaks a verdict tie by upgrade paths, then by slot", () => {
+  const many = worn(4, { id: 1 });
+  const fewHighSlot = worn(5, { id: 2 });
+  const fewLowSlot = worn(3, { id: 3 });
+  const ctx = buildFakeCtx([
+    { item: many, better: 3 }, { item: fewHighSlot, better: 1 }, { item: fewLowSlot, better: 1 },
+  ], { keepCut: 3, sellCut: 9, n: 3 });
+
+  const g = analyzeChampionGear(champ(), [fewHighSlot, many, fewLowSlot], ctx);
+  expect(g.ratings.map((r) => r.verdict)).toEqual(["KEEP", "KEEP", "KEEP"]);
+  expect(g.ratings.map((r) => r.item.id)).toEqual([1, 3, 2]);
+});
+
+// An uncalibrated vault is not a free pass. n = 0 is reachable through buildContext exactly when
+// every equipped piece is already condemned, and each of those still has to come back SELL, with
+// triage's own reason rather than a made-up one.
+test("analyzeChampionGear: an uncalibrated context still passes triage's condemnations through", () => {
+  const condemned = worn(4, { id: 1 });
+  const scored = [{ item: condemned, q: quality(condemned), percentile: 50, verdict: "delete",
+    reason: "setless: dominated by a set accessory in the same faction + slot" }];
+  const ctx = buildContext([condemned], scored);
+
+  expect(ctx.cuts.n).toBe(0);
+  const g = analyzeChampionGear(champ(), [condemned], ctx);
+  expect(g.ratings[0].verdict).toBe("SELL");
+  expect(g.ratings[0].reason).toContain("setless");
+  expect(g.tally).toEqual({ SELL: 1, BORDERLINE: 0, KEEP: 0 });
+});
+
+// A champion whose Role the mapping doesn't recognise still gets verdicts — only the miscast flag
+// is suppressed. (champRole returns null there; nothing downstream may treat that as Attack.)
+test("analyzeChampionGear rates gear for a champion with an unrecognised role", () => {
+  const piece = worn(4, { id: 1, set: 4, substats: [sub(7, true, 1)] });
+  const ctx = buildFakeCtx([{ item: piece, better: 9 }], { keepCut: 0, sellCut: 9, n: 3 });
+
+  const g = analyzeChampionGear(champ({ Role: 9 }), [piece], ctx);
+  expect(g.role).toBe(null);
+  expect(g.ratings.length).toBe(1);
+  expect(g.ratings[0].verdict).toBe("SELL");
+  expect(g.ratings[0].roleGap).toBe(null);
 });
