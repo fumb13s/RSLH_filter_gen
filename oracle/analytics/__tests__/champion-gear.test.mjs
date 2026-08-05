@@ -3,6 +3,7 @@ import { test, expect } from "vitest";
 import { CHAMP_ROLE, CHAMP_ROLE_LABEL, champRole, quantile, inReplacementPool, bucketKeyFor, buildPoolIndex, betterCount, roleGap } from "../champion-gear.mjs";
 import { subMax } from "../rolls.mjs";
 import { qualityAtRole } from "../score.mjs";
+import { ALL_ROLES } from "../sets.mjs";
 import { CUTS } from "../weights.mjs";
 
 // Minimal Champs row: an Attack champion unless overridden.
@@ -298,7 +299,7 @@ test("CUTS still carries the vault-report cuts it had before the gear thresholds
 // THE design point of this function: the max ranges over all four archetypes, NOT over the roles
 // the item's SET is annotated for — the flag is a claim about the item's stats, not its set. Every
 // test above uses set 4 (Speed, annotated "All"), where the two are the same set of roles, so
-// scoring via the set annotation instead would pass all of them. These sets are single-role.
+// scoring via the set annotation instead would pass all of them. These sets are strict subsets.
 test("roleGap ranges over all four roles, ignoring the set's role annotation", () => {
   const supportSubs = [sub(7, true, 0.5), sub(8, true, 0.5), sub(1, false, 0.5)];
   const onOffense = roleGap(gear({ set: 2, substats: supportSubs }), "ATK-DPS");   // set 2 -> ATK-DPS only
@@ -310,9 +311,33 @@ test("roleGap ranges over all four roles, ignoring the set's role annotation", (
   expect(onAccuracy.bestRole).toBe("ATK-DPS");
   expect(onAccuracy.gap).toBeGreaterThanOrEqual(CUTS.roleGapFlag);
 
-  // Same stats, three differently-annotated sets, one identical answer.
-  for (const set of [4, 2, 7]) {
+  // Same stats, five differently-annotated sets, one identical answer. 29 (Cruel, the three DPS
+  // roles) is the subtlest and the commonest annotation shape: restricted to those three, this
+  // piece still reads gap 13 and would clear the flag anyway — only bestRole gives it away.
+  for (const set of [4, 2, 7, 29, 44]) {
     expect(roleGap(gear({ set, substats: supportSubs }), "ATK-DPS"), `set ${set}`).toEqual(onOffense);
+  }
+});
+
+// bestRole is the argmax, checked without reference to ALL_ROLES' ORDER (see the tie test below for
+// the one ordering rule that is real: the wearer wins its own tie). Math.max over the four scores
+// is an independent path to the same answer as roleGap's running accumulator.
+test("roleGap: bestRole and gap agree with the max over the four roles, for any wearer", () => {
+  const items = [
+    gear({ set: 4, substats: [sub(7, true, 0.5), sub(8, true, 0.5), sub(1, false, 0.5)] }),
+    gear({ set: 4, substats: [sub(5, false, 0.5), sub(6, false, 0.5), sub(2, false, 0.5)] }),
+    gear({ slot: 3, set: 29, mainStat: { statId: 6, isFlat: false, value: 60 },
+      substats: [sub(4, true, 0.4), sub(3, false, 0.6)] }),
+    gear(),                                                   // no substats at all
+  ];
+  for (const it of items) {
+    for (const role of ALL_ROLES) {
+      const rg = roleGap(it, role);
+      const top = Math.max(...ALL_ROLES.map((r) => qualityAtRole(it, r)));
+      expect(rg.atChampRole + rg.gap, `${role}`).toBe(top);
+      expect(qualityAtRole(it, rg.bestRole), `${role}`).toBe(top);
+      expect(rg.gap, `${role}`).toBeGreaterThanOrEqual(0);
+    }
   }
 });
 
