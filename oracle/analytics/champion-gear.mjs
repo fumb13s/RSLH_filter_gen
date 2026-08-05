@@ -18,8 +18,10 @@
 export const CHAMP_ROLE = { 0: "ATK-DPS", 1: "DEF-DPS", 2: "HP-DPS", 3: "Support" };
 export const CHAMP_ROLE_LABEL = { 0: "Attack", 1: "Defense", 2: "HP", 3: "Support" };
 
-// null for an unrecognised Role — suppresses the role-gap flag, leaves verdicts intact.
-export const champRole = (row) => CHAMP_ROLE[Number(row.Role)] ?? null;
+// null for an unrecognised Role — suppresses the role-gap flag, leaves verdicts intact. Indexed
+// raw, NOT via Number(): the column has no NOT NULL constraint, and Number(null) is 0, which would
+// quietly grade a role-less champion as Attack instead of suppressing the flag.
+export const champRole = (row) => CHAMP_ROLE[row?.Role] ?? null;
 
 // p in [0,1], index-based (no interpolation) to match the analytics' existing percentile style.
 export function quantile(values, p) {
