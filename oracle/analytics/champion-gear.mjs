@@ -8,7 +8,7 @@
 //   node --experimental-sqlite oracle/analytics/champion-gear.mjs [name|ID] [snapshot.db]
 //     name|ID     all digits -> exact Champs.ID; otherwise a case-insensitive Name substring.
 //                 Omit for summary mode: one line per geared champion, worst first.
-//     snapshot.db an arg ending in .db or containing a slash (default: newest snapshot).
+//     snapshot.db an arg ending in .db or containing a path separator (default: newest snapshot).
 
 import { readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -221,15 +221,23 @@ export function roleGapNote(rating) {
 }
 
 // An arg ending .db or containing a separator is the snapshot; the first other arg is the selector.
+//
+// An EMPTY arg is no arg. `champion-gear.mjs ""` reaches here as [""], and an empty selector matches
+// every champion by substring — but main() gates summary mode on `selector === null`, so it would
+// print the full nine-slot readout for all 504 geared champions instead. Dropped here rather than
+// in selectChamps for exactly that reason: the mode gate reads the parse result, not the matcher.
 export function parseArgs(argv) {
-  const dbArg = argv.find((a) => a.endsWith(".db") || a.includes("/") || a.includes("\\"));
-  return { selector: argv.find((a) => a !== dbArg) ?? null, dbArg };
+  const args = argv.filter((a) => a !== "");
+  const dbArg = args.find((a) => a.endsWith(".db") || a.includes("/") || a.includes("\\"));
+  return { selector: args.find((a) => a !== dbArg) ?? null, dbArg };
 }
 
 // All digits -> the exact Champs.ID (IDs are opaque, so a substring match on one means nothing);
-// any other text -> a case-insensitive Name substring; null -> everyone.
+// any other text -> a case-insensitive Name substring; no selector -> everyone. Falsy rather than
+// `=== null` so an empty or absent selector can't reach `.toLowerCase()`; parseArgs already drops
+// empties, so this is the exported function honouring its own contract, not the load-bearing guard.
 export function selectChamps(rows, selector) {
-  if (selector === null) return rows;
+  if (!selector) return rows;
   if (/^\d+$/.test(selector)) return rows.filter((r) => Number(r.ID) === Number(selector));
   const nf = selector.toLowerCase();
   return rows.filter((r) => r.Name.toLowerCase().includes(nf));
@@ -238,13 +246,20 @@ export function selectChamps(rows, selector) {
 // Empty-Name rows are placeholders (they hold no gear, and they are the one place Role disagrees
 // across copies of a name), so they never reach the matcher.
 export function readChampRows(dbPath) {
-  const db = new DatabaseSync(dbPath);
-  const st = db.prepare("SELECT ID, Name, Role, Rarity, Rang, Lvl FROM Champs");
-  st.setReadBigInts(true);
-  const rows = st.all().map((r) => Object.fromEntries(
-    Object.entries(r).map(([k, v]) => [k, typeof v === "bigint" ? Number(v) : v])));
-  db.close();
-  return rows.filter((r) => typeof r.Name === "string" && r.Name.trim() !== "");
+  // readOnly makes SELECT-only structural rather than conventional, and — the reason it's here — it
+  // refuses to CREATE the file: without it a typo'd snapshot path leaves a stray 0-byte .db in the
+  // snapshot directory before failing on the missing table, and this toolkit writes to no snapshot.
+  // The read is wrapped so a corrupt file or a missing Champs table can't leak the handle.
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    const st = db.prepare("SELECT ID, Name, Role, Rarity, Rang, Lvl FROM Champs");
+    st.setReadBigInts(true);
+    const rows = st.all().map((r) => Object.fromEntries(
+      Object.entries(r).map(([k, v]) => [k, typeof v === "bigint" ? Number(v) : v])));
+    return rows.filter((r) => typeof r.Name === "string" && r.Name.trim() !== "");
+  } finally {
+    db.close();
+  }
 }
 
 // Champs.Rarity is 1-indexed (1=Common … 6=Mythical) — NOT the 0-indexed scheme the artifact rows

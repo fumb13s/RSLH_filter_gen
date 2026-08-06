@@ -974,6 +974,14 @@ test("selectChamps: a null selector returns the whole roster", () => {
   expect(selectChamps(roster, null).length).toBe(6);
 });
 
+// An empty selector would otherwise fall through to the substring branch, where every name
+// `.includes("")` — the whole roster back, but as a MATCH, which main() prints one detail readout
+// per champion for. Undefined is worse: it throws on `.toLowerCase()`.
+test("selectChamps: an empty or absent selector returns the whole roster", () => {
+  expect(selectChamps(roster, "").length).toBe(6);
+  expect(selectChamps(roster, undefined).length).toBe(6);
+});
+
 // readChampRows coerces the BigInts node:sqlite hands back, but selectChamps is exported and can be
 // handed raw rows — and 110n === 110 is false, so an uncoerced compare finds nothing at all.
 test("selectChamps: an exact-ID selector matches an ID that arrives as a BigInt", () => {
@@ -987,6 +995,16 @@ test("parseArgs: routes digits and names to the selector, .db and paths to the s
   expect(parseArgs(["Elhain", "a/b.db"])).toEqual({ selector: "Elhain", dbArg: "a/b.db" });
   expect(parseArgs(["../x/y.db", "110"])).toEqual({ selector: "110", dbArg: "../x/y.db" });
   expect(parseArgs([])).toEqual({ selector: null, dbArg: undefined });
+});
+
+// `champion-gear.mjs ""` arrives as [""]. A null selector is what main() gates summary mode on, so
+// an empty string surviving the parse costs 504 nine-slot readouts — the ONLY caller-visible
+// difference, since selectChamps returns the same rows either way. The second case is why this is a
+// filter and not `|| null` on the result: that would drop the real selector standing beside it.
+test("parseArgs: an empty arg is no arg", () => {
+  expect(parseArgs([""])).toEqual({ selector: null, dbArg: undefined });
+  expect(parseArgs(["", "110"])).toEqual({ selector: "110", dbArg: undefined });
+  expect(parseArgs(["", "a/b.db"])).toEqual({ selector: null, dbArg: "a/b.db" });
 });
 
 // Every path-shaped arg above ALSO ends in ".db", so both separator clauses are deletable — the
