@@ -1,7 +1,7 @@
 # Per-champion gear analysis — design
 
 **Date:** 2026-08-05
-**Status:** approved, not yet implemented
+**Status:** implemented — see `oracle/analytics/champion-gear.mjs` and its README section
 
 ## Motivation
 
@@ -207,31 +207,39 @@ consumer changes.
 
 ## Output
 
-Per champion, worst-first (SELL, BORDERLINE, KEEP; ties by descending `better`):
+Per champion, worst-first (SELL, BORDERLINE, KEEP; ties by descending `better`). Shipped output,
+verbatim — the snapshot name and the cuts are hoisted into a global header, so a multi-champion run
+states them once:
 
 ```
-Elhain #110 — Attack (ATK-DPS) · Rare 6★ +60 · snapshot 2026-07-12-RSLHelper.db
+# Champion gear — snapshot 2026-07-12-RSLHelper.db
 cuts: KEEP <=10 · SELL >=75   (p50/p75 of 3704 triage-keep equipped pieces)
 
- SELL       Shield  Cruel        +12  q56  p8   ceil 80  5/6  prem 6
-              392 upgrade paths — unequipped DEF-main shields on demanded sets with a higher ceiling
- SELL       Weapon  Lifesteal    +12  q63  p22  ceil 92  6/6  prem 1
+Elhain #110 — Attack (ATK-DPS) · Rare 6★ +60
+ SELL       Shield  Cruel         +12  q56  p 8  ceil  80  5/6  prem 6
+              392 upgrade paths
+ SELL       Weapon  Lifesteal     +12  q63  p22  ceil  92  6/6  prem 1
               149 upgrade paths
- SELL       Helmet  Cruel        +16  q77  p51  ceil 89  6/7  prem 6
+ SELL       Helmet  Cruel         +16  q77  p51  ceil  89  6/7  prem 6
               106 upgrade paths
- SELL       Ring    (setless)    +16  q69  p67  ceil 96  2/7  prem 1   [High Elves]
-              triage: setless — dominated by a set accessory in the same faction + slot
- SELL       Banner  (setless)    +12  q48  p19  ceil 93  3/6  prem 1   [High Elves]
-              triage: setless — dominated by a set accessory in the same faction + slot
- BORDERLINE Boots   Guardian     +16  q70  p57  ceil 74  3/7  prem 1
+ SELL       Ring    (setless)     +16  q69  p67  ceil  96  2/7  prem 1  [High Elves]
+              triage: setless: dominated by a set accessory in the same faction + slot
+ SELL       Banner  (setless)     +12  q48  p19  ceil  93  3/6  prem 1  [High Elves]
+              triage: setless: dominated by a set accessory in the same faction + slot
+ BORDERLINE Boots   Guardian      +16  q70  p57  ceil  74  3/7  prem 1
               47 upgrade paths
- KEEP       Gloves  Lifesteal    +16  q78  p86  ceil 82  5/8  prem 1
+ KEEP       Gloves  Lifesteal     +16  q78  p86  ceil  82  5/8  prem 1
               6 upgrade paths
- KEEP       Chest   Slayer       +16  q73  p61  ceil 86  4/7  prem 1
+ KEEP       Chest   Slayer        +16  q73  p61  ceil  86  4/7  prem 1
               1 upgrade path
- KEEP       Amulet  Slayer       +16  q59  p55  ceil 100 2/7  prem 1   [High Elves]
+ KEEP       Amulet  Slayer        +16  q59  p55  ceil 100  2/7  prem 1  [High Elves]
               0 upgrade paths
 ```
+
+The evidence line is the bare count or the triage reason — an earlier draft appended an explanatory
+tail (`392 upgrade paths — unequipped DEF-main shields on demanded sets…`) restating the pool rule on
+every line; it was dropped as noise. What the count does and does not include is documented once, in
+`oracle/analytics/README.md`.
 
 Columns: `q` = current `quality()` score, `p` = per-slot percentile (taken from the piece's `triage()`
 record, so it matches the vault report), `ceil` = ceiling at 6★+16, `n/m` = good rolls (`rollStats`),

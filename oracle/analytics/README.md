@@ -17,9 +17,10 @@ nothing is ever deleted.
 
    Rates each equipped piece KEEP / BORDERLINE / SELL. The vault report can't answer this — its
    delete passes skip equipped items, so worn gear always comes back "keep" on supply floors rather
-   than merit. Verdicts here are driven by *replaceability*: how many unequipped spares could
-   actually take the piece's place (same slot and main stat, same faction for accessories, on a
-   demanded set) and would finish with a higher ceiling.
+   than merit. Verdicts here are driven by *replaceability*: how many unequipped spares are eligible
+   to take the piece's place (same slot and main stat, same faction for accessories, on a demanded
+   set) and would finish with a higher ceiling. "Eligible" is the whole test — see
+   [what the upgrade-path count counts](#what-the-upgrade-path-count-counts).
 
    Neither argument is positional: an arg ending in `.db` or holding a path separator is the
    snapshot, and the first one that isn't is the selector. An all-digits selector is an exact
@@ -39,14 +40,30 @@ nothing is ever deleted.
 - `ceil` — quality at *potential*: substat types only, level-independent. Replacements are compared
   on this, not on `q`, because a spare would have to be leveled from scratch — the question is
   which of them finishes better, not which is further along today.
-- `5/8` — substat rolls that landed on a stat the role wants, over all of them (a line counts as
-  one roll, each upgrade into it adds another).
+- `5/8` — substat rolls that landed on a stat the *item's own* role wants, over all of them (a line
+  counts as one roll, each upgrade into it adds another). That role is the one `q` was scored at —
+  the best among those the item's set is built for — not the wearer's; `[role: better as …]` is
+  where the two are compared.
 - `prem` — the set's keep premium. The replacement pool only counts sets at or above
   `CUTS.focusPremium`, so an off-set spare is never treated as an upgrade path.
 - `[Faction]` — accessories only; a replacement has to share it. `[role: better as …]` marks a
   piece scoring `CUTS.roleGapFlag` or more higher for another archetype than for its wearer's.
 
 The second line is the evidence: an upgrade-path count, or the vault-triage rule that fired.
+
+#### What the upgrade-path count counts
+
+Every unequipped spare that matches the slot, the main stat and — for accessories — the faction,
+sits on a set at or above `CUTS.focusPremium`, and out-ceilings this piece. Those are the only
+filters. It does **not** exclude spares the vault report has itself condemned as delete, or spares
+still sitting at +12 and needing to be finished before they could be worn. Of the 392 paths behind
+Elhain's shield on the 2026-07-12 snapshot, 184 (47%) are on `analyze.mjs`'s own delete list and 126
+are still at +12; vault-wide, a mean 11% of a piece's count is gear the vault report wants gone.
+
+The cut points are quantiles of that same measure, so the bias is common to both sides of the
+comparison and washes out of the verdict — excluding condemned spares and recalibrating moves only
+107 of 4192 verdicts. Read the number as this piece's replaceability *relative to the rest of the
+vault*, not as a literal count of replacements ready to equip.
 
 ### Calibration
 
@@ -57,10 +74,15 @@ header line prints them with the population they came off.
 A thin population must not condemn, so the SELL band is "at or above p75 **when p75 is positive**".
 A small or new vault, where most worn gear has no strictly-better spare at all, produces a p75 of 0
 — which would otherwise sell every piece with a single upgrade path. Those fall to BORDERLINE
-instead, still carrying the count. Three thinner cases: at `n = 0` there is no population at all and
-every piece keeps, reading `uncalibrated: nothing to compare against`; `n = 1` calibrates off a
-single sample; and `keepCut = sellCut` collapses the BORDERLINE band. The last two are left as
-benign — KEEP wins the tie, so they fail safe.
+instead, still carrying the count. Three thinner cases: at `n = 0` there is no population at all, so
+every piece *the triage hasn't already condemned* keeps, reading `uncalibrated: nothing to compare
+against`; `n = 1` calibrates off a single sample; and `keepCut = sellCut` collapses the BORDERLINE
+band. The last two are left as benign — KEEP wins the tie, so they fail safe.
+
+That qualifier on `n = 0` is not decoration. The triage override is checked before the uncalibrated
+branch, so a condemned piece still comes back SELL — and `n = 0` is only reachable through
+`buildContext` when every equipped piece was already condemned. In the one case that can actually
+occur, nothing keeps.
 
 Above all of it, the vault-wide `triage()` verdict overrides outright. For equipped gear the only
 rule that can fire is setless domination, and it is load-bearing: those pieces sit at a median of 0
