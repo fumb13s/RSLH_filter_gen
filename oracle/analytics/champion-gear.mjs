@@ -7,7 +7,7 @@
 //
 //   node --experimental-sqlite oracle/analytics/champion-gear.mjs [name|ID] [snapshot.db]
 //     name|ID     all digits -> exact Champs.ID; otherwise a case-insensitive Name substring.
-//                 Omit for summary mode: one line per geared champion, worst first.
+//                 Omit for summary mode: one line per geared champion, most sellable first.
 //     snapshot.db an arg ending in .db or containing a path separator (default: newest snapshot).
 
 import { readdirSync, realpathSync } from "node:fs";
@@ -175,7 +175,7 @@ export function rateItem(item, ctx, champRoleName) {
   // only (never a decoded value), every weight is a finite constant, an unrecognised stat id or slot
   // scores 0, and the divisor is a max over the slot's own primaries with a `|| 1` guard. So these
   // only fire on an item buildContext never saw, and that is a caller error.
-  const seen = `rateItem needs an item buildContext saw`;
+  const seen = "rateItem needs an item buildContext saw";
   if (!s) throw new Error(`champion-gear: no triage row for item ${item.id} — ${seen}`);
   if (!Number.isFinite(ceil)) throw new Error(`champion-gear: no ceiling for item ${item.id} — ${seen}`);
   const better = betterCount(ctx.index, item, ceil);
@@ -204,7 +204,8 @@ export function analyzeChampionGear(champRow, items, ctx) {
   return { champ: champRow, role, ratings, tally };
 }
 
-// --- CLI --------------------------------------------------------------------
+// --- CLI: pure helpers ------------------------------------------------------
+// Still unit-tested, and free of I/O and formatting — those start at the next banner.
 
 // roleGap resolves its argmax by ALL_ROLES order, so at a tie its `bestRole` is an arbitrary pick
 // among equals — and ties are routine rather than theoretical: both score components are
@@ -244,7 +245,15 @@ export function selectChamps(rows, selector) {
 }
 
 // Empty-Name rows are placeholders (they hold no gear, and they are the one place Role disagrees
-// across copies of a name), so they never reach the matcher.
+// across copies of a name), so they never reach the matcher. Exported rather than inlined into
+// readChampRows: it is the one pure rule in that function, and inside an untested I/O reader nothing
+// would notice it going missing. `typeof` first because Name has no NOT NULL constraint, and
+// `null.trim()` throws.
+export const isRealChamp = (r) => typeof r.Name === "string" && r.Name.trim() !== "";
+
+// --- CLI: I/O and formatting ------------------------------------------------
+// Below this line nothing is unit-tested: DB reads, layout and printing.
+
 export function readChampRows(dbPath) {
   // readOnly makes SELECT-only structural rather than conventional, and — the reason it's here — it
   // refuses to CREATE the file: without it a typo'd snapshot path leaves a stray 0-byte .db in the
@@ -256,7 +265,7 @@ export function readChampRows(dbPath) {
     st.setReadBigInts(true);
     const rows = st.all().map((r) => Object.fromEntries(
       Object.entries(r).map(([k, v]) => [k, typeof v === "bigint" ? Number(v) : v])));
-    return rows.filter((r) => typeof r.Name === "string" && r.Name.trim() !== "");
+    return rows.filter(isRealChamp);
   } finally {
     db.close();
   }
@@ -313,7 +322,8 @@ function main() {
   if (!targets.length) {
     console.error(selector === null
       ? "no champion in this snapshot holds any gear."
-      : `"${selector}" matched ${matched.length} copies, none of which hold any gear.`);
+      : `"${selector}" matched ${matched.length} cop${matched.length === 1 ? "y" : "ies"},`
+        + " none of which hold any gear.");
     process.exit(1);
   }
 

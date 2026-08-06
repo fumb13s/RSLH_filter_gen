@@ -1,6 +1,6 @@
 // oracle/analytics/__tests__/champion-gear.test.mjs
 import { test, expect } from "vitest";
-import { CHAMP_ROLE, CHAMP_ROLE_LABEL, champRole, champLabel, quantile, inReplacementPool, bucketKeyFor, buildPoolIndex, betterCount, roleGap, verdictFor, resolveCuts, buildContext, rateItem, analyzeChampionGear, roleGapNote, selectChamps, parseArgs } from "../champion-gear.mjs";
+import { CHAMP_ROLE, CHAMP_ROLE_LABEL, champRole, champLabel, quantile, inReplacementPool, bucketKeyFor, buildPoolIndex, betterCount, roleGap, verdictFor, resolveCuts, buildContext, rateItem, analyzeChampionGear, roleGapNote, selectChamps, parseArgs, isRealChamp } from "../champion-gear.mjs";
 import { subMax } from "../rolls.mjs";
 import { quality, qualityAtRole } from "../score.mjs";
 import { rollStats } from "../rollquality.mjs";
@@ -88,6 +88,19 @@ test("inReplacementPool: rejects spares on low-demand sets", () => {
   expect(inReplacementPool(gear({ id: 2, set: 9 }), gear())).toBe(false);   // Lifesteal, premium 1
   expect(inReplacementPool(gear({ id: 2, set: 44 }), gear())).toBe(false);  // Guardian, premium 1
   expect(inReplacementPool(gear({ id: 2, set: 29 }), gear())).toBe(true);   // Cruel, premium 6
+});
+
+// The premium cut is INCLUSIVE, pinned on the predicate at a live value: CUTS.focusPremium is 4 and
+// real sets sit exactly on it (19 = Savage, also 39 and 42). Every other case here uses premium 1, 2
+// or 6, which leaves `>=` free to slip to `>` and silently drop a whole class of demanded sets. The
+// mirror assertion on buildPoolIndex below doesn't cover this: the key<->predicate equivalence test
+// exercises only the slot/main/faction clauses, so the predicate's own premium clause can drift from
+// the index's — which is the drift the predicate exists to prevent.
+test("inReplacementPool admits sets exactly at the premium cut", () => {
+  expect(keepPremium(19)).toBe(CUTS.focusPremium);                          // Savage, ON the boundary
+  expect(inReplacementPool(gear({ id: 2, set: 19 }), gear())).toBe(true);
+  expect(keepPremium(15)).toBeLessThan(CUTS.focusPremium);                  // ...and just below it
+  expect(inReplacementPool(gear({ id: 2, set: 15 }), gear())).toBe(false);
 });
 
 test("inReplacementPool: accessories are faction-locked, artifacts are not", () => {
@@ -945,6 +958,18 @@ test("roleGapNote names a single best role on its own", () => {
 
 test("roleGapNote is empty when the rating carries no role gap", () => {
   expect(roleGapNote({ item: gear(), roleGap: null })).toBe("");
+});
+
+// The one pure rule inside readChampRows, hoisted out so the suite can see it: 10 rows on the
+// 2026-07-12 snapshot carry an empty Name, they hold no gear, and they are the single place Role
+// disagrees across copies of a name — dropping the filter puts them in front of the matcher. A SQL
+// NULL Name has to be dropped without throwing, so the typeof guard has to come first.
+test("isRealChamp keeps named rows and drops empty-Name placeholders", () => {
+  expect(isRealChamp({ Name: "Elhain" })).toBe(true);
+  expect(isRealChamp({ Name: "" })).toBe(false);
+  expect(isRealChamp({ Name: "   " })).toBe(false);
+  expect(isRealChamp({ Name: null })).toBe(false);
+  expect(isRealChamp({ ID: 204350 })).toBe(false);      // no Name column at all
 });
 
 // Two copies of one name, two names that CONTAIN another name, and an ID that has 110 as a prefix.
