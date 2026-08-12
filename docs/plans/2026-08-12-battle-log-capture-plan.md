@@ -14,7 +14,7 @@
 
 - **The archive is never committed.** This repo is public; logs carry `ownerId` and champion instance ids. `oracle/battlelogs/archive/.gitignore` uses the deny-all `oracle/resources/` pattern and must exist before any capture code runs.
 - **Test fixtures are synthetic and hand-built.** Never commit a captured log, not even a truncated one.
-- **`eslint` ignores `oracle/**`** (`eslint.config.js:8`). There is no lint gate on this code — tests are the only automated net. Do not assume lint will catch anything.
+- **`oracle/` is linted.** `eslint.config.js` covers `oracle/**/*.mjs` with Node globals, exempting only third-party and derived directories. New code under `oracle/battlelogs/` is linted by default, so `npm run lint` must pass — do not add an exemption for it.
 - **`vitest.config.ts` must be extended** to include `oracle/battlelogs/**/*.test.mjs`, or every test written here silently never runs.
 - Copy bytes **before** decoding, always. A decode bug must never cost a file about to be evicted.
 - Style: match `oracle/lib/decode.mjs` — a comment header stating the module's purpose and who imports it, named exports, no default exports.
