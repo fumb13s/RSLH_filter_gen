@@ -86,9 +86,9 @@ Every line: `type: "battleLiveState"`, `pushKind: "turn"`. No other values obser
 | `heroCounter` | `t, cid, old, new` |
 
 **Bare** — carry *only* `t`; RSL Helper does not serialize their payloads. They record that something
-happened, never by how much. 30 kinds, dominated by `DamageMultiplierModifyResult` (1,611
-occurrences), `StaminaChangeResults`, `StatsChangeResult`, `UnappliedEffectResult`. Treat them as
-markers, not measurements.
+happened, never by how much. 30 kinds, and they dominate the stream by volume —
+`DamageMultiplierModifyResult`, `StaminaChangeResults`, `StatsChangeResult`, `UnappliedEffectResult`
+are the bulk of it. Treat them as markers, not measurements.
 
 `t` is the subject hero id across every kind: 0–7, or `-1` for none/global.
 
@@ -99,15 +99,12 @@ resistance questions empirically — it records not just landed effects but evad
 
 Two `(kindId, regionTypeId, stageId)` tuples appeared:
 
-| kindId | regionTypeId | stageId | lines | team sizes |
-|--:|--:|--:|--:|---|
-| 2 | 301 | 3019003 | 112 | `[4, 4]` |
-| 1 | 216 | 2169025 | 54 | `[5, 1]` |
+| kindId | regionTypeId | stageId | team sizes |
+|--:|--:|--:|---|
+| 2 | 301 | 3019003 | `[4, 4]` |
+| 1 | 216 | 2169025 | `[5, 1]` |
 
-The line counts are from the first full sweep (166 pushes). Rotation evicted six files and added six
-more between that sweep and a later one, so the two runs saw overlapping-but-different file sets;
-`stageId` was constant per `(kindId, regionTypeId)` in both. This is itself a useful demonstration of
-the eviction problem the design exists to solve.
+`stageId` was constant per `(kindId, regionTypeId)` across every file examined.
 
 **Which game mode each denotes is unknown and deliberately not guessed here.** They are recorded as
 opaque observed values; identification comes later by cross-referencing captures against known play
