@@ -3,3 +3,12 @@ dist/
 *.tsbuildinfo
 .dev.pid
 .worktrees/
+
+# Battle logs are personal account data — they carry ownerId and champion instance ids — and this
+# repo is public. oracle/battlelogs/archive/.gitignore already denies everything under the DEFAULT
+# archive, but `--archive DIR` is a documented flag, so deny by extension too: an archive pointed
+# anywhere else in the tree must not become committable by a `git add -A`. The .tmp is what
+# rebuild-index.mjs renames from, and a crash mid-rebuild leaves one behind.
+*.jsonl.z
+index.jsonl
+index.jsonl.tmp
