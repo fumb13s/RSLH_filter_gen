@@ -46,6 +46,9 @@ test("hero rows keep the join keys and drop volatile per-turn state", () => {
   const row = summarize([makeLine(), makeLine({ finished: true })], META);
   const h = row.teams[0].heroes[0];
   expect(h).toEqual({ id: 0, typeId: 1000, inv: 90000, slot: 1, lvl: 60, maxHp: 100, boss: false });
+  // ownerId is the account join key: without this, dropping it from the team row stays green.
+  expect(row.teams.map((t) => ({ team: t.team, isPlayer: t.isPlayer, ownerId: t.ownerId })))
+    .toEqual([{ team: 1, isPlayer: true, ownerId: 111 }, { team: 2, isPlayer: false, ownerId: 222 }]);
 });
 
 test("a turn counter that skips values is recorded as-is", () => {

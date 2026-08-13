@@ -1,8 +1,9 @@
 // oracle/battlelogs/lib/codec.mjs
 // Decode RSL Helper battle logs: zlib-compressed JSONL, one file per battle. Pure decode — no
 // archive or capture policy lives here, so the index can be rebuilt by replaying over the archive.
-// Imported by lib/summarize.mjs (which folds the decoded lines into an index row) and lib/capture.mjs,
-// and transitively by watch.mjs, so the archive and the index never disagree on how a log is read.
+// Imported by lib/capture.mjs (which pairs each decode with the bytes it archived), and transitively
+// by watch.mjs, so the archive and the index never disagree on how a log is read. lib/summarize.mjs
+// folds this output into an index row but does not import it.
 // Format reference: docs/plans/2026-08-12-battle-log-capture-design.md
 //
 // Error contract: every DECODE failure is a BattleLogError whose .code is one of INFLATE_FAILED,
