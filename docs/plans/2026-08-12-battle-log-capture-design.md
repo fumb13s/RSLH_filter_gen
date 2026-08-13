@@ -20,8 +20,10 @@ active play battles land every 25–50 seconds, so the window holds roughly 10�
 Six files listed at 23:31 were already gone when re-checked about fifteen minutes later. Anything not
 copied promptly is lost permanently, and there is no setting to disable the rotation.
 
-The eventual target is **live Arena** logs. No Arena battle has been captured yet, so its content ids
-are unknown — which is exactly why this design captures everything and defers filtering.
+The eventual target is **Live Arena** logs. When this was written no Arena battle had been captured
+and its content ids were unknown — which is exactly why this design captures everything and defers
+filtering. That paid off on 2026-08-13: Live Arena was identified from captures nothing was
+filtering for at the time (see *Observed content ids*).
 
 ## Scope
 
@@ -104,7 +106,7 @@ resistance questions empirically — it records not just landed effects but evad
 
 | kindId | regionTypeId | stageId | team sizes | identified as | when |
 |--:|--:|--:|---|---|---|
-| **6** | **901** | **9019003** | `[4, 4]` | **Arena** — see below | 2026-08-13 |
+| **6** | **901** | **9019003** | `[4, 4]` | **Live Arena** | 2026-08-13 |
 | 2 | 301 | 3019003 | `[4, 4]` | unidentified | 2026-08-12 |
 | 1 | 216 | 2169025 | `[5, 1]` | unidentified | 2026-08-12 |
 | 1 | 112 | 1123006 | `[4, 4]` | unidentified | 2026-08-13 |
@@ -113,28 +115,33 @@ resistance questions empirically — it records not just landed effects but evad
 Everything still unidentified is recorded as an opaque observed value and **deliberately not guessed
 at**. Identification happens by the method below, not by inference from team size or stage number.
 
-#### Arena — `kind=6 / region=901 / stage=9019003`
+#### Live Arena — `kind=6 / region=901 / stage=9019003`
+
+**Live Arena specifically**, as stated by the account owner who played the session. Classic Arena is
+a different mode and has not been captured, so it will carry a different tuple — do not treat this
+key as "Arena" generally.
 
 Confirmed 2026-08-13 from 10 captured battles, by two independent lines of evidence:
 
-1. **Live cross-reference.** These were the tuples landing while the account owner was playing Arena
-   and said so at the time — the "cross-reference captures against known play sessions" method this
-   section originally called for.
-2. **The data proves it without the timing.** Every other tuple's enemy team carries
-   `ownerId: -1` — no owner, i.e. AI. These carry a **real, distinct account id per battle**
+1. **Live cross-reference.** These were the tuples landing while the account owner was playing Live
+   Arena and said so at the time — the "cross-reference captures against known play sessions" method
+   this section originally called for.
+2. **The data proves it is PvP without relying on the timing.** Every other tuple's enemy team
+   carries `ownerId: -1` — no owner, i.e. AI. These carry a **real, distinct account id per battle**
    (10 battles, 10 different opponents, no repeats), against a constant player-side `ownerId`. That
-   is PvP with matchmaking, which on a `[4, 4]` board is Arena.
+   establishes live matchmaking against real accounts; which *named* PvP mode it is comes from the
+   owner's statement, not from the ids.
 
 The enemy `ownerId` is itself worth having: it is a real account key, so repeat opponents are
 trackable across sessions.
 
-**This is the filter key** for anyone who later wants to stop capturing everything and take Arena
-only. Note that capture-everything remains the design; a filter belongs at query time over the
+**This is the filter key** for anyone who later wants to stop capturing everything and take Live
+Arena only. Note that capture-everything remains the design; a filter belongs at query time over the
 archive, not at capture time (see *Rejected alternatives*).
 
 Two cautions carried from these captures:
 
-- **Survivor counts are not outcomes.** Arena battles ended `4/3` and `4/4` (player/enemy survivors)
+- **Survivor counts are not outcomes.** Live Arena battles ended `4/3` and `4/4` (player/enemy survivors)
   — wins on points with the enemy team still standing. A naive "enemy team wiped" rule would score
   both as losses. This is the concrete evidence behind the *Index row* section's refusal to emit a
   `win` field.
