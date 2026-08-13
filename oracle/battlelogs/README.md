@@ -18,10 +18,17 @@ set `RSLHELPER_BATTLELOGS`.
 
 Each captured battle logs its content ids. A tuple not seen before is flagged
 `** NEW CONTENT TUPLE **` — that is how a mode we have not captured yet, such as Arena, gets
-identified. `DECODE FAILED` means only that: the bytes are archived either way, and the file is
-retried on the next two passes in case it was caught mid-write. `capture pass failed:` is a whole
-pass lost — most often the source directory going away with the drive mount — and the watcher keeps
-polling through it, because stopping is what actually loses battles.
+identified. `DECODE FAILED (attempt n/3)` means only that: the bytes are archived either way, and the
+file is retried on the next two passes in case it was caught mid-write. After the third the decode
+stops, but the copy does not — the bytes keep being refreshed, and a restart (or `rebuild-index.mjs`)
+gets the decode another go. `MISSED` is a battle RSL Helper deleted before we could copy it, which is
+the one thing this tool exists to prevent and the reason it is never silent. `capture pass failed:`
+is a whole pass lost — most often the source directory going away with the drive mount — and the
+watcher keeps polling through it, because stopping is what actually loses battles.
+
+On start it also reconciles: bytes already in `archive/<account>/` with no index row, whose source
+RSL Helper has since deleted, are decoded and indexed then, printed as `indexed`. Nothing else ever
+looks at the archive, so without this an interrupted run's battle would stay unfindable.
 
 ## Read a captured battle
 
@@ -34,8 +41,18 @@ Format reference — envelope, teams, events: `docs/plans/2026-08-12-battle-log-
 
 ## Rebuild the index
 
+```bash
+node oracle/battlelogs/rebuild-index.mjs [--archive DIR]
+```
+
 The index is derived. `summarize()` is a pure function of a decoded battle, so replaying it over
-`archive/<account>/` regenerates `index.jsonl` whenever the row shape changes.
+`archive/<account>/` regenerates `index.jsonl` — after the row shape changes, after fixing a
+summarizer bug that marked a batch of files `decodeFailed`, or to compact an index left untidy by a
+torn tail. The rebuild writes to a temp file and renames, so a crash cannot destroy the index it was
+repairing, and a file that will not decode gets a `decodeFailed` row rather than aborting the run.
+
+**Stop the watcher first** — it appends to `index.jsonl`, and the rename would drop anything it
+wrote during the rebuild.
 
 ## Privacy
 

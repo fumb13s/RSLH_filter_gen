@@ -1,7 +1,10 @@
 # Battle-log capture and ingest — design
 
 **Date:** 2026-08-12
-**Status:** designed — not yet implemented
+**Status:** implemented — `oracle/battlelogs/`: `lib/codec.mjs`, `lib/summarize.mjs`,
+`lib/capture.mjs` (the capture pass and the startup reconcile), `watch.mjs` (the poller),
+`rebuild-index.mjs` (replay the archive into a fresh index). Where the shipped behaviour differs
+from what is described below, the text has been corrected to match the code.
 
 ## Motivation
 
@@ -119,7 +122,9 @@ Lives in `oracle/battlelogs/`, alongside `oracle/analytics/` and `oracle/probe/`
 |---|---|---|
 | `lib/codec.mjs` | `readBattle(path)` → decoded lines. Inflate, parse JSONL, validate shape. Pure; no policy. | `node:zlib` |
 | `lib/summarize.mjs` | decoded battle → one index row. Pure function of its input, no I/O. | codec output |
-| `watch.mjs` | foreground poller: detect → copy → decode → index → log | both libs |
+| `lib/capture.mjs` | one capture pass, plus the startup reconcile that reads the archive back | both libs |
+| `watch.mjs` | foreground poller: detect → copy → decode → index → log | capture |
+| `rebuild-index.mjs` | replay `summarize` over the whole archive into a fresh `index.jsonl` | capture |
 | `archive/<account>/` | captured `.jsonl.z`, byte-identical to source | — |
 | `archive/index.jsonl` | append-only, one row per battle | — |
 
@@ -130,30 +135,52 @@ state.
 
 ## Data flow
 
-Poll the source directory every 3 seconds. On startup, reconcile the archive against the source so a
-restart does not re-copy what is already held.
+Poll the source directory every 3 seconds. On startup, rebuild the capture state from disk — what is
+held, what has a row — so a restart does not re-copy or double-index what is already done.
 
-For each unseen file:
+For each file with no good index row:
 
 1. **Copy the bytes** to `archive/<account>/<filename>`.
 2. Decode the copy.
 3. Append an index row.
 4. Log a line to the console.
 
-Step 1 precedes step 2 by design. A decode bug must never cost a file that is about to be evicted —
-bytes are the source of truth and the index is a derived convenience that can be rebuilt at any time
-from the archive.
+Step 1 precedes step 2 by design, and sits above every other gate in the loop. A decode bug must
+never cost a file that is about to be evicted — bytes are the source of truth and the index is a
+derived convenience that can be rebuilt at any time from the archive.
 
-Copying is idempotent: a destination that already exists with the same size is skipped.
+The copy repeats every pass until the file has a row, because re-copying is the only thing that
+repairs a partial captured mid-write; re-*inflating* is what the retry budget below limits.
+
+### Reading the archive back
+
+The capture pass iterates the source directory and nothing else, so bytes held with no index row —
+a watcher killed between the copy and the append, a torn index tail, a file whose decode was retired
+by a bug since fixed — become unreachable the moment RSL Helper evicts the source, which is inside
+the same 10–15 minute window everything else here is racing. Two passes read the other direction:
+
+- **Startup reconcile** (`reconcileArchive`): for each held file with no row *whose source is
+  already gone*, decode the archived bytes and append the row. Files still in the source are left
+  alone — the next capture pass reaches them with a fresh copy and the full retry budget, which
+  beats replaying bytes that may still be mid-write. Runs once per start; normally zero files.
+- **`rebuild-index.mjs`**: replay `summarize` over the entire archive into a new `index.jsonl`,
+  written to a temp file and renamed. This is what makes "the index is derived" a claim that can be
+  cashed, and it is the compaction path for the one case where the append-only index holds two rows
+  for a file (a `decodeFailed` row that a later success superseded).
 
 ### Console output
 
-Each newly copied battle prints one line, including the content ids, so that the first Arena session
-immediately reveals its `kindId`/`regionTypeId` rather than requiring a later dig:
+Each newly captured battle prints one line, including the content ids, so that the first Arena
+session immediately reveals its `kindId`/`regionTypeId` rather than requiring a later dig:
 
 ```
-23:24:12  copied 20260812_232412_live.jsonl.z  kind=2 region=301 stage=3019003  9 turns  teams 4v4  3.6 KB
+23:24:12  captured 20260812_232412_live.jsonl.z  kind=2 region=301 stage=3019003  9 turns  4v4
 ```
+
+"captured", not "copied": a result can be a file already held that was only decoded this pass. A row
+written by the startup reconcile reads `indexed` instead, because those bytes were archived on an
+earlier run and only the row is new. There is deliberately no byte size — it is the one field on the
+line that says nothing about which battle this was.
 
 Unrecognised id tuples — any pair not already seen in the archive — are marked in the output, since a
 new tuple is the signal that a new game mode has been captured.
@@ -181,15 +208,49 @@ identified.
 
 - **Source directory missing** (RSL Helper not installed, different account) — clear message naming
   the path searched, exit non-zero.
-- **Decode failure** — not fatal, and specifically not a reason to skip the copy. The most likely
-  cause is catching a file mid-write. The bytes are already archived; the row is written with
-  `decodeFailed: true` and re-attempted on the next poll, **up to 3 attempts**. After the third the
-  file is left marked, reported once, and not retried again in that run — a genuinely corrupt file
-  must not be re-inflated every 3 seconds for the rest of the session. Re-running the watcher retries
-  it once more, which is the escape hatch for a file that was mid-write at the moment capture stopped.
+- **Decode failure** — not fatal, and specifically not a reason to skip the copy. The bytes are
+  already archived; the decode is re-attempted on the next poll, **up to 3 attempts**, and only after
+  the third is a `decodeFailed: true` row written. The decode then stops for that file — a genuinely
+  corrupt file must not be re-inflated every 3 seconds for the rest of the session — but **the copy
+  does not**, so the bytes keep being refreshed. A `decodeFailed` row is "we hold these bytes and
+  could not read them", not "done with this file": restarting the watcher gives the decode another
+  go, and `rebuild-index.mjs` gives it one at any time. That distinction is load-bearing, because the
+  case it lands on is the anticipated one — a novel Arena shape that crashes `summarize` would
+  otherwise retire every file of the first Arena session permanently, with no way to pick them back
+  up after the fix.
+- **Eviction lost the race** — a file listed by the poll but deleted before the copy. There is
+  nothing to archive and nothing to index, so the console line is the only trace it ever existed and
+  it is reported as `MISSED`. Silence is the one output a capture tool must not produce for a miss.
 - **Duplicate `proc`** across two files — index both. Deduplication is an analysis-time concern.
 - **Archive write failure** — report loudly and keep polling; a full disk should not silently stop
   capture.
+
+### Why 3 attempts over 9 seconds is enough
+
+The retry budget looks alarmingly small next to a 10–15 minute eviction window if you assume the log
+is streamed during the battle — and the surface evidence says it is: filename stamps sit **8–80
+seconds before** mtime, and file size tracks battle duration (2 KB for a 9-second battle, 12.5 KB for
+an 80-second one). If the file really were appended to across the battle, every battle watched live
+would burn all 3 attempts before it ended, get retired, and the feature would fail at its purpose.
+
+It is not streamed. Counting zlib `Z_SYNC_FLUSH` boundary markers (`00 00 FF FF`) in the compressed
+bytes of four live logs spanning 2 KB–12.5 KB found **zero** in all four:
+
+```
+20260813_195637_live.jsonl.z size=12504 hdr=789c syncFlushMarkers=0
+20260813_195950_live.jsonl.z size=9601  hdr=789c syncFlushMarkers=0
+20260813_200856_live.jsonl.z size=2039  hdr=789c syncFlushMarkers=0
+20260813_200520_live.jsonl.z size=2091  hdr=789c syncFlushMarkers=0
+```
+
+Zero markers in a 12.5 KB file means the whole stream came out of **one** deflate call: RSL Helper
+buffers the entire battle and writes the compressed file once, at battle end. The filename is the
+battle *start* time, which is what produces the misleading 8–80 second gap. So the mid-write window
+is a single 2–12 KB write — milliseconds — and a 9-second budget is comfortably right.
+
+**Do not widen the budget or add streaming support on the strength of the timestamp gap alone.** If
+RSL Helper ever does switch to incremental flushing this feature breaks completely and silently, and
+the marker count above is the one-command canary for exactly that.
 
 ## Privacy
 
@@ -206,6 +267,11 @@ metadata:
 Deny-by-default rather than an extension list, so a new artifact type in the archive is ignored
 without anyone remembering to add it.
 
+That protects the *default* archive only, and `--archive DIR` is a documented flag, so the root
+`.gitignore` also denies `*.jsonl.z`, `index.jsonl` and `index.jsonl.tmp` by extension. Belt and
+braces on purpose: the deny-all is the rule, and the extension list is what catches an archive
+pointed somewhere else in the tree.
+
 This matters because **the repo is public** and the logs carry `ownerId` and champion instance ids.
 `index.jsonl` lives under `archive/` for the same reason — it is derived from the same personal data.
 
@@ -219,9 +285,17 @@ Vitest under `oracle/battlelogs/__tests__/`, folded into `npm test` as the analy
   a trailing blank line parses cleanly.
 - `summarize`: index row matches expectation for a fixture with a known team layout, including the
   `survivors` count and a `turn`-skipping sequence.
-- `watch`: pointed at a temp source directory with files dropped in mid-run — asserts the copy is
-  byte-identical, the index row is appended, a restart re-copies nothing, and a deliberately corrupt
-  file is still archived and marked `decodeFailed`.
+- `capture`: pointed at a temp source directory with files dropped in mid-run — asserts the copy is
+  byte-identical, the index row is appended, a restart re-copies nothing, a deliberately corrupt file
+  is still archived and marked `decodeFailed` and then *retried* after a restart, a lost eviction is
+  reported, two accounts sharing one index do not shadow each other, and the reconcile picks up bytes
+  held with no row.
+- `watch`: the pure helpers — argument parsing, source resolution, and one real `summarize` row run
+  through `formatCapture`, which is the pipeline's last joint.
+- `rebuild-index`: replays a synthetic archive, replaces an existing index rather than appending, and
+  gives an undecodable file a row instead of aborting.
+
+Every test uses temp directories and synthetic fixtures. None may read the live RSL Helper directory.
 
 ## Rejected alternatives
 
