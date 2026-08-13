@@ -1,8 +1,8 @@
 // oracle/battlelogs/__tests__/capture.test.mjs
-import { test, expect } from "vitest";
-import { writeFileSync, readFileSync, mkdtempSync, mkdirSync, rmSync, existsSync } from "node:fs";
+import { test, expect, vi } from "vitest";
+import { writeFileSync, readFileSync, mkdtempSync, mkdirSync, rmSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { captureOnce, newCaptureState, readIndex, listSource, MAX_DECODE_ATTEMPTS } from "../lib/capture.mjs";
 import { BattleLogError } from "../lib/codec.mjs";
 import { makeLine, makeBattleBytes } from "./fixtures.mjs";
@@ -114,8 +114,113 @@ test("a battle that crashes the summarizer is contained like any other decode fa
     expect(rows).toHaveLength(1);
     expect(rows[0].decodeFailed).toBe(true);
     expect(rows[0].file).toBe(name);
-    expect(rows[0].error).toBeTypeOf("string");   // a triageable message, not "[object Object]"
-    expect(rows[0].error.length).toBeGreaterThan(0);
+    expect(rows[0].error).toBe(final[0].error.message);   // the actual failure, not a placeholder
+  } finally { t.cleanup(); }
+});
+
+// Loads a private copy of capture.mjs whose summarize throws `value`. vi.doMock is not hoisted, so
+// the dynamic import is what picks it up; the static import at the top of this file is unaffected.
+async function withThrowingSummarize(value, fn) {
+  vi.resetModules();
+  vi.doMock("../lib/summarize.mjs", () => ({ summarize: () => { throw value; } }));
+  try {
+    fn(await import("../lib/capture.mjs"));
+  } finally {
+    vi.doUnmock("../lib/summarize.mjs");
+    vi.resetModules();
+  }
+}
+
+// Not every throw is an Error, and this catch exists precisely because what lands in it is not
+// predictable. `null` is the loud failure: reading .message off it raises a SECOND TypeError inside
+// the catch, which escapes captureOnce and defeats the containment. A string is the quiet one:
+// .message is undefined, so the row records the literal "undefined" and the failure is untriageable.
+test.each([[null, "null"], ["kaboom", "kaboom"], [42, "42"]])(
+  "a thrown %p is contained and recorded as %p", async (thrown, expected) => {
+    await withThrowingSummarize(thrown, (cap) => {
+      const t = setup();
+      try {
+        t.drop("20260812_232412_live.jsonl.z", BATTLE());
+        const state = cap.newCaptureState(t.archiveDir, t.indexPath);
+        for (let i = 1; i <= cap.MAX_DECODE_ATTEMPTS; i++) {
+          expect(cap.captureOnce({ ...t, state })[0].error).toBe(thrown);
+        }
+        const rows = cap.readIndex(t.indexPath);
+        expect(rows).toHaveLength(1);
+        expect(rows[0].decodeFailed).toBe(true);
+        expect(rows[0].error).toBe(expected);
+      } finally { t.cleanup(); }
+    });
+  });
+
+// listSource sorts ascending = oldest-first = RSL Helper's own eviction order, so the file most
+// likely to vanish mid-pass is the one we reach FIRST, and everything behind it pays. A dangling
+// symlink raises the exact errno at the exact call without having to race a real deletion.
+test("a source that vanishes before the copy does not abort the pass", () => {
+  const t = setup();
+  try {
+    const vanished = "20260812_232400_live.jsonl.z";        // sorts ahead of the good one
+    symlinkSync(join(t.root, "gone", vanished), join(t.sourceDir, vanished));
+    t.drop("20260812_232412_live.jsonl.z", BATTLE());
+
+    const res = t.run();
+    expect(res.map((r) => r.file)).toEqual(["20260812_232412_live.jsonl.z"]);
+    expect(existsSync(join(t.archiveDir, vanished))).toBe(false);
+    expect(readIndex(t.indexPath).map((r) => r.file)).toEqual(["20260812_232412_live.jsonl.z"]);
+  } finally { t.cleanup(); }
+});
+
+// The backlog case: the watcher was down, we hold bytes we never got to index, and by the time it
+// restarts RSL Helper has already evicted the source. The copy is unrepeatable but the decode is not.
+test("a source that vanishes after we already hold it is decoded from the copy we have", () => {
+  const t = setup();
+  try {
+    const name = "20260812_232412_live.jsonl.z";
+    mkdirSync(t.archiveDir, { recursive: true });
+    writeFileSync(join(t.archiveDir, name), BATTLE());      // held from an earlier run, never indexed
+    symlinkSync(join(t.root, "gone", name), join(t.sourceDir, name));
+
+    const res = captureOnce({ ...t, state: newCaptureState(t.archiveDir, t.indexPath) });
+    expect(res[0].error).toBeUndefined();
+    expect(res[0].copied).toBe(false);
+    expect(res[0].row.turns).toBe(9);
+    expect(readIndex(t.indexPath)).toHaveLength(1);
+  } finally { t.cleanup(); }
+});
+
+// Tolerating ENOENT must stay narrow. A permissions or IO fault is not an eviction, and continuing
+// past one would quietly build a gappy archive. (A directory is the portable way to make
+// copyFileSync raise something that is not ENOENT.)
+test("a copy failure that is not an eviction still propagates", () => {
+  const t = setup();
+  try {
+    mkdirSync(join(t.sourceDir, "20260812_232412_live.jsonl.z"));
+    let err;
+    try { t.run(); } catch (e) { err = e; }
+    expect(err?.code).toBe("EISDIR");
+  } finally { t.cleanup(); }
+});
+
+// newCaptureState reads the index, so an unparseable line here means the watcher cannot start at
+// all and the repair is hand-editing a file full of personal data. One torn row is worth less than
+// startup: the file it belongs to simply counts as uncaptured and is decoded again from the archive.
+test("a torn index line does not stop startup", () => {
+  const t = setup();
+  try {
+    const done = "20260812_232400_live.jsonl.z";
+    mkdirSync(dirname(t.indexPath), { recursive: true });
+    // What a process killed mid-append leaves: a complete row, then a fragment with no newline.
+    writeFileSync(t.indexPath, `${JSON.stringify({ file: done, account: "um1" })}\n{"file":"2026081`);
+
+    const state = newCaptureState(t.archiveDir, t.indexPath);   // must not throw
+    expect([...state.indexed]).toEqual([done]);
+
+    t.drop("20260812_232412_live.jsonl.z", BATTLE());
+    expect(captureOnce({ ...t, state })[0].row.turns).toBe(9);
+    // The fragment has no trailing newline, so that append glued onto it — the torn tail eats one
+    // further row before the file self-heals. Startup surviving is the point; the glue is a known
+    // wart, recorded in the task report rather than papered over here.
+    expect(readIndex(t.indexPath).map((r) => r.file)).toEqual([done]);
   } finally { t.cleanup(); }
 });
 
