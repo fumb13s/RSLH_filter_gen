@@ -78,6 +78,19 @@ test("a null line raises SHAPE, not a raw TypeError", () => {
   expect(err.code).toBe("SHAPE");
 });
 
+// The teams guard is what stands between a headerless log and summarize.mjs, which iterates
+// first.teams unguarded. JSON.stringify drops an undefined value, so this is a log whose first
+// line genuinely has no teams key rather than one holding an explicit null.
+test("a first line with no teams array raises SHAPE", () => {
+  const text = makeBattleText([makeLine({ teams: undefined })]);
+  let err;
+  try { parseBattle(text); } catch (e) { err = e; }
+  expect(err).toBeInstanceOf(BattleLogError);
+  expect(err.code).toBe("SHAPE");
+  // Both SHAPE guards would satisfy the assertions above; the message is what pins the teams one.
+  expect(err.message).toContain("teams");
+});
+
 // Pins the documented pass-through: fs errors are NOT typed, so consumers racing the writer must
 // gate on `instanceof BattleLogError` rather than on `.code` (ENOENT is a different vocabulary
 // that merely shares the field name). Task 3's watcher branches on exactly this.
