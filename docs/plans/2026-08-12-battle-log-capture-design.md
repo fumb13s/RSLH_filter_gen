@@ -72,8 +72,27 @@ Every line: `type: "battleLiveState"`, `pushKind: "turn"`. No other values obser
   `IsStunned`, `IsSleep`, `IsFrozen`
 - `stats` — line 0 only: `{atk, def, spd, res, acc, critCh, critDmg, critHeal}`
 
-`inv` is the champion **instance** id, which is what makes this data worth keeping: it joins to
-`Champs.ID` in the vault DB and through it to the champion's equipped artifacts.
+#### The two join keys (both verified 2026-08-13)
+
+| log field | joins to | scope | gives you |
+|---|---|---|---|
+| `inv` | `Champs.ID` | **your champions only** | the exact copy, and through it their equipped artifacts |
+| `typeId` | `Champs.HeroID` | **any champion, including opponents'** | the champion's name |
+
+`inv` is the champion **instance** id — one specific copy you own — so it resolves only for your own
+side. That is what ties a battle to the gear that fought it.
+
+`typeId` is the champion **type**, and `typeId == Champs.HeroID` **exactly**: 95 of 95 player heroes
+across 10 Live Arena battles matched with zero mismatches. This is a direct column join, not
+arithmetic — an earlier `BaseHeroID + stars` guess was wrong (the delta is 0 at `Rang=2` but 6 at
+`Rang=6`, so it does not hold). `Champs.HeroID` is not unique per row, so build the map as
+`DISTINCT HeroID -> Name`.
+
+The consequence is the useful part: **opponents can be named**, because `HeroID` is a global
+champion-type id and the roster table happens to contain the mapping for any champion you have ever
+owned a copy of. Of 40 enemy slots in those 10 battles, 38 resolved to names from the local roster;
+the 2 that did not are champions never owned, and must be reported as an unresolved `typeId` rather
+than guessed.
 
 ### Events
 
