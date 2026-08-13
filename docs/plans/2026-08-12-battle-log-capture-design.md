@@ -100,19 +100,47 @@ resistance questions empirically — it records not just landed effects but evad
 
 ### Observed content ids
 
-Two `(kindId, regionTypeId, stageId)` tuples appeared:
+`stageId` has been constant per `(kindId, regionTypeId)` across every file examined.
 
-| kindId | regionTypeId | stageId | team sizes |
-|--:|--:|--:|---|
-| 2 | 301 | 3019003 | `[4, 4]` |
-| 1 | 216 | 2169025 | `[5, 1]` |
+| kindId | regionTypeId | stageId | team sizes | identified as | when |
+|--:|--:|--:|---|---|---|
+| **6** | **901** | **9019003** | `[4, 4]` | **Arena** — see below | 2026-08-13 |
+| 2 | 301 | 3019003 | `[4, 4]` | unidentified | 2026-08-12 |
+| 1 | 216 | 2169025 | `[5, 1]` | unidentified | 2026-08-12 |
+| 1 | 112 | 1123006 | `[4, 4]` | unidentified | 2026-08-13 |
+| 1 | 1402 | 14022130 | `[5, 5]` | unidentified | 2026-08-13 |
 
-`stageId` was constant per `(kindId, regionTypeId)` across every file examined.
+Everything still unidentified is recorded as an opaque observed value and **deliberately not guessed
+at**. Identification happens by the method below, not by inference from team size or stage number.
 
-**Which game mode each denotes is unknown and deliberately not guessed here.** They are recorded as
-opaque observed values; identification comes later by cross-referencing captures against known play
-sessions. Neither is Arena — no Arena battle has been captured yet. The index therefore stores these
-ids verbatim so that a future Arena capture is identifiable after the fact.
+#### Arena — `kind=6 / region=901 / stage=9019003`
+
+Confirmed 2026-08-13 from 10 captured battles, by two independent lines of evidence:
+
+1. **Live cross-reference.** These were the tuples landing while the account owner was playing Arena
+   and said so at the time — the "cross-reference captures against known play sessions" method this
+   section originally called for.
+2. **The data proves it without the timing.** Every other tuple's enemy team carries
+   `ownerId: -1` — no owner, i.e. AI. These carry a **real, distinct account id per battle**
+   (10 battles, 10 different opponents, no repeats), against a constant player-side `ownerId`. That
+   is PvP with matchmaking, which on a `[4, 4]` board is Arena.
+
+The enemy `ownerId` is itself worth having: it is a real account key, so repeat opponents are
+trackable across sessions.
+
+**This is the filter key** for anyone who later wants to stop capturing everything and take Arena
+only. Note that capture-everything remains the design; a filter belongs at query time over the
+archive, not at capture time (see *Rejected alternatives*).
+
+Two cautions carried from these captures:
+
+- **Survivor counts are not outcomes.** Arena battles ended `4/3` and `4/4` (player/enemy survivors)
+  — wins on points with the enemy team still standing. A naive "enemy team wiped" rule would score
+  both as losses. This is the concrete evidence behind the *Index row* section's refusal to emit a
+  `win` field.
+- **One session is not the id space.** Three of the five tuples above appeared only after a second
+  night of capture, and none of 2026-08-12's two reappeared on 2026-08-13. Treat this table as
+  "what has been seen", never "what exists".
 
 ## Architecture
 

@@ -17,8 +17,17 @@ Polls every 3s and copies each new battle into `archive/<account>/`, appending a
 set `RSLHELPER_BATTLELOGS`.
 
 Each captured battle logs its content ids. A tuple not seen before is flagged
-`** NEW CONTENT TUPLE **` — that is how a mode we have not captured yet, such as Arena, gets
-identified. `DECODE FAILED (attempt n/3)` means only that: the bytes are archived either way, and the
+`** NEW CONTENT TUPLE **` — that is how a mode we have not captured yet gets identified. It is how
+**Arena** was pinned down on 2026-08-13:
+
+| tuple | mode |
+|---|---|
+| `kind=6 region=901 stage=9019003` | **Arena** |
+
+Everything else observed so far is still unidentified on purpose — see *Observed content ids* in
+`docs/plans/2026-08-12-battle-log-capture-design.md` for the full table and how Arena was confirmed
+(short version: every other tuple's enemy team has `ownerId: -1` for AI, while Arena carries a real,
+distinct opponent account id per battle). `DECODE FAILED (attempt n/3)` means only that: the bytes are archived either way, and the
 file is retried on the next two passes in case it was caught mid-write. After the third the decode
 stops, but the copy does not — the bytes keep being refreshed, and a restart (or `rebuild-index.mjs`)
 gets the decode another go. `MISSED` is a battle RSL Helper deleted before we could copy it, which is
