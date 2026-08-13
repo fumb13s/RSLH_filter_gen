@@ -68,3 +68,23 @@ test("a non-battleLiveState first line raises SHAPE", () => {
 test("inflateBattle accepts real zlib framing", () => {
   expect(inflateBattle(deflateSync(Buffer.from('{"a":1}', "utf8")))).toBe('{"a":1}');
 });
+
+// typeof null === "object", so a bare `null` line is the one scalar that reaches the property
+// access instead of falling through to SHAPE the way 5, "str" and [] do.
+test("a null line raises SHAPE, not a raw TypeError", () => {
+  let err;
+  try { parseBattle("null\n"); } catch (e) { err = e; }
+  expect(err).toBeInstanceOf(BattleLogError);
+  expect(err.code).toBe("SHAPE");
+});
+
+// Pins the documented pass-through: fs errors are NOT typed, so consumers racing the writer must
+// gate on `instanceof BattleLogError` rather than on `.code` (ENOENT is a different vocabulary
+// that merely shares the field name). Task 3's watcher branches on exactly this.
+test("readBattle propagates fs errors untyped", () => {
+  let err;
+  try { readBattle(join(tmpdir(), "definitely-absent-battlelog-x9f2.jsonl.z")); } catch (e) { err = e; }
+  expect(err).toBeDefined();
+  expect(err).not.toBeInstanceOf(BattleLogError);
+  expect(err.code).toBe("ENOENT");
+});
