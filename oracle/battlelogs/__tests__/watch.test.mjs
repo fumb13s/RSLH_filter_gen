@@ -6,6 +6,9 @@ import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs, resolveSource, formatCapture, tupleKey } from "../watch.mjs";
+import { MAX_DECODE_ATTEMPTS } from "../lib/capture.mjs";
+import { summarize } from "../lib/summarize.mjs";
+import { makeLine } from "./fixtures.mjs";
 
 test("parseArgs reads flags and applies defaults", () => {
   const o = parseArgs(["--source", "/s", "--archive", "/a", "--interval", "7"]);
@@ -89,11 +92,15 @@ test("resolveSource fails loudly, naming both ways to point it at the logs", () 
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-const ROW = {
-  file: "20260812_232412_live.jsonl.z", kindId: 2, regionTypeId: 301, stageId: 3019003,
-  turns: 9, lines: 9,
-  teams: [{ isPlayer: true, heroes: [1, 2, 3, 4] }, { isPlayer: false, heroes: [1, 2] }],
-};
+// Built by the real summarize from the shared fixtures, not hand-written. A hand-written row is
+// free to be shaped however formatCapture happens to read it — `heroes: [1, 2, 3, 4]` satisfies
+// `.length` while summarize emits objects — and then nothing in the branch runs a real row through
+// the formatter, which is the last joint in the pipeline.
+const FILE = "20260812_232412_live.jsonl.z";
+const ROW = summarize(
+  [makeLine(), makeLine({ turn: 9, finished: true })],
+  { file: FILE, account: "um1", capturedAt: "2026-08-12T23:24:12.000Z" },
+);
 
 test("formatCapture reports content ids and team sizes", () => {
   const line = formatCapture({ file: ROW.file, row: ROW }, new Set([tupleKey(ROW)]));
@@ -101,8 +108,17 @@ test("formatCapture reports content ids and team sizes", () => {
   expect(line).toContain("20260812_232412_live.jsonl.z");
   expect(line).toContain("kind=2 region=301 stage=3019003");
   expect(line).toContain("9 turns");
-  expect(line).toContain("4v2");
+  expect(line).toContain("2v2");
   expect(line).not.toContain("NEW");
+});
+
+// "captured", not "copied": a result can be a file we already held and only decoded this pass. The
+// design doc's example line says "copied", so this pins the deliberate choice against a future edit
+// that syncs the code back to the doc.
+test("a captured battle is reported as captured, not copied", () => {
+  const line = formatCapture({ file: ROW.file, row: ROW }, new Set([tupleKey(ROW)]));
+  expect(line).toContain("captured");
+  expect(line).not.toContain("copied");
 });
 
 test("an unseen content tuple is marked NEW — this is how Arena gets identified", () => {
@@ -111,10 +127,42 @@ test("an unseen content tuple is marked NEW — this is how Arena gets identifie
 });
 
 test("a decode failure formats as a warning naming the file", () => {
-  const line = formatCapture({ file: ROW.file, error: new Error("zlib inflate failed: bad") }, new Set());
+  const line = formatCapture({ file: FILE, error: new Error("zlib inflate failed: bad") }, new Set());
   expect(line).toContain("DECODE FAILED");
   expect(line).toContain("20260812_232412_live.jsonl.z");
   expect(line).toContain("zlib inflate failed: bad");
+});
+
+// Attempt 1 is "probably transient, will retry" and the last attempt is "this file is now retired
+// and only a restart or a rebuild gets it back". Printed identically, the two are indistinguishable.
+test("a decode failure carries the attempt it was on", () => {
+  const line = formatCapture({ file: FILE, error: new Error("bad"), attempt: 2 }, new Set());
+  expect(line).toContain(`(attempt 2/${MAX_DECODE_ATTEMPTS})`);
+});
+
+// reconcileArchive has no attempt counter — the suffix must not render as "attempt undefined/3".
+test("a reconciled decode failure prints no attempt number", () => {
+  const line = formatCapture({ file: FILE, reconciled: true, error: "bad" }, new Set());
+  expect(line).toContain("DECODE FAILED");
+  expect(line).not.toContain("attempt");
+});
+
+// A battle lost between the readdir and the copy is the failure this tool exists to prevent. There
+// is no row and no bytes, so this line is the only trace it ever existed.
+test("an eviction we lost the race to is reported, not silently dropped", () => {
+  const line = formatCapture({ file: FILE, copied: false, missed: true }, new Set());
+  expect(line).toContain("MISSED");
+  expect(line).toContain(FILE);
+  expect(line).toContain("evicted");
+});
+
+// A startup reconcile is not a capture: the bytes were already held, sometimes from a previous run
+// days ago, and reading "captured" for them would misdate the battle.
+test("a reconciled row reads as indexed rather than captured", () => {
+  const line = formatCapture({ file: ROW.file, reconciled: true, row: ROW }, new Set([tupleKey(ROW)]));
+  expect(line).toContain("indexed");
+  expect(line).not.toContain("captured");
+  expect(line).toContain("kind=2 region=301 stage=3019003");
 });
 
 // captureOnce forwards whatever was thrown, and not every throw is an Error — capture.test.mjs

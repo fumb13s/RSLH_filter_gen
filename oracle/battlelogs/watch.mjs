@@ -14,7 +14,9 @@
 import { existsSync, globSync, realpathSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { captureOnce, newCaptureState, readIndex } from "./lib/capture.mjs";
+import {
+  captureOnce, newCaptureState, reconcileArchive, readIndex, MAX_DECODE_ATTEMPTS,
+} from "./lib/capture.mjs";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -55,25 +57,41 @@ export const tupleKey = (row) => `${row.kindId}/${row.regionTypeId}/${row.stageI
 
 export function formatCapture(result, seenTuples) {
   const stamp = new Date().toTimeString().slice(0, 8);
+  // Nothing was archived and nothing was indexed, so this line is the only trace the battle existed.
+  if (result.missed) return `${stamp}  MISSED ${result.file}  evicted before capture`;
   // Branch on `row`, not on `error` being truthy. captureOnce forwards whatever summarize threw and
   // that is not guaranteed to be an Error — a thrown null is falsy, would fall through to the row
   // branch, and would raise a TypeError in main's log loop, which sits outside the try/catch around
   // the pass. `error?.message ?? error` for the same reason capture.mjs uses it: .message off a
   // string is undefined, and off null it throws.
   if (!result.row) {
-    return `${stamp}  DECODE FAILED ${result.file}  ${String(result.error?.message ?? result.error)}`;
+    // Attempt 1 is "probably transient, will retry"; the last one is "retired until a restart or a
+    // rebuild". reconcileArchive has no counter, so the suffix is conditional rather than "undefined/3".
+    const tries = result.attempt ? `  (attempt ${result.attempt}/${MAX_DECODE_ATTEMPTS})` : "";
+    return `${stamp}  DECODE FAILED ${result.file}${tries}  ${String(result.error?.message ?? result.error)}`;
   }
   const r = result.row;
   const sizes = r.teams.map((t) => t.heroes.length).join("v");
   const isNew = seenTuples.has(tupleKey(r)) ? "" : "  ** NEW CONTENT TUPLE **";
   // "captured", not "copied": a result can be a file we already held and only decoded this pass
   // (result.copied is first-sight, not bytes-written). What is true of every result here is that we
-  // now hold the bytes and have indexed them.
-  return `${stamp}  captured ${result.file}  kind=${r.kindId} region=${r.regionTypeId} stage=${r.stageId}`
+  // now hold the bytes and have indexed them. A reconcile is neither — those bytes were archived on
+  // some earlier run, possibly days ago, and only the row is new.
+  const verb = result.reconciled ? "indexed" : "captured";
+  return `${stamp}  ${verb} ${result.file}  kind=${r.kindId} region=${r.regionTypeId} stage=${r.stageId}`
     + `  ${r.turns} turns  ${sizes}${isNew}`;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Every result reaches the console, and every row it carries joins the seen set — the startup
+// reconcile and the poll loop report the same way so neither can quietly stop reporting.
+function report(results, seenTuples) {
+  for (const r of results) {
+    console.log(formatCapture(r, seenTuples));
+    if (r.row) seenTuples.add(tupleKey(r.row));
+  }
+}
 
 export async function main(argv) {
   const opts = parseArgs(argv);
@@ -82,12 +100,24 @@ export async function main(argv) {
   const archiveDir = join(archiveRoot, account);
   const indexPath = join(archiveRoot, "index.jsonl");
 
-  const state = newCaptureState(archiveDir, indexPath);
+  const state = newCaptureState(archiveDir, indexPath, account);
+  // Seeded BEFORE the reconcile, so a battle whose row we are only writing now is still measured
+  // against the tuples that were on record before it — a reconciled Arena capture must still print
+  // NEW CONTENT TUPLE.
   const seenTuples = new Set(readIndex(indexPath).filter((r) => !r.decodeFailed).map(tupleKey));
 
   console.log(`watching ${sourceDir}`);
   console.log(`archive  ${archiveDir}  (${state.held.size} held, ${state.indexed.size} indexed)`);
   console.log(`polling every ${opts.intervalMs / 1000}s — Ctrl-C to stop\n`);
+
+  // captureOnce only ever looks at the source, so this is the one thing that notices bytes we hold
+  // with no row. Wrapped for the same reason the pass is: a reconcile fault must not stop a watcher
+  // from capturing the files RSL Helper is about to delete.
+  try {
+    report(reconcileArchive({ sourceDir, archiveDir, indexPath, account, state }), seenTuples);
+  } catch (err) {
+    console.error(`archive reconcile failed: ${String(err?.message ?? err)}`);
+  }
 
   for (;;) {
     let results = [];
@@ -100,10 +130,7 @@ export async function main(argv) {
       // to delete, and a dead watcher is indistinguishable from a quiet night.
       console.error(`capture pass failed: ${String(err?.message ?? err)}`);
     }
-    for (const r of results) {
-      console.log(formatCapture(r, seenTuples));
-      if (r.row) seenTuples.add(tupleKey(r.row));
-    }
+    report(results, seenTuples);
     if (opts.once) return;
     await sleep(opts.intervalMs);
   }
