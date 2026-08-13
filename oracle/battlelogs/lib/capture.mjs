@@ -52,10 +52,12 @@ export function captureOnce({ sourceDir, archiveDir, indexPath, account, state, 
       state.indexed.add(file);
       results.push({ file, copied, row });
     } catch (error) {
-      // Untyped on purpose. BattleLogError is the documented decode failure, but this also has to
-      // swallow an fs error (ENOENT when the source vanished mid-pass) and a raw TypeError from
-      // summarize walking a final line that the codec's line-0-only validation never saw. A pass
-      // that throws is a pass that stops capturing the files behind this one.
+      // Untyped on purpose. BattleLogError is the documented decode failure, but a raw TypeError
+      // lands here too: summarize walks the FINAL line, which the codec's line-0-only validation
+      // never saw. A pass that throws is a pass that stops capturing the files behind this one.
+      // The copy above is deliberately outside this try: a source that vanished mid-pass (ENOENT,
+      // RSL Helper evicting its 21st log while we walk the list) is not a decode failure and no
+      // retry fixes it, so it propagates and watch.mjs is the one that has to survive it.
       if (attempt >= MAX_DECODE_ATTEMPTS) {
         const row = { file, account, capturedAt: now(), decodeFailed: true, error: String(error.message) };
         appendFileSync(indexPath, `${JSON.stringify(row)}\n`);
