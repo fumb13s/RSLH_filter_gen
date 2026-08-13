@@ -76,11 +76,27 @@ Every line: `type: "battleLiveState"`, `pushKind: "turn"`. No other values obser
   stack-based permanent effect; timed effects carry `tl: 1..3` and no `cnt`.
 - `flags[]` — string enum; observed: `IsInvincible`, `IsBlockDebuff`, `IsStrongInvisible`,
   `IsStunned`, `IsSleep`, `IsFrozen`, `ActiveSkillsBlocked`, `HeroPassiveSkillsBlocked`.
-  Flags name effect ids: an id co-occurring with a flag at 100% coverage **and** 100% specificity
-  is that flag's effect. Confirmed this way over 10 Live Arena battles:
-  **2001** Invincible · **2002** Block Debuffs · **2013** Veil · **3001** Freeze · **3004** Stun ·
-  **3003** Sleep (n=1, weak) · **3006** Block Active Skills · **3017** Block Passive Skills
-  (100% specific but only 52% coverage — that flag has a second source).
+  Flags are a channel for *guessing* effect ids: an id co-occurring with a flag at 100% coverage
+  and 100% specificity is a **candidate** for that flag's effect. ⚠️ **None of these is confirmed.**
+  They are single-sample correlations from 10 Live Arena battles, and co-occurrence is not identity —
+  an id could be a marker set alongside the real cause rather than the cause. The sample also proves
+  its own limitation: `HeroPassiveSkillsBlocked` reaches only 52% coverage from its best candidate,
+  i.e. that flag has a second source, so 100% in-sample coverage does not generalise. Candidates,
+  with the flag they track and the number of flag occurrences behind them:
+
+  | id | tracks flag | n | confidence |
+  |--:|---|--:|---|
+  | 2002 | `IsBlockDebuff` | 459 | strongest |
+  | 2001 | `IsInvincible` | 319 | strong |
+  | 2013 | `IsStrongInvisible` | 129 | strong |
+  | 3006 | `ActiveSkillsBlocked` | 45 | moderate |
+  | 3001 | `IsFrozen` | 42 | moderate |
+  | 3004 | `IsStunned` | 40 | moderate |
+  | 3017 | `HeroPassiveSkillsBlocked` | 25 | weak — 52% coverage, second source exists |
+  | 3003 | `IsSleep` | **1** | worthless |
+
+  Note these track *flag names*, not game-mechanic names — mapping `IsStrongInvisible` onto a
+  particular in-game buff is a further inference nobody has made yet.
 - `stats` — **line 0 only**: `{atk, def, spd, res, acc, critCh, critDmg, critHeal}`, for **both**
   teams. Opponent stat blocks are therefore fully readable. Because it is captured once, a
   mid-battle stat change is never visible as a number; only the buff/debuff entry that caused it,
