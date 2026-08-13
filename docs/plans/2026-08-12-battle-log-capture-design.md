@@ -65,12 +65,26 @@ Every line: `type: "battleLiveState"`, `pushKind: "turn"`. No other values obser
 `typeId`, `inv`, `slot`, `lvl`, `hp`, `maxHp`, `dmgTaken`, `stamina`, `active`, `dead`, `boss`,
 `skipNext`, plus:
 
-- `skills[]` — `{t: skillTypeId, cd, max, base, ready, dis}`
-- `buffs[]` / `debuffs[]` — `{t, k, tl, life, prod, cnt?}`, where `k` is an effect-kind id; 35
-  distinct values observed across two bands (2001–2106, 3001–3104)
+- `skills[]` — `{t: skillTypeId, cd, max, base, ready, dis}`. Cooldowns do move turn to turn, so
+  cooldown-manipulating effects are observable here even though stat changes are not.
+- `buffs[]` / `debuffs[]` — `{t, k, tl, life, prod, cnt?}`, where `k` is an effect-kind id.
+  **`prod` is the producing hero id and is authoritative** — do NOT attribute effects by
+  correlating them with the line's `cast`, because a line is a whole turn and carries passives,
+  counterattacks and enemy reactions too (this produced a confidently wrong attribution once).
+  **The band is the polarity: 2xxx are buffs (29 ids seen), 3xxx are debuffs (19).** Zero crossover
+  observed — no id has ever appeared as both. `tl: -1` together with `cnt: 1..5` marks a
+  stack-based permanent effect; timed effects carry `tl: 1..3` and no `cnt`.
 - `flags[]` — string enum; observed: `IsInvincible`, `IsBlockDebuff`, `IsStrongInvisible`,
-  `IsStunned`, `IsSleep`, `IsFrozen`
-- `stats` — line 0 only: `{atk, def, spd, res, acc, critCh, critDmg, critHeal}`
+  `IsStunned`, `IsSleep`, `IsFrozen`, `ActiveSkillsBlocked`, `HeroPassiveSkillsBlocked`.
+  Flags name effect ids: an id co-occurring with a flag at 100% coverage **and** 100% specificity
+  is that flag's effect. Confirmed this way over 10 Live Arena battles:
+  **2001** Invincible · **2002** Block Debuffs · **2013** Veil · **3001** Freeze · **3004** Stun ·
+  **3003** Sleep (n=1, weak) · **3006** Block Active Skills · **3017** Block Passive Skills
+  (100% specific but only 52% coverage — that flag has a second source).
+- `stats` — **line 0 only**: `{atk, def, spd, res, acc, critCh, critDmg, critHeal}`, for **both**
+  teams. Opponent stat blocks are therefore fully readable. Because it is captured once, a
+  mid-battle stat change is never visible as a number; only the buff/debuff entry that caused it,
+  and its consequences, can be seen. See *What `stats.spd` actually is* below.
 
 #### The two join keys (both verified 2026-08-13)
 
@@ -92,7 +106,55 @@ The consequence is the useful part: **opponents can be named**, because `HeroID`
 champion-type id and the roster table happens to contain the mapping for any champion you have ever
 owned a copy of. Of 40 enemy slots in those 10 battles, 38 resolved to names from the local roster;
 the 2 that did not are champions never owned, and must be reported as an unresolved `typeId` rather
-than guessed.
+than guessed. (In that session the unowned one was `typeId 8846` = Nais, identified by the account
+owner — an example of the only way an unowned champion gets a name.)
+
+#### What `stats.spd` actually is
+
+`stats.spd` is **not** the champion's geared speed. It is the geared speed **plus the team aura**,
+and the aura is computed on the champion's *base* speed, not on the geared value. So comparing two
+battles' `spd` for the same champion measures aura conditions, **not** a gear change — an error
+worth naming, because "their speed changed, so they re-geared" is the obvious wrong reading.
+
+The decomposition that fits:
+
+```
+in-battle spd  =  Champs.SPD  +  round(base_spd × effective_aura)
+effective_aura =  nominal_aura × (1 + your_IP_boost − their_IP_reduction)
+```
+
+- `Champs.SPD` — the geared value from the vault DB. **Authoritative over the in-game champion
+  screen**, which can differ by 1: substituting the displayed value scored 0/22 exact integer
+  matches against 15/22 for the DB value.
+- `base_spd` — the champion's unequipped base speed. Not in the DB or the log; it comes from an
+  external champion reference.
+- `nominal_aura` — the team's best applicable SPD aura, also external. A team with no SPD-aura
+  champion shows a delta of exactly 0 across every hero, which is the cleanest signature in the data.
+- **Intimidating Presence** (a blessing, `Champs.BId = 2102`) — *"Strengthens your team's Aura and
+  weakens the enemy team's Aura. If multiple Champions on the same team have Intimidating Presence,
+  only one will work."* By blessing level: 1★ +2.5%/−5% · 3★ +7.5%/−10% · 5★ +15%/−20% ·
+  6★ +35%/−20%. It is explicitly **non-stacking**, which is why a second carrier changes nothing.
+
+**Verification status — the fit is good but not exact.** Across 7 aura-bearing Live Arena battles
+the model reproduces the observed speeds to within 0.55 percentage points, and at integer precision
+it is exact for 15 of 22 champion-battles, including **all six** for the champion carrying the
+aura. The residual is not noise and is not explained:
+
+- **Six misses are off by exactly +1** (predicted one high). That is a rounding-rule question —
+  `round` fits some champions and `floor` fits others — most likely meaning a few external base-speed
+  values are slightly wrong rather than the model being wrong.
+- **One miss is off by +9** (Cruetraxa), and the same champion gains ~+8 in battles where the team
+  has *no* SPD aura at all, so it is a separate effect entirely and remains unidentified.
+- **Opponent Intimidating Presence levels are inferred, never confirmed.** Blessings appear nowhere
+  in the log, and `Champs` holds only your own roster, so an opponent's blessing is unreadable from
+  both sources. The inferred levels have survived several chances to be contradicted — including a
+  same-opponent pair 19 minutes apart where a single champion swap flipped the prediction from "no
+  IP" to "5★/6★", matching a 6★ champion whose only plausible blessing is IP — but *consistent with*
+  is not *confirmed*, and nothing here should be read as settled.
+
+Settling it needs a prospective session: screenshot opponents' blessings while the watcher captures.
+That would also separate 5★ from 6★, which is impossible from this side — both reduce the enemy
+aura by 20% and differ only in the ally-boost half.
 
 ### Events
 
