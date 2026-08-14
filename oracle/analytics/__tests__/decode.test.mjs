@@ -100,9 +100,12 @@ const row = (o = {}) => ({
   ...o,
 });
 
+// Real SPD ascensions all carry ASCFL: 1 — 203 of 203 on the 2026-08-12 snapshot — so the fixture
+// models that. SPD takes decodeValue's integer branch whatever the flag says, which is exactly why
+// this test cannot stand in for flat/percent coverage; the readArtifacts test at the end does that.
 test("decodeRow reads a SPD ascension stat", () => {
-  const item = decodeRow(row({ ASCID: 4, ASCFL: 0, ASCLVLID: 12 * 2 ** 32, ASCLEVEL: 6 }));
-  expect(item.ascStat).toEqual({ statId: 4, isFlat: false, value: 12 });
+  const item = decodeRow(row({ ASCID: 4, ASCFL: 1, ASCLVLID: 12 * 2 ** 32, ASCLEVEL: 6 }));
+  expect(item.ascStat).toEqual({ statId: 4, isFlat: true, value: 12 });
 });
 
 // ASCID is a DB stat id and needs the same remap as substats: DB 7 (C.RATE) -> our 5.
@@ -121,6 +124,20 @@ test("decodeRow yields no ascension stat when ASCID is absent or -1", () => {
 // ASCGV is 0 in every non-corrupt row of every snapshot checked (the sole nonzero one is the
 // garbage row 196608 that isCorrupt drops), so the decoder must not invent a glyph field.
 test("decodeRow's ascension stat carries no glyph field", () => {
-  const item = decodeRow(row({ ASCID: 4, ASCLVLID: 12 * 2 ** 32 }));
+  const item = decodeRow(row({ ASCID: 4, ASCFL: 1, ASCLVLID: 12 * 2 ** 32 }));
   expect("glyph" in item.ascStat).toBe(false);
+});
+
+// Everything above calls decodeRow on a hand-built object, so it passes even against a decoder that
+// ignores ASCFL, and even against one whose COLS never selects the ASC columns at all. This goes
+// through readArtifacts instead, pinning the DB wiring, the BigInt read path that setReadBigInts
+// puts in production, and the flat/percent flag together. 7275 and 7794 are the decisive pair: same
+// DB stat id (1 = HP), differing only in ASCFL. Decoding 7275 as 204 rather than 20400 is what
+// proves isFlat is honoured, since treating flat HP as a percentage multiplies it by 100.
+test("readArtifacts decodes ascension stats end-to-end, honouring the flat/percent flag", () => {
+  const { items } = readArtifacts(here("../../known-gear.db"));
+  const asc = (id) => items.find((it) => it.id === id)?.ascStat;
+  expect(asc(7275)).toEqual({ statId: 1, isFlat: true, value: 204 });   // flat HP: 204, not 20400
+  expect(asc(7794)).toEqual({ statId: 1, isFlat: false, value: 13 });   // HP%, same DB stat id
+  expect(asc(9952)).toEqual({ statId: 4, isFlat: true, value: 12 });    // the headline SPD +12 case
 });
