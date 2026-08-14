@@ -67,7 +67,8 @@ test("decodeRow remaps the ascension stat id into our id space", () => {
   expect(item.ascStat.value).toBe(15);
 });
 
-// The live DB holds ASCID 0 on un-ascended rows and -1 on some others. Neither is a stat.
+// Un-ascended rows hold -1 in ASCID (3322 of 8474 in the 2026-08-12 snapshot); a handful hold 0
+// instead (9 rows in 2026-07-12). Neither is a stat.
 test("decodeRow yields no ascension stat when ASCID is absent or -1", () => {
   expect(decodeRow(row({ ASCID: 0 })).ascStat).toBe(null);
   expect(decodeRow(row({ ASCID: -1, ASCLEVEL: -1 })).ascStat).toBe(null);
@@ -108,8 +109,9 @@ import { N, DBSTAT_TO_OURSTAT, decodeValue, SUB, ASC, readArtifactRows } from ".
 Inside `decodeRow`, after the substat loop and before `const slot = N(row.type);`:
 
 ```javascript
-  // Ascended artifacts carry one bonus stat. ASCID is 0 on un-ascended rows and -1 on a handful of
-  // others, so the guard is `> 0` rather than truthiness.
+  // Ascended artifacts carry one bonus stat. Un-ascended rows hold -1 in ASCID (3322 of 8474 in the
+  // 2026-08-12 snapshot) and a handful hold 0 instead (9 rows in 2026-07-12), so the guard is `> 0`
+  // rather than truthiness or a !== -1 check.
   const ascDbId = N(row[ASC.id]);
   const ascFlat = N(row[ASC.fl]) !== 0;
   const ascStat = ascDbId > 0
