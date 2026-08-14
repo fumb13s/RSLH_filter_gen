@@ -199,18 +199,45 @@ resistance questions empirically — it records not just landed effects but evad
 
 ### Observed content ids
 
-`stageId` has been constant per `(kindId, regionTypeId)` across every file examined.
+~~`stageId` has been constant per `(kindId, regionTypeId)` across every file examined.~~
+**Retracted 2026-08-14**: `(1, 112)` has now produced both `1123006` and `1123003`. That was never a
+property of the id space, only of a two-night sample in which each region happened to be played at
+one stage — the account owner runs whatever campaign stage and difficulty is called for, so
+`stageId` varying underneath a stable `regionTypeId` is the expected shape, not a surprise.
+`regionTypeId` is the coarser key and `stageId` subdivides it, so the **tuple** — not the pair — is
+the content identity, and a tuple absent from this table means unobserved, never nonexistent.
 
 | kindId | regionTypeId | stageId | team sizes | identified as | when |
 |--:|--:|--:|---|---|---|
 | **6** | **901** | **9019003** | `[4, 4]` | **Live Arena** | 2026-08-13 |
+| **1** | **112** | **1123003** | `[4, 4]` | **Campaign 12-3 Brutal** | 2026-08-14 |
 | 2 | 301 | 3019003 | `[4, 4]` | unidentified | 2026-08-12 |
 | 1 | 216 | 2169025 | `[5, 1]` | unidentified | 2026-08-12 |
 | 1 | 112 | 1123006 | `[4, 4]` | unidentified | 2026-08-13 |
 | 1 | 1402 | 14022130 | `[5, 5]` | unidentified | 2026-08-13 |
+| 1 | 219 | 2199013 | `[5, 4]` | unidentified | 2026-08-14 |
 
 Everything still unidentified is recorded as an opaque observed value and **deliberately not guessed
 at**. Identification happens by the method below, not by inference from team size or stage number.
+
+#### Campaign — `kind=1 / region=112 / stage=1123003`
+
+**Campaign stage 12-3, Brutal difficulty**, as stated by the account owner who played the session
+(4 battles, 2026-08-14 21:26 and 22:34). Same method as Live Arena below: owner cross-reference, not
+inference. Recorded for completeness — the owner's assessment is that campaign holds no analytical
+interest, so this tuple is a candidate to filter *out* at query time, which is the mirror image of
+what the Live Arena key is for.
+
+⚠️ **Unconfirmed hypothesis, recorded so it can be tested rather than acted on.** This one
+identification makes a decomposition legible: `stageId = regionTypeId × 10000 + difficulty × 1000 +
+stage`, giving `112|3|003` = chapter 12, Brutal, stage 3 — under which the 2026-08-13 sibling
+`1123006` reads as 12-6 Brutal and `regionTypeId` 112 as campaign chapter 12. **It does not
+generalise as-is**: the same arithmetic puts regions 216, 219, 301 and 901 at "difficulty 9", which
+is not a campaign difficulty, so at best the suffix is interpreted per `kindId`. Confirming it needs
+one more owner-identified campaign stage at a *different* difficulty, which ordinary play will
+supply — the owner varies both stage and difficulty, so the digit that is claimed to be difficulty
+should move independently of the one claimed to be stage. Until then the table above stays the
+source of truth and no stage number is decoded.
 
 #### Live Arena — `kind=6 / region=901 / stage=9019003`
 
@@ -224,13 +251,25 @@ Confirmed 2026-08-13 from 10 captured battles, by two independent lines of evide
    Arena and said so at the time — the "cross-reference captures against known play sessions" method
    this section originally called for.
 2. **The data proves it is PvP without relying on the timing.** Every other tuple's enemy team
-   carries `ownerId: -1` — no owner, i.e. AI. These carry a **real, distinct account id per battle**
-   (10 battles, 10 different opponents, no repeats), against a constant player-side `ownerId`. That
-   establishes live matchmaking against real accounts; which *named* PvP mode it is comes from the
-   owner's statement, not from the ids.
+   carries `ownerId: -1` — no owner, i.e. AI. These carry a **real account id per battle**, against a
+   constant player-side `ownerId`. That establishes live matchmaking against real accounts; which
+   *named* PvP mode it is comes from the owner's statement, not from the ids.
 
-The enemy `ownerId` is itself worth having: it is a real account key, so repeat opponents are
-trackable across sessions.
+Re-verified 2026-08-14 over the whole archive, now **19 Live Arena battles across two sessions**
+(10 on 08-13, 9 on 08-14). The `ownerId: -1` half of the argument held against both newly observed
+tuples, `(1, 112)` and `(1, 219)`.
+
+~~10 battles, 10 different opponents, no repeats.~~ **Wrong as written**, and worth keeping visible
+because it was the load-bearing sentence: the 19 battles carry **18 distinct opponents**, because
+account `52062335` was matched **twice within the 2026-08-13 session**, 19 minutes apart
+(`20260813_214119`, `20260813_220021`). Both instances were already in the sample the original claim
+described, so this is a counting error, not new data. The PvP conclusion is unaffected — it rests on
+real ids versus `-1`, never on uniqueness — but "distinct opponent per battle" must not be relied on
+as an invariant, and any analysis keyed on opponent identity has to expect duplicates.
+
+That the repeat exists is the useful part: the enemy `ownerId` is a real account key, so repeat
+opponents are trackable — the first confirmed instance is intra-session, and cross-session repeats
+should be expected to follow.
 
 **This is the filter key** for anyone who later wants to stop capturing everything and take Live
 Arena only. Note that capture-everything remains the design; a filter belongs at query time over the
@@ -353,6 +392,13 @@ identified.
 - **Eviction lost the race** — a file listed by the poll but deleted before the copy. There is
   nothing to archive and nothing to index, so the console line is the only trace it ever existed and
   it is reported as `MISSED`. Silence is the one output a capture tool must not produce for a miss.
+- **A battle that was never logged** — not a failure mode, but the thing most easily mistaken for
+  one. **A battle abandoned at the pick phase writes no file at all** (confirmed by the owner,
+  2026-08-14, for a Live Arena battle they left before it started). `MISSED` cannot fire, because
+  `MISSED` requires the poll to have listed a file that then vanished; here there was never a file.
+  So an owner-remembered battle count can legitimately exceed the archive's, and the difference is
+  not evidence of lost captures. Do not add a heuristic for this — the only reliable disambiguation
+  is asking the owner, and the tool would have to guess at intent it cannot see.
 - **Duplicate `proc`** across two files — index both. Deduplication is an analysis-time concern.
 - **Archive write failure** — report loudly and keep polling; a full disk should not silently stop
   capture.

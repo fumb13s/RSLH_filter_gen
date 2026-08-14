@@ -20,16 +20,21 @@ Each captured battle logs its content ids. A tuple not seen before is flagged
 `** NEW CONTENT TUPLE **` — that is how a mode we have not captured yet gets identified. It is how
 **Live Arena** was pinned down on 2026-08-13:
 
-| tuple | mode |
-|---|---|
-| `kind=6 region=901 stage=9019003` | **Live Arena** |
+| tuple | mode | when |
+|---|---|---|
+| `kind=6 region=901 stage=9019003` | **Live Arena** | 2026-08-13 |
+| `kind=1 region=112 stage=1123003` | **Campaign 12-3 Brutal** | 2026-08-14 |
 
 Live Arena specifically — Classic Arena has not been captured and will carry a different tuple.
+Campaign varies by stage *and* difficulty, so one campaign tuple identifies one stage, not campaign
+as a whole: `kind=1 region=112 stage=1123006` is the same chapter at a different stage and is still
+unidentified.
 
 Everything else observed so far is still unidentified on purpose — see *Observed content ids* in
 `docs/plans/2026-08-12-battle-log-capture-design.md` for the full table and how this was confirmed
-(short version: every other tuple's enemy team has `ownerId: -1` for AI, while these carry a real,
-distinct opponent account id per battle). `DECODE FAILED (attempt n/3)` means only that: the bytes are archived either way, and the
+(short version: every other tuple's enemy team has `ownerId: -1` for AI, while Live Arena carries a
+real opponent account id per battle — real ids versus `-1` is the test; those ids are **not** unique
+per battle, one opponent has already recurred). `DECODE FAILED (attempt n/3)` means only that: the bytes are archived either way, and the
 file is retried on the next two passes in case it was caught mid-write. After the third the decode
 stops, but the copy does not — the bytes keep being refreshed, and a restart (or `rebuild-index.mjs`)
 gets the decode another go. `MISSED` is a battle RSL Helper deleted before we could copy it, which is
