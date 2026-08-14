@@ -260,10 +260,11 @@ Re-verified 2026-08-14 over the whole archive, now **19 Live Arena battles acros
 tuples, `(1, 112)` and `(1, 219)`.
 
 ~~10 battles, 10 different opponents, no repeats.~~ **Wrong as written**, and worth keeping visible
-because it was the load-bearing sentence: the 19 battles carry **18 distinct opponents**, because
-account `52062335` was matched **twice within the 2026-08-13 session**, 19 minutes apart
-(`20260813_214119`, `20260813_220021`). Both instances were already in the sample the original claim
-described, so this is a counting error, not new data. The PvP conclusion is unaffected — it rests on
+because it was the load-bearing sentence: the 19 battles carry **18 distinct opponents**, because one
+opponent account was matched **twice within the 2026-08-13 session**, 19 minutes apart
+(`20260813_214119`, `20260813_220021` — the id itself stays out of this repo, see *Privacy*; the two
+filenames are enough to re-find it in the local archive). Both instances were already in the sample
+the original claim described, so this is a counting error, not new data. The PvP conclusion is unaffected — it rests on
 real ids versus `-1`, never on uniqueness — but "distinct opponent per battle" must not be relied on
 as an invariant, and any analysis keyed on opponent identity has to expect duplicates.
 
@@ -444,6 +445,15 @@ metadata:
 
 Deny-by-default rather than an extension list, so a new artifact type in the archive is ignored
 without anyone remembering to add it.
+
+**The same rule covers prose, and that is the easier one to break.** This repo is public, so no
+`ownerId`, opponent account id or champion instance id belongs in a doc, comment, commit message or
+test fixture either — gitignoring the archive accomplishes nothing if the interesting ids get quoted
+out of it, and a doc is not something `.gitignore` can defend. Cite battles by **filename**
+(`20260813_214119`), which is a timestamp and identifies nothing on its own while still being enough
+to re-find the battle in the local archive. This was learned by doing it wrong: the repeat-opponent
+correction above was first committed with the raw account id in both the prose and the commit
+message (`9efda40`, 2026-08-14).
 
 That protects the *default* archive only, and `--archive DIR` is a documented flag, so the root
 `.gitignore` also denies `*.jsonl.z`, `index.jsonl` and `index.jsonl.tmp` by extension. Belt and
