@@ -5,14 +5,15 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { decodeValue, readArtifacts } from "../decode.mjs";
-import { SUB } from "../../lib/decode.mjs";
+import { decodeValue, decodeRow, readArtifacts } from "../decode.mjs";
+import { SUB, ASC } from "../../lib/decode.mjs";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 
 // Build a throwaway Artifacts DB with just the columns readArtifacts selects.
 const ALLCOLS = ["ID", "type", "rank", "rarity", "lvl", "mid", "mfl", "mlvlid", "aset", "accset",
-  "ASCLEVEL", "cID", ...SUB.flatMap((s) => [s.id, s.fl, s.lvl, s.base, s.gv, s.myth])];
+  "ASCLEVEL", "cID", ASC.id, ASC.fl, ASC.base,
+  ...SUB.flatMap((s) => [s.id, s.fl, s.lvl, s.base, s.gv, s.myth])];
 function makeTempDb(rows) {
   const dir = mkdtempSync(join(tmpdir(), "oracle-decode-"));
   const path = join(dir, "fixture.db");
@@ -86,4 +87,40 @@ test("readArtifacts: out-of-range 64-bit values don't crash the read; corrupt ro
   } finally {
     cleanup();
   }
+});
+
+// A minimal Artifacts row. 2**32 == 4294967296, so `n * 2**32` encodes the integer n.
+const row = (o = {}) => ({
+  ID: 1, type: 4, rank: 6, rarity: 5, lvl: 16, mid: 4, mfl: 0, mlvlid: 30 * 2 ** 32,
+  aset: 4, accset: 0, ASCLEVEL: 0, cID: 0, ASCID: 0, ASCFL: 0, ASCLVLID: 0,
+  s1id: 0, s1fl: 0, s1lvl: 0, s1lvlid: 0, s1gv: 0, s1mlvlid: 0,
+  s2id: 0, s2fl: 0, s2lvl: 0, s2lvlid: 0, s2gv: 0, s2mlvlid: 0,
+  s3id: 0, s3fl: 0, s3lvl: 0, s3lvlid: 0, s3gv: 0, s3mlvlid: 0,
+  s4id: 0, s4fl: 0, s4lvl: 0, s4lvlid: 0, s4gv: 0, s4mlvlid: 0,
+  ...o,
+});
+
+test("decodeRow reads a SPD ascension stat", () => {
+  const item = decodeRow(row({ ASCID: 4, ASCFL: 0, ASCLVLID: 12 * 2 ** 32, ASCLEVEL: 6 }));
+  expect(item.ascStat).toEqual({ statId: 4, isFlat: false, value: 12 });
+});
+
+// ASCID is a DB stat id and needs the same remap as substats: DB 7 (C.RATE) -> our 5.
+test("decodeRow remaps the ascension stat id into our id space", () => {
+  const item = decodeRow(row({ ASCID: 7, ASCFL: 0, ASCLVLID: 0.15 * 2 ** 32 }));
+  expect(item.ascStat.statId).toBe(5);
+  expect(item.ascStat.value).toBe(15);
+});
+
+// The live DB holds ASCID -1 on un-ascended rows and 0 on a handful of others. Neither is a stat.
+test("decodeRow yields no ascension stat when ASCID is absent or -1", () => {
+  expect(decodeRow(row({ ASCID: 0 })).ascStat).toBe(null);
+  expect(decodeRow(row({ ASCID: -1, ASCLEVEL: -1 })).ascStat).toBe(null);
+});
+
+// ASCGV is 0 in every non-corrupt row of every snapshot checked (the sole nonzero one is the
+// garbage row 196608 that isCorrupt drops), so the decoder must not invent a glyph field.
+test("decodeRow's ascension stat carries no glyph field", () => {
+  const item = decodeRow(row({ ASCID: 4, ASCLVLID: 12 * 2 ** 32 }));
+  expect("glyph" in item.ascStat).toBe(false);
 });

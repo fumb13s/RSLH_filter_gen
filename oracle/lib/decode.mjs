@@ -27,6 +27,12 @@ export const SUB = [1, 2, 3, 4].map((i) => ({
   id: `s${i}id`, fl: `s${i}fl`, lvl: `s${i}lvl`, base: `s${i}lvlid`, gv: `s${i}gv`, myth: `s${i}mlvlid`,
 }));
 
+// The artifact ascension bonus stat, encoded exactly like a substat. There is deliberately no glyph
+// column here: ASCGV is 0 in all 8474 rows of the 2026-08-12 snapshot, as is the main-stat glyph
+// mgv, so glyphs only ever apply to substats. probe.mjs names its columns explicitly and never sees
+// this.
+export const ASC = { id: "ASCID", fl: "ASCFL", base: "ASCLVLID" };
+
 // The single Artifacts-table read mechanism, shared by probe + analytics — adjust gear reads here
 // only. Integers come back as BigInt (setReadBigInts): the live DB occasionally holds a corrupt row
 // with 64-bit garbage in sNgv/sNmlvlid that overflows a JS number, and node:sqlite throws on .all()

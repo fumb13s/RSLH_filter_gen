@@ -1,4 +1,4 @@
-import { N, DBSTAT_TO_OURSTAT, decodeValue, SUB, readArtifactRows } from "../lib/decode.mjs";
+import { N, DBSTAT_TO_OURSTAT, decodeValue, SUB, ASC, readArtifactRows } from "../lib/decode.mjs";
 
 // Re-export so tests/consumers can grab the primitive from this one module.
 export { decodeValue, N } from "../lib/decode.mjs";
@@ -29,19 +29,32 @@ export function decodeRow(row) {
       glyph: decodeValue(dbId, isFlat, row[s.gv]),
     });
   }
+  // Ascended artifacts carry one bonus stat. Un-ascended rows hold -1 in ASCID (3322 of 8474 in the
+  // 2026-08-12 snapshot) and a handful hold 0 instead (9 rows in 2026-07-12), so the guard is `> 0`
+  // rather than truthiness or a !== -1 check.
+  const ascDbId = N(row[ASC.id]);
+  const ascFlat = N(row[ASC.fl]) !== 0;
+  const ascStat = ascDbId > 0
+    ? {
+        statId: DBSTAT_TO_OURSTAT[ascDbId] ?? ascDbId,
+        isFlat: ascFlat,
+        value: decodeValue(ascDbId, ascFlat, row[ASC.base]),
+      }
+    : null;
   const slot = N(row.type);
   return {
     id: N(row.ID), slot, set: N(row.aset), rank: N(row.rank),
     rarity: N(row.rarity) - 1,                 // 0-5 index (dbRarity-1)
     level: N(row.lvl), faction: N(row.accset),
     isAccessory: slot >= 7 && slot <= 9,
-    mainStat, substats,
+    mainStat, substats, ascStat,
     ascLevel: N(row.ASCLEVEL), equippedChampId: N(row.cID),
   };
 }
 
 const COLS = ["ID", "type", "rank", "rarity", "lvl", "mid", "mfl", "mlvlid", "aset", "accset",
-  "ASCLEVEL", "cID", ...SUB.flatMap((s) => [s.id, s.fl, s.lvl, s.base, s.gv, s.myth])].join(",");
+  "ASCLEVEL", "cID", ASC.id, ASC.fl, ASC.base,
+  ...SUB.flatMap((s) => [s.id, s.fl, s.lvl, s.base, s.gv, s.myth])].join(",");
 
 export function readArtifacts(dbPath) {
   // BigInt-safe shared read (see readArtifactRows); isCorrupt() drops garbage rows just below.
