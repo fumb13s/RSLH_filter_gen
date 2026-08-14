@@ -81,8 +81,10 @@ Every line: `type: "battleLiveState"`, `pushKind: "turn"`. No other values obser
   They are single-sample correlations from 10 Live Arena battles, and co-occurrence is not identity —
   an id could be a marker set alongside the real cause rather than the cause. The sample also proves
   its own limitation: `HeroPassiveSkillsBlocked` reaches only 52% coverage from its best candidate,
-  i.e. that flag has a second source, so 100% in-sample coverage does not generalise. Candidates,
-  with the flag they track and the number of flag occurrences behind them:
+  ~~i.e. that flag has a second source~~ — **the 52% is unexplained, and "second source" was the
+  wrong inference; see *Why `HeroPassiveSkillsBlocked` is only 52% covered* below** — so 100%
+  in-sample coverage does not generalise. Candidates, with the flag they track and the number of
+  flag occurrences behind them:
 
   | id | tracks flag | n | confidence |
   |--:|---|--:|---|
@@ -92,11 +94,49 @@ Every line: `type: "battleLiveState"`, `pushKind: "turn"`. No other values obser
   | 3006 | `ActiveSkillsBlocked` | 45 | moderate |
   | 3001 | `IsFrozen` | 42 | moderate |
   | 3004 | `IsStunned` | 40 | moderate |
-  | 3017 | `HeroPassiveSkillsBlocked` | 25 | weak — 52% coverage, second source exists |
+  | 3017 | `HeroPassiveSkillsBlocked` | 25 | weak — 52% coverage, cause unexplained |
   | 3003 | `IsSleep` | **1** | worthless |
 
   Note these track *flag names*, not game-mechanic names — mapping `IsStrongInvisible` onto a
   particular in-game buff is a further inference nobody has made yet.
+
+##### Why `HeroPassiveSkillsBlocked` is only 52% covered
+
+Re-examined 2026-08-14 over both sessions (19 Live Arena battles). The 48% of flagged states that
+carry no `3017` are **12 states of dead heroes** — but death is *not* what puts the flag there:
+
+> **Death does not block passives, and does not set this flag.** Of **73 distinct champions that
+> died** across the 19 battles, **71 died carrying no `HeroPassiveSkillsBlocked` at all**; 2 carried
+> it. Were death the cause, all 73 would show it.
+
+This negative result rests on counting alone — no theory of how the client encodes anything — which
+is why it is stated as fact while the rest of this section stays a candidate list. It is also
+consistent with the game: champions exist whose passives function on or after death, so a blanket
+block would be wrong on its face.
+
+What the 2 exceptions were doing: both (`20260813_215522`, Marius the Gallant and Donatello) took a
+real passive-block **while alive**, carrying `3006`+`3017` alongside the flag — Marius for 2 lines
+before dying, Donatello for 11. On death their effect entries cleared but the flag stayed for six
+more lines, then cleared on the final line.
+
+⚠️ **The reading that fits — a flag outliving its own effect entry — is not confirmed and cannot be
+from logs alone.** It rests on 2 heroes in 1 battle, and whether the client clears derived flags
+lazily is exactly the kind of internal we cannot see. Recorded because it is the only observation
+that bears on the 52%, not because it settles it. **Do not restate it as "death clears effects but
+not flags".**
+
+The practical consequence is narrower than any of the above: **a flag present with no matching
+effect id is not evidence of a second effect id.** Coverage gaps in this table may be bookkeeping
+rather than mechanics, so a missing-id state is not a lead worth chasing until something independent
+of the logs can say what the client is doing.
+
+##### On why these stay candidates
+
+A further limit, measured 2026-08-14: the 19 battles contain **29 distinct champions**, roughly 4% of
+the roster. Every correlation in the table above is therefore a statement about those 29 champions
+repeating themselves, and sample *volume* (hundreds of hero-states) must not be read as sample
+*breadth*. Re-measuring on a second session does not fix this — the pool overlaps heavily. Nothing
+here graduates from candidate to confirmed without a source of truth outside the logs.
 - `stats` — **line 0 only**: `{atk, def, spd, res, acc, critCh, critDmg, critHeal}`, for **both**
   teams. Opponent stat blocks are therefore fully readable. Because it is captured once, a
   mid-battle stat change is never visible as a number; only the buff/debuff entry that caused it,
