@@ -2,9 +2,9 @@
 
 Decodes a `../resources/*-RSLHelper.db` snapshot and rates the gear in it — vault-wide
 (`analyze.mjs`) or one champion's worn gear at a time (`champion-gear.mjs`).
-Design + rationale: `DESIGN.md`. Advisory only: `analyze.mjs` writes its reports to `out/` and
-`champion-gear.mjs` only prints. Neither writes to a snapshot or to the game's own database, and
-nothing is ever deleted.
+Design + rationale: `DESIGN.md`. Advisory only: `analyze.mjs` writes its reports to `out/`, and
+`champion-gear.mjs` and `speed.mjs` only print. None of them writes to a snapshot or to the game's
+own database, and nothing is ever deleted.
 
 ## Run
 
@@ -27,6 +27,21 @@ nothing is ever deleted.
    `Champs.ID`; anything else is a case-insensitive name substring — `Elhain` reports Elhain,
    Supreme Elhain and Dark Elhain, one section per geared copy of each. Omit the selector entirely
    for a per-champion summary, most sellable first.
+4. Fastest possible build for one champion:
+   `node --experimental-sqlite oracle/analytics/speed.mjs <name|ID> [snapshot.db] --corpus PATH`
+
+   Searches the whole vault for the item assignment that maximizes that champion's speed, and
+   proves it is the maximum rather than a heuristic. `--glyph N` adds a second solve with every
+   SPD substat glyph raised to at least N, clamped to what each rarity x rank has been seen to
+   carry. `--base N` is required for champions absent from the corpus. `--top N` prints the N best
+   builds instead of only the winner, so a runner-up that costs one point of speed but frees six
+   pieces of a set is visible rather than discarded.
+
+   The corpus of champion base speeds is an external local dataset — pass `--corpus PATH` or set
+   `$RSLH_SPEED_CORPUS`. `speed.mjs verify` reports how much speed the model cannot explain across
+   every geared champion, which is the check that would catch a game patch changing set values.
+
+   Design: `docs/plans/2026-08-14-champion-speed-solver-design.md`.
 
 ### Reading a champion report
 
