@@ -91,6 +91,19 @@ test("lookupBase is case-insensitive and returns null on a miss", () => {
   expect(lookupBase(c, "Nobody")).toBe(null);
 });
 
+// The other half of the absent-vs-zero contract: "skips records with no speed" pins that a MISSING
+// speed does not become 0, and this pins that a speed of 0 does not become missing. Both `??` in
+// this module are load-bearing for it, and `||` is the one-character slip that breaks it — the CLI
+// branches on `base === null` to decide whether to demand --base. No champion really has base speed
+// 0, so this never fires in production; it fires when someone "simplifies" the coalescing.
+test("a corpus speed of 0 is a speed, not a miss", () => {
+  const c = parseCorpus({ "Zero": 0 });
+  expect(lookupBase(c, "Zero")).toBe(0);
+  expect(lookupBase(c, "Absent")).toBe(null);
+  expect(parseCorpus([{ name: "Zero", stats: { spd: 0 } }]).get("zero")).toBe(0);
+  expect(parseCorpus([{ name: "Zero", spd: 0 }]).get("zero")).toBe(0);
+});
+
 test("lookupBase tolerates a non-string name", () => {
   const c = parseCorpus({ "Arbiter": 110 });
   expect(lookupBase(c, 42)).toBe(null);
@@ -133,19 +146,70 @@ test("loadCorpus merges every subdirectory's stats.json", () => {
   }
 });
 
-// One unreadable or stats-less entry among many must not cost the rest of the corpus; the guard
-// against a wholly unusable directory is the size check below, not per-entry strictness.
-test("loadCorpus skips directory entries with no readable stats.json", () => {
+// An entry with no stats.json is not a faction directory at all — a loose file, a README, a scratch
+// dir — so it is skipped. An entry whose stats.json EXISTS but cannot be used is a different thing:
+// see the two tests below.
+test("loadCorpus skips directory entries that have no stats.json", () => {
   const { dir, cleanup } = tempDir();
   try {
     mkdirSync(join(dir, "empty-faction"));
-    mkdirSync(join(dir, "broken-faction"));
-    writeFileSync(join(dir, "broken-faction", "stats.json"), "{not json", "utf8");
     writeFileSync(join(dir, "README.md"), "loose file, not a faction", "utf8");
     mkdirSync(join(dir, "banner-lords"));
     writeJson(join(dir, "banner-lords", "stats.json"), [{ name: "Kael", stats: { spd: 103 } }]);
     const c = loadCorpus(dir);
     expect([...c.keys()]).toEqual(["kael"]);
+  } finally {
+    cleanup();
+  }
+});
+
+// Valid JSON of a shape parseCorpus cannot read. `null` is not exotic — it is what a scraper writes
+// when a faction page comes back empty. Skipping it would drop every champion in that faction and
+// then report them as absent, so the load fails; and it has to say WHICH file, or the user is left
+// opening sixteen of them to find the bad one.
+test("loadCorpus fails on a wrong-shaped stats.json and names the file", () => {
+  const { dir, cleanup } = tempDir();
+  try {
+    mkdirSync(join(dir, "banner-lords"));
+    writeJson(join(dir, "banner-lords", "stats.json"), [{ name: "Kael", stats: { spd: 103 } }]);
+    mkdirSync(join(dir, "knights-revenant"));
+    writeJson(join(dir, "knights-revenant", "stats.json"), null);
+    expect(() => loadCorpus(dir)).toThrow(/corpus/i);
+    expect(() => loadCorpus(dir)).toThrow(join(dir, "knights-revenant", "stats.json"));
+  } finally {
+    cleanup();
+  }
+});
+
+// A stats.json that exists but cannot be read at all is a broken faction too, not a non-faction:
+// only "there is no stats.json here" earns a skip. A directory named stats.json is the portable way
+// to provoke a non-ENOENT read failure (EISDIR); a permission-denied file is the realistic one.
+test("loadCorpus fails on an unreadable stats.json and names the file", () => {
+  const { dir, cleanup } = tempDir();
+  try {
+    mkdirSync(join(dir, "banner-lords"));
+    writeJson(join(dir, "banner-lords", "stats.json"), [{ name: "Kael", stats: { spd: 103 } }]);
+    mkdirSync(join(dir, "odd-faction"));
+    mkdirSync(join(dir, "odd-faction", "stats.json"));
+    expect(() => loadCorpus(dir)).toThrow(/corpus/i);
+    expect(() => loadCorpus(dir)).toThrow(join(dir, "odd-faction", "stats.json"));
+  } finally {
+    cleanup();
+  }
+});
+
+// Same rule for a stats.json that is not valid JSON at all: it exists, so it is a broken faction
+// rather than a non-faction. Tolerating one flavour of corrupt file while the other is fatal was the
+// asymmetry that made the original failure undiagnosable.
+test("loadCorpus fails on a malformed stats.json and names the file", () => {
+  const { dir, cleanup } = tempDir();
+  try {
+    mkdirSync(join(dir, "banner-lords"));
+    writeJson(join(dir, "banner-lords", "stats.json"), [{ name: "Kael", stats: { spd: 103 } }]);
+    mkdirSync(join(dir, "broken-faction"));
+    writeFileSync(join(dir, "broken-faction", "stats.json"), "{not json", "utf8");
+    expect(() => loadCorpus(dir)).toThrow(/corpus/i);
+    expect(() => loadCorpus(dir)).toThrow(join(dir, "broken-faction", "stats.json"));
   } finally {
     cleanup();
   }

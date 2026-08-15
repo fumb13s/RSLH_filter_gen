@@ -37,17 +37,35 @@ export function parseCorpus(raw) {
 // yields nothing; reporting every champion as missing sends the user after the wrong problem.
 // Individual entries stay forgiving: only the total is checked, so one unreadable faction file does
 // not cost the rest of the corpus.
+// Failures inside a directory load name the file. "expected an object or an array of stat records"
+// on its own leaves the user opening sixteen faction files to find the bad one.
+const fileError = (file, e) =>
+  new Error(`speed corpus: ${file}: ${e.message.replace(/^speed corpus: /, "")}`);
+
 export function loadCorpus(path) {
   if (statSync(path).isDirectory()) {
     const corpus = new Map();
     for (const entry of readdirSync(path)) {
-      let raw;
+      const file = `${path}/${entry}/stats.json`;
+      let text;
       try {
-        raw = JSON.parse(readFileSync(`${path}/${entry}/stats.json`, "utf8"));
-      } catch {
-        continue;    // not every subdirectory has to hold a stats file
+        text = readFileSync(file, "utf8");
+      } catch (e) {
+        // No stats.json here means this entry is not a faction directory — a README, a loose file,
+        // a scratch dir — so it is skipped. Anything else is a stats.json that exists and cannot be
+        // read, which is a broken faction, and falls through to the same loud failure as a broken
+        // shape below.
+        if (e.code === "ENOENT" || e.code === "ENOTDIR") continue;
+        throw fileError(file, e);
       }
-      for (const [name, spd] of parseCorpus(raw)) corpus.set(name, spd);
+      // Past here the file exists, so nothing is skipped: a corpus that quietly loses a faction is
+      // worse than one that refuses to load. `null` is what a scraper writes when a faction page
+      // comes back empty, and dropping it would report every champion in that faction as absent.
+      try {
+        for (const [name, spd] of parseCorpus(JSON.parse(text))) corpus.set(name, spd);
+      } catch (e) {
+        throw fileError(file, e);
+      }
     }
     if (corpus.size === 0) throw new Error(`speed corpus: no */stats.json found under ${path}`);
     return corpus;
