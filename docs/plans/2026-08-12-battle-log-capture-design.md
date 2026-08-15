@@ -440,6 +440,24 @@ identified.
   So an owner-remembered battle count can legitimately exceed the archive's, and the difference is
   not evidence of lost captures. Do not add a heuristic for this — the only reliable disambiguation
   is asking the owner, and the tool would have to guess at intent it cannot see.
+
+  **The archive counts battles, not matches.** This follows from *one file is exactly one battle*: a
+  Live Arena match that resolves without a battle being fought leaves nothing behind, so the archive
+  is a **floor** on matches played, never a count. Match-level statistics inherit the gap, and win
+  rate worst of all — an unfought match is absent rather than recorded as any particular outcome.
+
+  Either side can cause it. The owner leaving is the confirmed case above; **the opponent leaving at
+  the pick phase is the same zero-byte signature from the other direction**, and unlike the first it
+  is outside the owner's control, so it recurs. ⚠️ **Suspected, not confirmed** (2026-08-15): 5
+  remembered Live Arena matches produced 4 logs, and the four sit on a 3m51s–5m05s cadence that puts
+  the fifth in the queue-and-pick window rather than anywhere a file could have been written and
+  lost. That is **one absence plus a plausible interval** — the same shape of evidence as the death
+  theory this doc already had to retract, so it is recorded as a candidate cause and nothing is built
+  on it. No corroboration was available: per the account owner the client DB does not carry arena
+  match results, and the local snapshot is days stale regardless.
+
+  What needs no theory: from the logs alone the two causes are **indistinguishable**, because both
+  produce exactly zero bytes. No capture strategy can separate them, and none should try.
 - **Duplicate `proc`** across two files — index both. Deduplication is an analysis-time concern.
 - **Archive write failure** — report loudly and keep polling; a full disk should not silently stop
   capture.
