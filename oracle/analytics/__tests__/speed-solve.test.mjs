@@ -57,6 +57,17 @@ test("buildIndex omits a slot entirely when nothing is eligible for it", () => {
   expect(index.has(8)).toBe(false);
 });
 
+// The id is a TIE-break, subordinate to speed — it must never unseat a faster incumbent. The slower
+// item has to arrive second for this to bite: SQLite hands back Artifacts id-ascending, so on the
+// snapshot an id-dominant comparison is invisible until a caller sorts or pre-filters the pool.
+test("buildIndex keeps the faster item even when the slower one has the lower id", () => {
+  const index = buildIndex([
+    item({ id: 2, slot: 1, substats: spd(18) }), item({ id: 1, slot: 1, substats: spd(10) }),
+  ], 0, speedOf);
+  expect(index.get(1).get(4).item.id).toBe(2);
+  expect(index.get(1).get(4).speed).toBe(18);
+});
+
 // A tie must not depend on row order, or the same run prints different builds.
 test("buildIndex breaks ties on the lower item id so output is stable", () => {
   const forward = buildIndex([
