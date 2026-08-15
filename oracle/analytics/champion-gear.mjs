@@ -12,14 +12,17 @@
 
 import { readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, FACTION_NAMES, lookupName } from "@rslh/core";
+import { isRealChamp, parseArgs, readChampRows, selectChamps } from "./champs.mjs";
 import { readArtifacts } from "./decode.mjs";
 import { keepPremium, triage } from "./triage.mjs";
 import { quality, qualityAtRole } from "./score.mjs";
 import { rollStats } from "./rollquality.mjs";
 import { ALL_ROLES } from "./sets.mjs";
 import { CUTS } from "./weights.mjs";
+
+// Historical home of these four — re-exported so existing callers and tests keep working.
+export { isRealChamp, parseArgs, readChampRows, selectChamps };
 
 // Champs.Role is the game's champion type and maps 1:1 onto the analytics archetypes. Verified
 // against the 2026-07-12 snapshot: Role=1 champs are uniformly DEF-scaling, Role=2 top the HP
@@ -221,55 +224,8 @@ export function roleGapNote(rating) {
   return `  [role: better as ${best.join("/")}, +${rg.gap}]`;
 }
 
-// An arg ending .db or containing a separator is the snapshot; the first other arg is the selector.
-//
-// An EMPTY arg is no arg. `champion-gear.mjs ""` reaches here as [""], and an empty selector matches
-// every champion by substring — but main() gates summary mode on `selector === null`, so it would
-// print the full nine-slot readout for all 504 geared champions instead. Dropped here rather than
-// in selectChamps for exactly that reason: the mode gate reads the parse result, not the matcher.
-export function parseArgs(argv) {
-  const args = argv.filter((a) => a !== "");
-  const dbArg = args.find((a) => a.endsWith(".db") || a.includes("/") || a.includes("\\"));
-  return { selector: args.find((a) => a !== dbArg) ?? null, dbArg };
-}
-
-// All digits -> the exact Champs.ID (IDs are opaque, so a substring match on one means nothing);
-// any other text -> a case-insensitive Name substring; no selector -> everyone. Falsy rather than
-// `=== null` so an empty or absent selector can't reach `.toLowerCase()`; parseArgs already drops
-// empties, so this is the exported function honouring its own contract, not the load-bearing guard.
-export function selectChamps(rows, selector) {
-  if (!selector) return rows;
-  if (/^\d+$/.test(selector)) return rows.filter((r) => Number(r.ID) === Number(selector));
-  const nf = selector.toLowerCase();
-  return rows.filter((r) => r.Name.toLowerCase().includes(nf));
-}
-
-// Empty-Name rows are placeholders (they hold no gear, and they are the one place Role disagrees
-// across copies of a name), so they never reach the matcher. Exported rather than inlined into
-// readChampRows: it is the one pure rule in that function, and inside an untested I/O reader nothing
-// would notice it going missing. `typeof` first because Name has no NOT NULL constraint, and
-// `null.trim()` throws.
-export const isRealChamp = (r) => typeof r.Name === "string" && r.Name.trim() !== "";
-
 // --- CLI: I/O and formatting ------------------------------------------------
 // Below this line nothing is unit-tested: DB reads, layout and printing.
-
-export function readChampRows(dbPath) {
-  // readOnly makes SELECT-only structural rather than conventional, and — the reason it's here — it
-  // refuses to CREATE the file: without it a typo'd snapshot path leaves a stray 0-byte .db in the
-  // snapshot directory before failing on the missing table, and this toolkit writes to no snapshot.
-  // The read is wrapped so a corrupt file or a missing Champs table can't leak the handle.
-  const db = new DatabaseSync(dbPath, { readOnly: true });
-  try {
-    const st = db.prepare("SELECT ID, Name, Role, Rarity, Rang, Lvl FROM Champs");
-    st.setReadBigInts(true);
-    const rows = st.all().map((r) => Object.fromEntries(
-      Object.entries(r).map(([k, v]) => [k, typeof v === "bigint" ? Number(v) : v])));
-    return rows.filter(isRealChamp);
-  } finally {
-    db.close();
-  }
-}
 
 // Champs.Rarity is 1-indexed (1=Common … 6=Mythical) — NOT the 0-indexed scheme the artifact rows
 // use. (0 = a handful of untyped rows.)
