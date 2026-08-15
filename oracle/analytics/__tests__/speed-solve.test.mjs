@@ -1,7 +1,9 @@
 // oracle/analytics/__tests__/speed-solve.test.mjs
 import { test, expect } from "vitest";
-import { buildIndex, SLOTS } from "../speed-solve.mjs";
-import { itemSpeed } from "../speed-model.mjs";
+import {
+  buildIndex, SLOTS, slotsSupplying, viableSets, enumeratePlans, assign, solve,
+} from "../speed-solve.mjs";
+import { itemSpeed, speedOfWith } from "../speed-model.mjs";
 
 const speedOf = (it) => itemSpeed(it);
 const item = (o = {}) => ({
@@ -10,6 +12,21 @@ const item = (o = {}) => ({
   substats: [], ascStat: null, ascLevel: 0, equippedChampId: 0, ...o,
 });
 const spd = (n) => [{ statId: 4, isFlat: false, rolls: 0, value: n, glyph: 0 }];
+const pool = (specs) => specs.map((s, i) => item({ id: i + 1, ...s }));
+const plain = speedOfWith(0, new Map());
+
+// A pool whose best build needs FOUR sets at once: three 2-piece classics across the six artifact
+// slots plus 2-piece Swift Parry (35, the one tiered set that opens at two and rolls on accessories)
+// across two accessory slots. Every slot also offers a setless item worth 5 speed, so committing a
+// slot to a set costs real flat speed and the fourth set has to earn its place.
+const fourSetPool = () => {
+  const specs = [];
+  for (const [i, set] of [4, 34, 53, 35].entries()) {
+    for (const slot of [i * 2 + 1, i * 2 + 2]) specs.push({ slot, set, substats: spd(0) });
+  }
+  for (const slot of SLOTS) specs.push({ slot, set: 0, substats: spd(5) });
+  return specs;
+};
 
 test("SLOTS covers all nine equipment slots", () => {
   expect(SLOTS).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
@@ -111,4 +128,127 @@ test("buildIndex ranks by the injected valuation rather than the raw item speed"
   ], 0, byId);
   expect(index.get(1).get(4).item.id).toBe(2);
   expect(index.get(1).get(4).speed).toBe(2);
+});
+
+test("slotsSupplying counts distinct slots that can supply a set", () => {
+  const index = buildIndex(pool([
+    { slot: 1, set: 4, substats: spd(10) }, { slot: 2, set: 4, substats: spd(10) },
+    { slot: 2, set: 4, substats: spd(12) }, { slot: 3, set: 38, substats: spd(10) },
+  ]), 0, plain);
+  expect(slotsSupplying(index, 4)).toBe(2);
+  expect(slotsSupplying(index, 38)).toBe(1);
+  expect(slotsSupplying(index, 66)).toBe(0);
+});
+
+// A set that cannot reach its first threshold can never contribute, so it must not enter the plan
+// space — that is what keeps enumeration small.
+test("viableSets keeps only speed sets whose first threshold the pool can reach", () => {
+  const index = buildIndex(pool([
+    { slot: 1, set: 4, substats: spd(10) }, { slot: 2, set: 4, substats: spd(10) },
+    { slot: 3, set: 38, substats: spd(10) },
+    { slot: 4, set: 48, substats: spd(10) }, { slot: 5, set: 48, substats: spd(10) },
+  ]), 0, plain);
+  expect(viableSets(index).sort((a, b) => a - b)).toEqual([4]);
+});
+
+test("enumeratePlans always includes the empty plan", () => {
+  const index = buildIndex(pool([{ slot: 1, set: 0, substats: spd(10) }]), 0, plain);
+  expect(enumeratePlans(index, [])).toEqual([[]]);
+});
+
+test("enumeratePlans lists each viable count for a single set", () => {
+  const index = buildIndex(pool(
+    [1, 2, 3, 4].map((slot) => ({ slot, set: 4, substats: spd(10) }))), 0, plain);
+  expect(enumeratePlans(index, [4])).toEqual([[], [{ setId: 4, count: 2 }], [{ setId: 4, count: 4 }]]);
+});
+
+// Nine slots and a minimum threshold of two pieces cap the number of simultaneously active sets at
+// four. That bound is what makes enumeration tractable at all.
+test("enumeratePlans never exceeds nine slots or four active sets", () => {
+  const specs = [];
+  for (const set of [4, 34, 53, 57, 38]) {
+    for (let slot = 1; slot <= 6; slot++) specs.push({ slot, set, substats: spd(10) });
+  }
+  const index = buildIndex(pool(specs), 0, plain);
+  for (const plan of enumeratePlans(index, [4, 34, 53, 57, 38])) {
+    expect(plan.length).toBeLessThanOrEqual(4);
+    expect(plan.reduce((s, p) => s + p.count, 0)).toBeLessThanOrEqual(9);
+  }
+});
+
+// The cap is exactly four, not merely at-most-four: three two-piece artifact sets plus a two-piece
+// accessory-capable one fit inside nine slots, so a four-set plan has to be reachable.
+test("enumeratePlans reaches four active sets when the pool can supply them", () => {
+  const index = buildIndex(pool(fourSetPool()), 0, plain);
+  const plans = enumeratePlans(index, viableSets(index));
+  expect(plans.some((plan) => plan.length === 4)).toBe(true);
+});
+
+test("assign fills every available slot and honours the plan's counts", () => {
+  const index = buildIndex(pool([
+    { slot: 1, set: 4, substats: spd(10) }, { slot: 1, set: 0, substats: spd(30) },
+    { slot: 2, set: 4, substats: spd(10) }, { slot: 2, set: 0, substats: spd(30) },
+    { slot: 3, set: 0, substats: spd(30) },
+  ]), 0, plain);
+  const picks = assign(index, [{ setId: 4, count: 2 }]);
+  expect(picks).toHaveLength(3);
+  expect(picks.filter((p) => p.set === 4)).toHaveLength(2);
+});
+
+test("assign returns null when the plan needs more slots than exist", () => {
+  const index = buildIndex(pool([{ slot: 1, set: 4, substats: spd(10) }]), 0, plain);
+  expect(assign(index, [{ setId: 4, count: 2 }])).toBe(null);
+});
+
+// Slots can be plentiful and the plan still impossible — two pieces of a set only one slot supplies.
+// The DP is the only thing that catches that, and a build that quietly ignored the plan's counts
+// would be scored as if it had honoured them.
+test("assign returns null when a plan's set cannot fill its count", () => {
+  const index = buildIndex(pool([
+    { slot: 1, set: 4, substats: spd(10) },
+    { slot: 2, set: 0, substats: spd(10) }, { slot: 3, set: 0, substats: spd(10) },
+  ]), 0, plain);
+  expect(assign(index, [{ setId: 4, count: 2 }])).toBe(null);
+});
+
+// The set bonus has to beat the flat speed given up to earn it, and the solver has to notice.
+test("solve commits slots to a set only when the bonus beats the flat speed forgone", () => {
+  const index = buildIndex(pool([
+    { slot: 1, set: 4, substats: spd(10) }, { slot: 1, set: 0, substats: spd(11) },
+    { slot: 2, set: 4, substats: spd(10) }, { slot: 2, set: 0, substats: spd(11) },
+  ]), 0, plain);
+  // Speed x2 on base 100 is +12 for 2 speed forgone -> take the set.
+  expect(solve(index, 100, 0, plain).speed).toBe(100 + 12 + 20);
+  // On base 10 the same set is worth +1, which does not pay for 2 speed -> skip it.
+  expect(solve(index, 10, 0, plain).speed).toBe(10 + 22);
+});
+
+// Four sets at once is worth 88 speed on base 200 against the 72 of the best three, so a solver that
+// stopped enumerating at three would answer 287 and never see it. Nothing weaker than this catches
+// that: an at-most-four assertion passes just as happily at three.
+test("solve takes a fourth set when three plus the flat speed cannot match it", () => {
+  const index = buildIndex(pool(fourSetPool()), 0, plain);
+  const best = solve(index, 200, 0, plain);
+  // 24+24+24 from the classics, 16 from Swift Parry's first tier, 5 from the one uncommitted slot.
+  expect(best.speed).toBe(200 + 88 + 5);
+  expect(new Set(best.items.map((it) => it.set))).toEqual(new Set([4, 34, 53, 35, 0]));
+});
+
+test("solve carries the constant through untouched", () => {
+  const index = buildIndex(pool([{ slot: 1, set: 0, substats: spd(10) }]), 0, plain);
+  expect(solve(index, 100, 17, plain).speed).toBe(127);
+});
+
+test("solve returns null for an empty index", () => {
+  expect(solve(new Map(), 100, 0, plain)).toBe(null);
+});
+
+// A free slot's item belongs to some set and can complete one by accident. Scoring the ACTUAL items
+// rather than the plan means the reported number is never an under-count.
+test("solve scores the items it picked, not the plan it picked them under", () => {
+  const index = buildIndex(pool([
+    { slot: 1, set: 4, substats: spd(30) }, { slot: 2, set: 4, substats: spd(30) },
+  ]), 0, plain);
+  const best = solve(index, 100, 0, plain);
+  expect(best.speed).toBe(100 + 12 + 60);
 });
