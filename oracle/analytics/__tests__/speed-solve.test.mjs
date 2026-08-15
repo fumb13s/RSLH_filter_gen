@@ -252,3 +252,42 @@ test("solve scores the items it picked, not the plan it picked them under", () =
   const best = solve(index, 100, 0, plain);
   expect(best.speed).toBe(100 + 12 + 60);
 });
+
+// Builds can TIE at the maximum, and then WHICH one comes back is the whole answer: `counts` is the
+// set summary a reader sees. Here 149 is reachable two ways — Supersonic plus two Perception from the
+// empty plan, or three Perception from the [{38,2}] plan, which the bound prunes at 149 <= 149.
+// Scoring the plan rather than the picked items reaches the same 149 down the other branch, so the
+// speed assertion alone cannot see the difference; the ids and counts can.
+test("solve pins which of two equally fast builds it returns", () => {
+  const index = buildIndex(pool([
+    { slot: 1, set: 58, substats: spd(0) }, { slot: 1, set: 38, substats: spd(0) },
+    { slot: 2, set: 38, substats: spd(0) }, { slot: 3, set: 38, substats: spd(0) },
+  ]), 0, plain);
+  const best = solve(index, 142, 0, plain);
+  expect(best.speed).toBe(149);
+  expect(best.items.map((it) => it.id)).toEqual([1, 3, 4]);
+  expect(best.counts).toEqual(new Map([[58, 1], [38, 2]]));
+});
+
+// freeBest promises the tie goes to the lower item id, not to whichever row buildIndex saw first.
+// The lower id has to arrive SECOND for that to bite — first-wins and lowest-id-wins agree otherwise.
+test("solve breaks a free slot's speed tie on the lower item id", () => {
+  const index = buildIndex(pool([
+    { id: 9, slot: 1, set: 58, substats: spd(0) }, { id: 2, slot: 1, set: 38, substats: spd(0) },
+  ]), 0, plain);
+  expect(solve(index, 100, 0, plain).items.map((it) => it.id)).toEqual([2]);
+});
+
+// A later plan that merely ties must not displace the incumbent, or the build printed depends on
+// enumeration order. Speed x2 is worth exactly the 12 flat speed its two slots give up, and the
+// plan's bound (which assumes the best flat speed as well) clears the incumbent, so it is scored
+// rather than pruned — the tie is decided by the comparison, not by the branch-and-bound.
+test("solve keeps the build it already had when a later plan only ties", () => {
+  const index = buildIndex(pool([
+    { slot: 1, set: 4, substats: spd(6) }, { slot: 1, set: 0, substats: spd(12) },
+    { slot: 2, set: 4, substats: spd(6) }, { slot: 2, set: 0, substats: spd(12) },
+  ]), 0, plain);
+  const best = solve(index, 100, 0, plain);
+  expect(best.speed).toBe(124);
+  expect(best.items.map((it) => it.id)).toEqual([2, 4]);
+});
