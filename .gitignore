@@ -12,3 +12,5 @@ dist/
 *.jsonl.z
 index.jsonl
 index.jsonl.tmp
+.hivemind
+.claude
