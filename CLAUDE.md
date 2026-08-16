@@ -39,3 +39,30 @@ npm run dev          # start vite dev server for web UI
 ## Services
 
 - **Analytics dashboard:** https://rslh-filter-gen.goatcounter.com/ (GoatCounter, privacy-friendly, no cookies)
+
+## Build & Test
+
+- Build: `npm run build`
+- Test: `npm test`
+- Lint: `npm run lint`
+- Type check: covered by `npm run build` (tsc project references; no standalone script)
+- Format: N/A (no formatter configured)
+
+Run `npm run build && npm test && npm run lint` before every commit — there are no git hooks.
+
+## Hivemind
+
+This repo is managed by [hivemind](https://github.com/fumb13s/hivemind).
+
+### Development Workflow
+
+1. **Brainstorm** — use the `hivemind:brainstorm` skill to design issues
+2. **Coordinator picks it up** — issues labeled `workflow:ready` are claimed automatically
+3. **Plan → Implement → Review → Merge** — the coordinator drives the full lifecycle
+
+Do not create issues manually — always use the brainstorm skill.
+
+### Coordinator Management
+
+- Start: `hivemind --repo /path/to/this/repo [--max-workers N]`
+- Stop: Ctrl+C or SIGTERM
