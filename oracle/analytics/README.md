@@ -33,13 +33,17 @@ own database, and nothing is ever deleted.
    Searches the whole vault for the item assignment that maximizes that champion's speed, and
    proves it is the maximum rather than a heuristic. `--glyph N` adds a second solve with every
    SPD substat glyph raised to at least N, clamped to what each rarity x rank has been seen to
-   carry. `--base N` is required for champions absent from the corpus. `--top N` prints the N best
-   builds instead of only the winner, so a runner-up that costs one point of speed but frees six
-   pieces of a set is visible rather than discarded.
+   carry. `--base N` gives a champion's base speed directly — required for champions absent from
+   the corpus, and enough on its own, since a run that supplies it looks nothing up. `--top N`
+   prints the N best builds instead of only the winner, so a runner-up that costs one point of
+   speed but frees six pieces of a set is visible rather than discarded.
 
    The corpus of champion base speeds is an external local dataset — pass `--corpus PATH` or set
-   `$RSLH_SPEED_CORPUS`. `speed.mjs verify` reports how much speed the model cannot explain across
-   every geared champion, which is the check that would catch a game patch changing set values.
+   `$RSLH_SPEED_CORPUS`. `speed.mjs verify` reports the distribution of unexplained flat speed across
+   every geared champion — the size of the gap between the model and observed speed, which is
+   dominated by per-copy sources the snapshot does not expose (relic, champion ascension). Read it as
+   a health check on that gap. It is not a patch detector: the distribution is already wide and
+   multi-modal, so a changed set value would move it less than the noise it already carries.
 
    Design: `docs/plans/2026-08-14-champion-speed-solver-design.md`.
 

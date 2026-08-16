@@ -46,6 +46,10 @@ export function parseSpeedArgs(argv) {
     }
     if (arg === "--corpus") { out.corpus = argv[++i]; continue; }
     if (arg === "verify") { out.verify = true; continue; }
+    // Anything else beginning `--` is a typo, not a champion, and swallowing it as a positional is
+    // the worst outcome on offer: `--glpyh 8` loses the option-value race, runs an un-lifted solve,
+    // exits 0, and says nothing about the lift it dropped. A plausible wrong answer, not a crash.
+    if (arg.startsWith("--")) throw new Error(`unknown option ${arg}`);
     positional.push(arg);
   }
   out.dbArg = positional.find((a) => a.endsWith(".db") || a.includes("/") || a.includes("\\"));
@@ -67,17 +71,28 @@ export function describeSets(counts, base) {
   return parts.length ? parts.join(" · ") : "no speed sets";
 }
 
+// The last line is a RECONCILIATION, not a restatement. Every term is computed independently and the
+// total is added up from them, so the line can disagree with what the solver returned — and says so
+// when it does. Deriving `sets` as `speed - base - items - constant` instead would balance for every
+// input by construction, including a wrong one, which is a tautology wearing the costume of a check.
+//
+// What it can catch is a printer/solver mismatch: a caller handing this a glyph floor or a ceiling
+// table other than the one the build was solved under. What it cannot catch is a stale set
+// percentage — `solve` and `describeSets` both go through `setEffect`, so they would agree on the
+// same wrong number. That gap is `verify`'s job, not this line's.
 export function formatBuild(result, base, constant, glyphFloor, ceilings) {
   const lines = [];
   const flat = result.items.reduce((sum, it) => sum + itemSpeed(it, clampFloor(it, glyphFloor, ceilings)), 0);
-  const bonus = result.speed - base - flat - constant;
+  const bonus = setEffect(base, result.counts);
+  const total = base + bonus + flat + constant;
   lines.push(`  ${result.speed} SPD   ${describeSets(result.counts, base)}`);
   for (const it of [...result.items].sort((a, b) => a.slot - b.slot)) {
     const s = itemSpeed(it, clampFloor(it, glyphFloor, ceilings));
     lines.push(`    ${slotName(it.slot).padEnd(7)} ${setLabel(it.set).padEnd(14)}`
       + ` +${String(it.level).padStart(2)}   spd ${String(s).padStart(3)}   #${it.id}`);
   }
-  lines.push(`    base ${base} + sets ${bonus} + items ${flat} + constant ${constant} = ${result.speed}`);
+  lines.push(`    base ${base} + sets ${bonus} + items ${flat} + constant ${constant} = ${total}`
+    + (total === result.speed ? "" : `   MISMATCH: the solver said ${result.speed}`));
   return lines.join("\n");
 }
 
@@ -137,11 +152,7 @@ function die(e) {
   process.exit(1);
 }
 
-function requireCorpus(path) {
-  if (!path) {
-    console.error("no champion base-speed corpus: pass --corpus PATH or set $RSLH_SPEED_CORPUS");
-    process.exit(1);
-  }
+function loadCorpusOrDie(path) {
   try {
     return loadCorpus(path);
   } catch (e) {
@@ -149,12 +160,37 @@ function requireCorpus(path) {
   }
 }
 
+// `escape` names the other way out, and is empty for verify — which reads the whole roster and so
+// has no way out. Offering --base there would be advice that cannot work.
+function requireCorpus(path, escape) {
+  if (!path) {
+    console.error("no champion base-speed corpus: pass --corpus PATH"
+      + ` or set $RSLH_SPEED_CORPUS${escape}`);
+    process.exit(1);
+  }
+  return loadCorpusOrDie(path);
+}
+
+// The corpus is only needed when a base has to be LOOKED UP. `--base N` supplies it outright, so
+// someone who knows one champion's base speed and does not have the dataset can still run — which
+// is exactly the case --base exists to serve, and the case the README points them at. A path given
+// alongside --base is still loaded, so a typo in it fails loudly rather than sitting unused.
+function resolveCorpus(args) {
+  if (args.verify) return requireCorpus(args.corpus, "");
+  if (args.base === null) {
+    return requireCorpus(args.corpus, ", or --base N to give one champion's base speed directly");
+  }
+  return args.corpus ? loadCorpusOrDie(args.corpus) : new Map();
+}
+
 function gearOf(items, champId) {
   return items.filter((it) => it.equippedChampId === champId);
 }
 
 // Model health check: how much speed the model fails to explain, across every geared champion.
-// A game patch that changed a set value would show up here as the distribution shifting.
+// The distribution is dominated by per-copy flat sources the snapshot does not expose (relic,
+// champion ascension), so read it as the SIZE of that gap. It is not a patch detector: already wide
+// and multi-modal, it would move less on a changed set value than on the noise it carries.
 function runVerify(items, rows, corpus) {
   const ceilings = glyphCeilings(items);
   const speedOf = speedOfWith(0, ceilings);
@@ -202,7 +238,7 @@ function main() {
   const dbPath = resolveDb(args.dbArg);
   const { items } = readArtifacts(dbPath);
   const rows = readChampRows(dbPath);
-  const corpus = requireCorpus(args.corpus);
+  const corpus = resolveCorpus(args);
 
   if (args.verify) { runVerify(items, rows, corpus); return; }
 

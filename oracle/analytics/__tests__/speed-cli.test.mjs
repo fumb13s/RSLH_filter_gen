@@ -90,6 +90,15 @@ test("parseSpeedArgs drops empty positional arguments", () => {
   expect(parseSpeedArgs([""])).toMatchObject({ selector: null, dbArg: undefined });
 });
 
+// A mistyped flag taken as a positional is the worst outcome available: `--glpyh 8` loses the option
+// value race, runs an un-lifted solve, exits 0, and prints nothing to say the glyph lift was dropped.
+// A plausible wrong answer beats a crash for damage done.
+test("parseSpeedArgs rejects an unknown option instead of taking it as a positional", () => {
+  expect(() => parseSpeedArgs(["Kantra", "--glpyh", "8"])).toThrow(/--glpyh/);
+  expect(() => parseSpeedArgs(["--corpsu", "/data/speeds"])).toThrow(/unknown option/);
+  expect(() => parseSpeedArgs(["verify", "--baze", "9"])).toThrow(/--baze/);
+});
+
 // --- describeSets -----------------------------------------------------------
 
 test("describeSets names only the sets that actually paid out, biggest first", () => {
@@ -153,11 +162,23 @@ test("formatBuild applies the glyph floor to each item, clamped to its rarity x 
   ]);
 });
 
-// The set line is derived, not asserted: it is whatever is left after base, items and constant are
-// taken off the total, so a wrong set table shows up as the printed sets not matching the remainder.
-test("formatBuild derives the set line from the total rather than recomputing it", () => {
+// The audit line has to be able to FAIL. Every term is computed independently — `sets` from the
+// build's own counts rather than as the remainder — so when they stop adding up to the speed the
+// solver reported, the line says so instead of absorbing the difference into the set term and
+// balancing anyway. Here the four terms make 177 against a solver total of 200.
+test("formatBuild reconciles against the solver's total and flags a disagreement", () => {
   const out = formatBuild({ ...BUILD, speed: 200 }, 100, 5, 0, new Map());
-  expect(out).toContain("base 100 + sets 35 + items 60 + constant 5 = 200");
+  expect(out).toContain("base 100 + sets 12 + items 60 + constant 5 = 177");
+  expect(out).toContain("MISMATCH: the solver said 200");
+  // The header is computed from the same counts, so the two lines can no longer disagree with each
+  // other while both looking right.
+  expect(out.split("\n")[0]).toContain("Speed x2 (+12)");
+});
+
+test("formatBuild stays quiet when the terms reconcile", () => {
+  expect(formatBuild({ ...BUILD, speed: 177 }, 100, 5, 0, new Map())).not.toContain("MISMATCH");
+  expect(formatBuild({ ...BUILD, speed: 188 }, 100, 5, 8,
+    new Map([["4|6", 6], ["3|5", 10]]))).not.toContain("MISMATCH");
 });
 
 test("formatBuild handles a negative constant without losing the sign", () => {
@@ -264,6 +285,9 @@ test("topBuilds' winner is solve's winner, and the rest descend from it without 
         expect(ranked[0].speed).toBe(best.speed);
         for (let i = 0; i < ranked.length; i++) {
           expect(buildSpeed(base, constant, ranked[i].items, plain)).toBe(ranked[i].speed);
+          // The printer's independent reconciliation must agree with the solver on every build it
+          // is ever handed, which is what makes its MISMATCH marker meaningful when it does fire.
+          expect(formatBuild(ranked[i], base, constant, 0, new Map())).not.toContain("MISMATCH");
           if (i > 0) expect(ranked[i].speed).toBeLessThanOrEqual(ranked[i - 1].speed);
         }
         const keys = ranked.map((b) => b.items.map((it) => it.id).sort((x, y) => x - y).join(","));
