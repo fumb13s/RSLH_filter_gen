@@ -66,3 +66,10 @@ Do not create issues manually — always use the brainstorm skill.
 
 - Start: `hivemind --repo /path/to/this/repo [--max-workers N]`
 - Stop: Ctrl+C or SIGTERM
+
+## Active Technologies
+- JavaScript (ESM, `.mjs`), Node 22 + `node:sqlite` (`DatabaseSync`, experimental — requires `--experimental-sqlite`); `@rslh/core` for id→name mappings; existing in-repo readers `oracle/analytics/decode.mjs` and `oracle/analytics/champs.mjs` (001-gear-moves-diff)
+- Reads two SQLite snapshot files. Opens read-only and writes nothing. (001-gear-moves-diff)
+
+## Recent Changes
+- 001-gear-moves-diff: Added JavaScript (ESM, `.mjs`), Node 22 + `node:sqlite` (`DatabaseSync`, experimental — requires `--experimental-sqlite`); `@rslh/core` for id→name mappings; existing in-repo readers `oracle/analytics/decode.mjs` and `oracle/analytics/champs.mjs`
