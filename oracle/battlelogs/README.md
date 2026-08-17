@@ -32,9 +32,23 @@ unidentified.
 
 Everything else observed so far is still unidentified on purpose — see *Observed content ids* in
 `docs/plans/2026-08-12-battle-log-capture-design.md` for the full table and how this was confirmed
-(short version: every other tuple's enemy team has `ownerId: -1` for AI, while Live Arena carries a
-real opponent account id per battle — real ids versus `-1` is the test; those ids are **not** unique
-per battle, one opponent has already recurred). `DECODE FAILED (attempt n/3)` means only that: the bytes are archived either way, and the
+(short version: the enemy team's `ownerId` is what separates them).
+
+That `ownerId` is a **three-way** test:
+
+| `ownerId` | opponent | seen |
+|---|---|---|
+| `-1` | AI | every non-arena tuple so far |
+| negative, but not `-1` | **Live Arena bot** | `-94341`, 2026-08-17 |
+| positive | real player | Live Arena; **not** unique per battle, one has already recurred |
+
+Live Arena hands you a bot after three losses in a row, or when you let the pick phase time out
+(about a minute). Its team is generated rather than a real player's build, so it has to stay out of
+any opponent corpus — one bot in the 38 Live Arena battles captured through 2026-08-17, and nothing
+else in the index row tells it apart: same tuple, same 4v4, ordinary champions. The sign of
+`ownerId` is the only marker.
+
+`DECODE FAILED (attempt n/3)` means only that: the bytes are archived either way, and the
 file is retried on the next two passes in case it was caught mid-write. After the third the decode
 stops, but the copy does not — the bytes keep being refreshed, and a restart (or `rebuild-index.mjs`)
 gets the decode another go. `MISSED` is a battle RSL Helper deleted before we could copy it, which is
