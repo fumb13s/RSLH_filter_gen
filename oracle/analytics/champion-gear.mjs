@@ -13,7 +13,7 @@
 import { readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, FACTION_NAMES, lookupName } from "@rslh/core";
-import { isRealChamp, parseArgs, readChampRows, selectChamps } from "./champs.mjs";
+import { isRealChamp, parseArgs, readChampRows, selectChamps, suggestNames } from "./champs.mjs";
 import { readArtifacts } from "./decode.mjs";
 import { keepPremium, triage } from "./triage.mjs";
 import { quality, qualityAtRole } from "./score.mjs";
@@ -271,8 +271,8 @@ function main() {
 
   if (selector !== null && !matched.length) {
     console.error(`no champion matches "${selector}".`);
-    const near = rows.filter((r) => r.Name.toLowerCase().startsWith(String(selector).slice(0, 3).toLowerCase()));
-    if (near.length) console.error(`did you mean: ${[...new Set(near.map((r) => r.Name))].slice(0, 8).join(", ")}?`);
+    const near = suggestNames(rows, selector);
+    if (near.length) console.error(`did you mean: ${near.join(", ")}?`);
     process.exit(1);
   }
   if (!targets.length) {

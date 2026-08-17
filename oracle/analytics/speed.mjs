@@ -15,7 +15,7 @@ import { readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, lookupName } from "@rslh/core";
 import { readArtifacts } from "./decode.mjs";
-import { readChampRows, selectChamps } from "./champs.mjs";
+import { readChampRows, selectChamps, suggestNames } from "./champs.mjs";
 import { SPD, glyphCeilings, clampFloor, speedOfWith, measureConstant, itemSpeed, buildSpeed,
   setCounts } from "./speed-model.mjs";
 import { SLOTS, buildIndex, solve, enumeratePlans, assign, viableSets } from "./speed-solve.mjs";
@@ -71,6 +71,52 @@ export function describeSets(counts, base) {
   return parts.length ? parts.join(" · ") : "no speed sets";
 }
 
+// itemId -> the name of the champion wearing it right now, for the pieces that would have to come
+// OFF someone. A free piece costs nothing to fit, and neither does one already on `champId`, so
+// neither is listed — including them would bury the ones that do cost something.
+//
+// Built once per champion over the whole vault rather than per build, because --top prints several
+// builds drawn from the same pool.
+export function otherWearers(items, champId, rows) {
+  const names = new Map(rows.map((r) => [Number(r.ID), r.Name]));
+  const out = new Map();
+  for (const it of items) {
+    const owner = it.equippedChampId;
+    if (!owner || owner === champId) continue;
+    // A placeholder Champs row is dropped by readChampRows but still owns gear. Naming the owner by
+    // id beats reporting the piece as free, which is the one answer that is certainly wrong.
+    out.set(it.id, names.get(owner) ?? `#${owner}`);
+  }
+  return out;
+}
+
+// "8 of 9 — Kantra the Cyclone x3, Elhain x2, Kael", or "none".
+//
+// The solver's pool is the WHOLE vault, worn gear included — a deliberate choice, since gear can be
+// moved. The consequence is that solving several champions independently proposes the same physical
+// pieces to each, so the builds are mutually exclusive. Printed for every build, `none` included:
+// silence would be indistinguishable from a report that does not check.
+//
+// Busiest wearer first, then alphabetical, so a rerun on one snapshot prints the same line. Names
+// past the fourth become "+N more" — nine pieces off nine champions is a 200-character line, and
+// the tail of it is singletons already named against their own item a few lines above.
+const NAMED_WEARERS = 4;
+
+export function describeWearers(items, wearers) {
+  const byChamp = new Map();
+  for (const it of items) {
+    const who = wearers.get(it.id);
+    if (who === undefined) continue;
+    byChamp.set(who, (byChamp.get(who) ?? 0) + 1);
+  }
+  if (byChamp.size === 0) return "none";
+  const taken = [...byChamp.values()].reduce((sum, n) => sum + n, 0);
+  const ranked = [...byChamp].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const named = ranked.slice(0, NAMED_WEARERS).map(([who, n]) => (n > 1 ? `${who} x${n}` : who));
+  const rest = ranked.length - named.length;
+  return `${taken} of ${items.length} — ${[...named, ...(rest ? [`+${rest} more`] : [])].join(", ")}`;
+}
+
 // The last line is a RECONCILIATION, not a restatement. Every term is computed independently and the
 // total is added up from them, so the line can disagree with what the solver returned — and says so
 // when it does. Deriving `sets` as `speed - base - items - constant` instead would balance for every
@@ -80,7 +126,7 @@ export function describeSets(counts, base) {
 // table other than the one the build was solved under. What it cannot catch is a stale set
 // percentage — `solve` and `describeSets` both go through `setEffect`, so they would agree on the
 // same wrong number. That gap is `verify`'s job, not this line's.
-export function formatBuild(result, base, constant, glyphFloor, ceilings) {
+export function formatBuild(result, base, constant, glyphFloor, ceilings, wearers) {
   const lines = [];
   const flat = result.items.reduce((sum, it) => sum + itemSpeed(it, clampFloor(it, glyphFloor, ceilings)), 0);
   const bonus = setEffect(base, result.counts);
@@ -88,9 +134,12 @@ export function formatBuild(result, base, constant, glyphFloor, ceilings) {
   lines.push(`  ${result.speed} SPD   ${describeSets(result.counts, base)}`);
   for (const it of [...result.items].sort((a, b) => a.slot - b.slot)) {
     const s = itemSpeed(it, clampFloor(it, glyphFloor, ceilings));
+    const on = wearers.get(it.id);
     lines.push(`    ${slotName(it.slot).padEnd(7)} ${setLabel(it.set).padEnd(14)}`
-      + ` +${String(it.level).padStart(2)}   spd ${String(s).padStart(3)}   #${it.id}`);
+      + ` +${String(it.level).padStart(2)}   spd ${String(s).padStart(3)}   #${it.id}`
+      + (on ? `   on ${on}` : ""));
   }
+  lines.push(`    on other champions: ${describeWearers(result.items, wearers)}`);
   lines.push(`    base ${base} + sets ${bonus} + items ${flat} + constant ${constant} = ${total}`
     + (total === result.speed ? "" : `   MISMATCH: the solver said ${result.speed}`));
   return lines.join("\n");
@@ -221,10 +270,10 @@ function runVerify(items, rows, corpus) {
 
 // BEST is printed by the caller, which knows what its headline delta is measured against; the
 // runners-up are all measured against BEST.
-function printRanked(ranked, base, constant, glyphFloor, ceilings) {
+function printRanked(ranked, base, constant, glyphFloor, ceilings, wearers) {
   ranked.forEach((build, i) => {
     if (i > 0) console.log(`\n  #${i + 1}  (${build.speed - ranked[0].speed} off BEST)`);
-    console.log(formatBuild(build, base, constant, glyphFloor, ceilings));
+    console.log(formatBuild(build, base, constant, glyphFloor, ceilings, wearers));
   });
 }
 
@@ -249,11 +298,8 @@ function main() {
   const matched = selectChamps(rows, args.selector);
   if (!matched.length) {
     console.error(`no champion matches "${args.selector}".`);
-    const near = rows.filter((r) =>
-      r.Name.toLowerCase().startsWith(String(args.selector).slice(0, 3).toLowerCase()));
-    if (near.length) {
-      console.error(`did you mean: ${[...new Set(near.map((r) => r.Name))].slice(0, 8).join(", ")}?`);
-    }
+    const near = suggestNames(rows, args.selector);
+    if (near.length) console.error(`did you mean: ${near.join(", ")}?`);
     process.exit(1);
   }
 
@@ -279,8 +325,10 @@ function main() {
     const index = buildIndex(items, champ.Fraction, plainSpeed);
     const ranked = rankBuilds(index, base, constant, plainSpeed, args.top);
     if (!ranked.length) { console.log("  no eligible items for any slot."); continue; }
+    // Same pool for every build printed for this champion, plain and glyph-lifted alike.
+    const wearers = otherWearers(items, champ.ID, rows);
     console.log(`  BEST  (+${ranked[0].speed - champ.SPD} over current)`);
-    printRanked(ranked, base, constant, 0, ceilings);
+    printRanked(ranked, base, constant, 0, ceilings, wearers);
 
     if (args.glyph > 0) {
       const glyphSpeed = speedOfWith(args.glyph, ceilings);
@@ -293,7 +341,7 @@ function main() {
         && clampFloor(it, args.glyph, ceilings) < args.glyph).length;
       console.log(`\n  at glyph >= ${args.glyph}  (+${lifted[0].speed - ranked[0].speed} over BEST)`
         + `${clamped ? `   [${clamped} vault items clamped to their rarity ceiling]` : ""}`);
-      printRanked(lifted, base, constant, args.glyph, ceilings);
+      printRanked(lifted, base, constant, args.glyph, ceilings, wearers);
     }
   }
 }

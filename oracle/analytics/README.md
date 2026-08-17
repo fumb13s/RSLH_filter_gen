@@ -38,6 +38,11 @@ own database, and nothing is ever deleted.
    prints the N best builds instead of only the winner, so a runner-up that costs one point of
    speed but frees six pieces of a set is visible rather than discarded.
 
+   The vault it searches includes gear that is currently worn, since gear can be moved — so a build
+   is not usually a set of spare pieces. Each item that would have to come off someone is marked
+   `on <champion>`, and every build carries a line counting them. Solving several champions this way
+   proposes the same physical pieces to each, and those builds cannot all be worn at once.
+
    The corpus of champion base speeds is an external local dataset — pass `--corpus PATH` or set
    `$RSLH_SPEED_CORPUS`. `speed.mjs verify` reports the distribution of unexplained flat speed across
    every geared champion — the size of the gap between the model and observed speed, which is

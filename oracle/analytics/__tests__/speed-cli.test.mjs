@@ -1,7 +1,8 @@
 // oracle/analytics/__tests__/speed-cli.test.mjs
 import { test, expect } from "vitest";
 import fc from "fast-check";
-import { describeSets, formatBuild, parseSpeedArgs, rankBuilds, topBuilds } from "../speed.mjs";
+import { describeSets, describeWearers, formatBuild, otherWearers, parseSpeedArgs, rankBuilds,
+  topBuilds } from "../speed.mjs";
 import { SLOTS, buildIndex, solve } from "../speed-solve.mjs";
 import { buildSpeed, speedOfWith } from "../speed-model.mjs";
 
@@ -137,14 +138,39 @@ const BUILD = { items: [BOOTS, HELM, WEAPON], counts: new Map([[4, 2]]), plan: [
 
 test("formatBuild prints the build slot by slot with the arithmetic that produced it", () => {
   // items 23 + 30 + 7 = 60; Speed x2 at base 100 = +12; 100 + 12 + 60 + 5 = 177.
-  const out = formatBuild({ ...BUILD, speed: 177 }, 100, 5, 0, new Map());
+  const out = formatBuild({ ...BUILD, speed: 177 }, 100, 5, 0, new Map(), new Map());
   expect(out.split("\n")).toEqual([
     "  177 SPD   Speed x2 (+12)",
     "    Helmet  Speed          +12   spd  30   #3",
     "    Boots   Speed          +16   spd  23   #7",
     "    Weapon  (setless)      + 8   spd   7   #5",
+    "    on other champions: none",
     "    base 100 + sets 12 + items 60 + constant 5 = 177",
   ]);
+});
+
+// Solving several champions against one vault proposes the same physical pieces to each, so a build
+// can be correct and still unbuildable without stripping other champions. That fact decides whether
+// the answer is actionable, and it is printed in both places a reader looks: beside the piece, and
+// once for the build.
+test("formatBuild marks each item that is on another champion, and counts them", () => {
+  const wearers = new Map([[3, "Kantra the Cyclone"], [7, "Kantra the Cyclone"], [5, "Elhain"]]);
+  const out = formatBuild({ ...BUILD, speed: 177 }, 100, 5, 0, new Map(), wearers);
+  expect(out.split("\n")).toEqual([
+    "  177 SPD   Speed x2 (+12)",
+    "    Helmet  Speed          +12   spd  30   #3   on Kantra the Cyclone",
+    "    Boots   Speed          +16   spd  23   #7   on Kantra the Cyclone",
+    "    Weapon  (setless)      + 8   spd   7   #5   on Elhain",
+    "    on other champions: 3 of 3 — Kantra the Cyclone x2, Elhain",
+    "    base 100 + sets 12 + items 60 + constant 5 = 177",
+  ]);
+});
+
+test("formatBuild leaves a free item unmarked and counts only the borrowed ones", () => {
+  const out = formatBuild({ ...BUILD, speed: 177 }, 100, 5, 0, new Map(), new Map([[7, "Elhain"]]));
+  expect(out).toContain("    Boots   Speed          +16   spd  23   #7   on Elhain");
+  expect(out).toContain("    Helmet  Speed          +12   spd  30   #3\n");
+  expect(out).toContain("    on other champions: 1 of 3 — Elhain");
 });
 
 // The glyph floor has to reach the per-item speeds AND stay under each rarity x rank ceiling, or the
@@ -152,12 +178,13 @@ test("formatBuild prints the build slot by slot with the arithmetic that produce
 test("formatBuild applies the glyph floor to each item, clamped to its rarity x rank ceiling", () => {
   const ceilings = new Map([["4|6", 6], ["3|5", 10]]);
   // Boots clamp 8 -> 6, so 20 + 6 = 26 (not 28); Weapon's ceiling is not binding, 7 + 8 = 15.
-  const out = formatBuild({ ...BUILD, speed: 188 }, 100, 5, 8, ceilings);
+  const out = formatBuild({ ...BUILD, speed: 188 }, 100, 5, 8, ceilings, new Map());
   expect(out.split("\n")).toEqual([
     "  188 SPD   Speed x2 (+12)",
     "    Helmet  Speed          +12   spd  30   #3",
     "    Boots   Speed          +16   spd  26   #7",
     "    Weapon  (setless)      + 8   spd  15   #5",
+    "    on other champions: none",
     "    base 100 + sets 12 + items 71 + constant 5 = 188",
   ]);
 });
@@ -167,7 +194,7 @@ test("formatBuild applies the glyph floor to each item, clamped to its rarity x 
 // solver reported, the line says so instead of absorbing the difference into the set term and
 // balancing anyway. Here the four terms make 177 against a solver total of 200.
 test("formatBuild reconciles against the solver's total and flags a disagreement", () => {
-  const out = formatBuild({ ...BUILD, speed: 200 }, 100, 5, 0, new Map());
+  const out = formatBuild({ ...BUILD, speed: 200 }, 100, 5, 0, new Map(), new Map());
   expect(out).toContain("base 100 + sets 12 + items 60 + constant 5 = 177");
   expect(out).toContain("MISMATCH: the solver said 200");
   // The header is computed from the same counts, so the two lines can no longer disagree with each
@@ -176,14 +203,74 @@ test("formatBuild reconciles against the solver's total and flags a disagreement
 });
 
 test("formatBuild stays quiet when the terms reconcile", () => {
-  expect(formatBuild({ ...BUILD, speed: 177 }, 100, 5, 0, new Map())).not.toContain("MISMATCH");
+  expect(formatBuild({ ...BUILD, speed: 177 }, 100, 5, 0, new Map(), new Map()))
+    .not.toContain("MISMATCH");
   expect(formatBuild({ ...BUILD, speed: 188 }, 100, 5, 8,
-    new Map([["4|6", 6], ["3|5", 10]]))).not.toContain("MISMATCH");
+    new Map([["4|6", 6], ["3|5", 10]]), new Map())).not.toContain("MISMATCH");
 });
 
 test("formatBuild handles a negative constant without losing the sign", () => {
-  const out = formatBuild({ ...BUILD, speed: 165 }, 100, -7, 0, new Map());
+  const out = formatBuild({ ...BUILD, speed: 165 }, 100, -7, 0, new Map(), new Map());
   expect(out).toContain("base 100 + sets 12 + items 60 + constant -7 = 165");
+});
+
+// --- otherWearers / describeWearers -----------------------------------------
+
+const ROWS = [{ ID: 11, Name: "Kantra the Cyclone" }, { ID: 22, Name: "Elhain" }];
+const worn = (id, champId) => item({ id, equippedChampId: champId });
+
+// Only pieces that have to come OFF someone. A free piece costs nothing to fit, and neither does one
+// already on the champion being solved for — reporting either would bury the pieces that do.
+test("otherWearers names the champion wearing each item, skipping free and own pieces", () => {
+  const items = [worn(1, 11), worn(2, 22), worn(3, 0), worn(4, 99)];
+  expect(otherWearers(items, 99, ROWS))
+    .toEqual(new Map([[1, "Kantra the Cyclone"], [2, "Elhain"]]));
+});
+
+// A placeholder Champs row is dropped by readChampRows but still owns gear. Naming it by id beats
+// reporting the piece as free, which is the one answer that is certainly wrong.
+test("otherWearers falls back to the champion id when the roster has no name for it", () => {
+  expect(otherWearers([worn(1, 77)], 0, ROWS)).toEqual(new Map([[1, "#77"]]));
+});
+
+test("otherWearers treats a missing equippedChampId as unequipped", () => {
+  expect(otherWearers([item({ id: 1 })], 0, ROWS)).toEqual(new Map());
+});
+
+// Busiest wearer first, then alphabetical, so a rerun on the same snapshot prints the same line.
+test("describeWearers counts the borrowed items and groups them by wearer", () => {
+  const items = [item({ id: 1 }), item({ id: 2 }), item({ id: 3 }), item({ id: 4 })];
+  const wearers = new Map([[1, "Elhain"], [2, "Kantra"], [3, "Kantra"], [4, "Athel"]]);
+  expect(describeWearers(items, wearers)).toBe("4 of 4 — Kantra x2, Athel, Elhain");
+});
+
+test("describeWearers says none when nothing in the build is spoken for", () => {
+  expect(describeWearers([item({ id: 1 })], new Map())).toBe("none");
+  expect(describeWearers([], new Map())).toBe("none");
+});
+
+// The map is vault-wide, so it holds items this build does not contain; only the build's own pieces
+// may reach the count.
+test("describeWearers counts only items the build actually contains", () => {
+  expect(describeWearers([item({ id: 1 })], new Map([[1, "Elhain"], [9, "Kantra"]])))
+    .toBe("1 of 1 — Elhain");
+});
+
+// Nine pieces off nine champions is a 200-character line. The COUNT is the fact that decides whether
+// the build is actionable and is never truncated; the tail of the name list is singletons already
+// printed against their own item a few lines above.
+test("describeWearers names the busiest four wearers and totals the rest", () => {
+  const items = [1, 2, 3, 4, 5, 6, 7].map((id) => item({ id }));
+  const wearers = new Map([[1, "Athel"], [2, "Bolgar"], [3, "Bolgar"], [4, "Cardiel"],
+    [5, "Doompriest"], [6, "Elhain"], [7, "Fahrakin"]]);
+  expect(describeWearers(items, wearers))
+    .toBe("7 of 7 — Bolgar x2, Athel, Cardiel, Doompriest, +2 more");
+});
+
+test("describeWearers adds no tail when every wearer is named", () => {
+  const items = [1, 2, 3, 4].map((id) => item({ id }));
+  const wearers = new Map([[1, "Athel"], [2, "Bolgar"], [3, "Cardiel"], [4, "Doompriest"]]);
+  expect(describeWearers(items, wearers)).toBe("4 of 4 — Athel, Bolgar, Cardiel, Doompriest");
 });
 
 // --- topBuilds / rankBuilds -------------------------------------------------
@@ -287,7 +374,8 @@ test("topBuilds' winner is solve's winner, and the rest descend from it without 
           expect(buildSpeed(base, constant, ranked[i].items, plain)).toBe(ranked[i].speed);
           // The printer's independent reconciliation must agree with the solver on every build it
           // is ever handed, which is what makes its MISMATCH marker meaningful when it does fire.
-          expect(formatBuild(ranked[i], base, constant, 0, new Map())).not.toContain("MISMATCH");
+          expect(formatBuild(ranked[i], base, constant, 0, new Map(), new Map()))
+            .not.toContain("MISMATCH");
           if (i > 0) expect(ranked[i].speed).toBeLessThanOrEqual(ranked[i - 1].speed);
         }
         const keys = ranked.map((b) => b.items.map((it) => it.id).sort((x, y) => x - y).join(","));
