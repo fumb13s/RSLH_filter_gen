@@ -29,6 +29,16 @@ export function selectChamps(rows, selector) {
   return rows.filter((r) => r.Name.toLowerCase().includes(nf));
 }
 
+// What to offer after a selector matched nothing. A shared prefix, not an edit distance: the
+// realistic miss is a half-remembered or half-typed name, and the opening characters are what the
+// user is most likely to have right. Deduplicated because the roster holds one row per COPY, and
+// capped because a three-character prefix can cover a lot of a 500-champion roster.
+export function suggestNames(rows, selector, limit = 8) {
+  const prefix = String(selector).slice(0, 3).toLowerCase();
+  const near = rows.filter((r) => r.Name.toLowerCase().startsWith(prefix));
+  return [...new Set(near.map((r) => r.Name))].slice(0, limit);
+}
+
 // --- I/O --------------------------------------------------------------------
 
 // readOnly makes SELECT-only structural rather than conventional, and — the reason it's here — it

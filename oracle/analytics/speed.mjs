@@ -15,7 +15,7 @@ import { readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, lookupName } from "@rslh/core";
 import { readArtifacts } from "./decode.mjs";
-import { readChampRows, selectChamps } from "./champs.mjs";
+import { readChampRows, selectChamps, suggestNames } from "./champs.mjs";
 import { SPD, glyphCeilings, clampFloor, speedOfWith, measureConstant, itemSpeed, buildSpeed,
   setCounts } from "./speed-model.mjs";
 import { SLOTS, buildIndex, solve, enumeratePlans, assign, viableSets } from "./speed-solve.mjs";
@@ -298,11 +298,8 @@ function main() {
   const matched = selectChamps(rows, args.selector);
   if (!matched.length) {
     console.error(`no champion matches "${args.selector}".`);
-    const near = rows.filter((r) =>
-      r.Name.toLowerCase().startsWith(String(args.selector).slice(0, 3).toLowerCase()));
-    if (near.length) {
-      console.error(`did you mean: ${[...new Set(near.map((r) => r.Name))].slice(0, 8).join(", ")}?`);
-    }
+    const near = suggestNames(rows, args.selector);
+    if (near.length) console.error(`did you mean: ${near.join(", ")}?`);
     process.exit(1);
   }
 
