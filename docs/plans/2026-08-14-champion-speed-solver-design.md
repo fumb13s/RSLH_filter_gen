@@ -142,8 +142,13 @@ Expected shape:
 { "Kantra the Cyclone": 109, "Arbiter": 110 }
 ```
 
-Coverage against the 2026-08-12 snapshot is 457 of 476 geared champion names. The missing 19 require
+Coverage against the 2026-08-12 snapshot is 473 of 476 geared champion names. The missing 3 require
 `--base`, and their absence is a hard error naming that flag rather than a silent guess.
+
+That figure was 456 before `lookupBase` grew its punctuation fallback. The other 17 were never a
+dataset gap: the game spells champions with apostrophes, commas, colons and hyphens, and a corpus
+that has been through a slug or an OCR pass need not. Matching on the lowercased name alone hid
+champions the corpus already held.
 
 **`constant` is measured, once, per champion:**
 

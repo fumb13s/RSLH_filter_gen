@@ -7,7 +7,7 @@ import { test, expect } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseCorpus, loadCorpus, lookupBase } from "../speed-corpus.mjs";
+import { parseCorpus, loadCorpus, lookupBase, squashName } from "../speed-corpus.mjs";
 
 function tempDir() {
   const dir = mkdtempSync(join(tmpdir(), "speed-corpus-"));
@@ -108,6 +108,76 @@ test("lookupBase tolerates a non-string name", () => {
   const c = parseCorpus({ "Arbiter": 110 });
   expect(lookupBase(c, 42)).toBe(null);
   expect(lookupBase(c, null)).toBe(null);
+});
+
+// --- the punctuation fallback -----------------------------------------------
+
+test("squashName strips every non-alphanumeric character and lowercases the rest", () => {
+  expect(squashName("Krok’mar the Devourer")).toBe("krokmarthedevourer");
+  expect(squashName("Fyna, Blade of Aravia")).toBe("fynabladeofaravia");
+  expect(squashName("Belletar Mage-slayer")).toBe("belletarmageslayer");
+  expect(squashName("Big 'Un")).toBe("bigun");
+  expect(squashName(42)).toBe("42");
+});
+
+// The game spells champion names with apostrophes (both ASCII and typographic), commas, colons and
+// hyphens; a corpus that has been through a slug or an OCR pass often has not. It is not even
+// consistent about it — the same corpus can drop an apostrophe outright ("mashalled") and turn a
+// hyphen into a space ("belletar mage slayer") — so stripping EVERY non-alphanumeric from both sides
+// is the only form the two reliably agree on. Without this, 17 of the 20 champions the CLI reports
+// as "not in the corpus" are in it.
+test("lookupBase matches a corpus that dropped the punctuation from its names", () => {
+  const c = parseCorpus({
+    "mashalled": 103, "krokmar the devourer": 102, "xena warrior princess": 100,
+    "belletar mage slayer": 108, "big un": 104, "fyna blade of aravia": 113,
+  });
+  expect(lookupBase(c, "Ma'Shalled")).toBe(103);
+  expect(lookupBase(c, "Krok’mar the Devourer")).toBe(102);
+  expect(lookupBase(c, "Xena: Warrior Princess")).toBe(100);
+  expect(lookupBase(c, "Belletar Mage-slayer")).toBe(108);
+  expect(lookupBase(c, "Big 'Un")).toBe(104);
+  expect(lookupBase(c, "Fyna, Blade of Aravia")).toBe(113);
+});
+
+// A fallback, not a replacement: a corpus that DOES keep punctuation must keep answering exactly as
+// it did before, which is why the squash cannot simply be applied to both sides unconditionally.
+test("lookupBase prefers an exact match over the punctuation-stripped fallback", () => {
+  const c = parseCorpus({ "krok’mar the devourer": 102, "krokmar the devourer": 999 });
+  expect(lookupBase(c, "Krok’mar the Devourer")).toBe(102);
+});
+
+// The cost of a looser key is that two DIFFERENT champions could land on one. When they do, the
+// corpus cannot say which was meant, so the champion is reported absent and the user is sent to
+// --base — the same answer as before the fallback existed, never a guess. (The pair here is
+// illustrative; no two names in any corpus checked so far collide.)
+test("lookupBase refuses the fallback when two corpus names collide on different speeds", () => {
+  const c = parseCorpus({ "Skullcrusher": 90, "Skull Crusher": 101 });
+  expect(lookupBase(c, "Skull-Crusher")).toBe(null);
+  expect(lookupBase(c, "Skullcrusher")).toBe(90);
+});
+
+// Two spellings of ONE champion — the realistic collision, since a corpus merged from several files
+// can hold both — are not a disagreement, and refusing them would re-create the miss this fixes.
+test("lookupBase still answers when colliding corpus names agree on the speed", () => {
+  const c = parseCorpus({ "krokmar the devourer": 102, "krok mar the devourer": 102 });
+  expect(lookupBase(c, "Krok’mar the Devourer")).toBe(102);
+});
+
+// Absent stays absent: the looser key must not manufacture a match out of a name the corpus has
+// never heard of, and a speed of 0 reached through the fallback is still a speed, not a miss.
+test("the fallback neither invents a match nor turns a 0 into one", () => {
+  const c = parseCorpus({ "arbiter": 110, "zero": 0 });
+  expect(lookupBase(c, "Arbiter's Rival")).toBe(null);
+  expect(lookupBase(c, "Arbite")).toBe(null);
+  expect(lookupBase(c, "Ze-ro")).toBe(0);
+});
+
+// A name that squashes to nothing must not match a corpus key that also squashes to nothing —
+// otherwise every punctuation-only string collapses onto the same key and matches whatever is there.
+test("a name with no alphanumerics never matches through the fallback", () => {
+  const c = parseCorpus({ "--": 50, "Arbiter": 110 });
+  expect(lookupBase(c, "'")).toBe(null);
+  expect(lookupBase(c, "")).toBe(null);
 });
 
 // --- loadCorpus -------------------------------------------------------------

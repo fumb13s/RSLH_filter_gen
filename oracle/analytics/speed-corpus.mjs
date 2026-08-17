@@ -75,4 +75,34 @@ export function loadCorpus(path) {
   return corpus;
 }
 
-export const lookupBase = (corpus, name) => corpus.get(String(name).toLowerCase()) ?? null;
+// The fallback key for a name the corpus does not hold verbatim. The game spells champions with
+// apostrophes (ASCII and typographic), commas, colons and hyphens; a corpus that has been through a
+// slug or an OCR pass often has not, and is not consistent about how — the same one can drop an
+// apostrophe outright ("mashalled") and turn a hyphen into a space ("belletar mage slayer"). No
+// single rewrite reconciles those, so this strips ALL of it from both sides.
+export const squashName = (name) => String(name).toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+// The exact lowercased key first, so a corpus that keeps its punctuation answers byte-for-byte and
+// never reaches the scan below — this widens what can be FOUND without changing any answer that was
+// already found. Only a miss pays for the scan, and a miss is rare by construction.
+//
+// A looser key can put two different champions on one key, so a collision is REFUSED rather than
+// resolved: the corpus cannot say which was meant, and reporting absent sends the user to --base,
+// which is where they already were. Colliding entries that agree on the speed are not a collision in
+// the only respect that matters, and answering them is the point of the fallback — a corpus merged
+// from several files can easily hold two spellings of one champion.
+export function lookupBase(corpus, name) {
+  const exact = corpus.get(String(name).toLowerCase());
+  if (exact !== undefined) return exact;
+  const key = squashName(name);
+  // Every punctuation-only name squashes to "", and so does any such corpus key. Matching them to
+  // each other would be a coincidence of shape, not a name lookup.
+  if (key === "") return null;
+  let found;
+  for (const [candidate, spd] of corpus) {
+    if (squashName(candidate) !== key) continue;
+    if (found !== undefined && found !== spd) return null;
+    found = spd;
+  }
+  return found ?? null;
+}
