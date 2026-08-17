@@ -32,11 +32,20 @@ npm run build && npm test && npm run lint
 
 ## Reading the output
 
-Three sections. **Moved items** is the audit list — what changed and where it went. **Restore by
-champion** is what you actually work from, one champion at a time, listing only changed slots.
-**Gone — cannot restore** is the one section the tool cannot help with: those pieces were sold or
-consumed and no amount of re-equipping brings them back. Read that section first, so you do not
-spend time hunting for something that no longer exists.
+Four sections. **Moved items** is the audit list — what changed and where it went. **Restore by
+champion** is what you work from when you know who is missing something: one champion at a time,
+listing only changed slots. **Strip list by holder** is the same moves keyed the other way — open a
+champion the swapper built up and every moved piece on them names where it goes back, so you empty
+that champion in one pass instead of a round trip per piece. **Gone — cannot restore** is the one
+section the tool cannot help with: those pieces were sold or consumed and no amount of re-equipping
+brings them back. Read that section first, so you do not spend time hunting for something that no
+longer exists.
+
+In the strip list, a piece that came out of the vault carries one of three verdicts. `auto` means do
+nothing — putting the original back into that slot displaces this piece by itself. `unequip` means
+take it off by hand, because the slot was empty before and nothing will ever displace it. `keep`
+means leave it on: the piece it replaced was sold, so removing this one would only leave the slot
+bare.
 
 Items are described the way they look in the game — rarity, rank, set, slot, level, main stat,
 substats — because the restore happens in a UI that never shows internal ids. Where two pieces are
@@ -48,18 +57,25 @@ on what you remember.
 
 ## Development
 
-Six pure functions are exported and unit-tested: `locationsFrom`, `diffLocations`, `fingerprint`,
-`describeItem`, `collisionCounts`, `champNames`. Argument parsing and printing sit below the
-`// Below this line nothing is unit-tested` marker, matching `speed.mjs` and `champion-gear.mjs`.
+Eight pure functions are exported and unit-tested: `locationsFrom`, `diffLocations`, `fingerprint`,
+`describeItem`, `collisionCounts`, `champNames`, `slotsBefore`, `byHolder`. Argument parsing and
+printing sit below the `// Below this line nothing is unit-tested` marker, matching `speed.mjs` and
+`champion-gear.mjs`.
 
 Tests live in `oracle/analytics/__tests__/gear-moves.test.mjs` and use hand-built row and item
 objects — **no database fixtures**. This is not a stylistic preference: snapshots hold personal
 account data, are excluded from version control, and are absent from a fresh checkout, so a
 fixture-based test would be unrunnable for anyone else.
 
-For the same reason, the reference figures in the spec (34 moved across 16 champions, 47 gone, 58
-new, 4 of the moved also levelled) are a **conditional** check that only runs where those snapshots
-happen to exist locally. The unit tests are the real acceptance gate.
+For the same reason, the reference figures in the spec are a **conditional** check that only runs
+where those snapshots happen to exist locally — the first pair (34 moved across 16 champions, 47
+gone, 58 new, 4 of the moved also levelled) and the driver-session pair (108 moved: 92 off 44
+champions, 50 onto 6, of which 34 from champions and 16 from the vault; nothing gone, nothing new).
+The unit tests are the real acceptance gate.
+
+Two of the four strip-list dispositions — `unequip` and `keep` — do not occur in either reference
+pair, so running the tool will never show them to you. They exist because they are reachable, and
+they are covered only by hand-built unit tests. Do not delete them as dead code.
 
 ## Two traps worth knowing before you edit
 

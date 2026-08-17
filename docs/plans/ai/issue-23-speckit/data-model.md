@@ -142,3 +142,47 @@ A count above 1 produces an explicit "N identical" marker (FR-006). Getting the 
 
 161 champion ids present in the earlier reference snapshot are absent from the later one, so this
 path is routine rather than exceptional.
+
+---
+
+## Slots before
+
+`slotsBefore(beforeItems, beforeLoc) -> Map<champId, Map<slotId, Item>>`.
+
+Inverts the flat `Map<itemId, champId>` into what each champion was wearing, keyed by slot. Slot is
+read from `item.slot`; it is never derived from which champion column referenced the item, because
+column order is not slot-id order (six of nine disagree).
+
+Exists as its own function because the per-holder disposition needs *what a champion held in this
+slot before*, a question the flat location map cannot answer.
+
+---
+
+## Holder entry
+
+`byHolder(moved, goneIds, slotsBefore) -> Map<champId, HolderEntry[]>`, keyed by the champion
+currently wearing the piece. Built only from moves with `to !== null`; the 58 pieces now sitting in
+the vault have no holder and do not appear.
+
+```js
+{
+  item,               // the AFTER row — what the holder is wearing now
+  from,               // champId | null  (null = came out of the vault)
+  disposition,        // 'return' | 'auto' | 'unequip' | 'keep'
+  replaced,           // Item | null — the gone piece this one sits on top of ('keep' only)
+}
+```
+
+| `disposition` | Condition | Meaning to the owner |
+| --- | --- | --- |
+| `return` | `from` is a champion | Hand it back to that champion |
+| `auto` | `from` is null; the holder's slot held a piece that still exists | No action — restoring that slot displaces this piece by itself |
+| `unequip` | `from` is null; the holder's slot was empty before | Take it off deliberately; nothing else will |
+| `keep` | `from` is null; the holder's slot held a piece that is now gone | Leave it on — `replaced` names the sold piece, and removing this one would only empty the slot |
+
+**Invariant (FR-018)**: for every entry with `disposition: 'return'`, the same item appears in the
+per-champion restore view under champion `from`. The two views are separate traversals of one
+`moved` array and must not disagree.
+
+On the reference driver-session pair: 34 `return`, 16 `auto`, 0 `unequip`, 0 `keep` — the last two
+are unreachable from the snapshots on hand and are covered by hand-built unit tests instead.

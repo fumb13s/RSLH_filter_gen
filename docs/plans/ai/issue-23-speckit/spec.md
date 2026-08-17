@@ -2,8 +2,16 @@
 
 **Feature Branch**: `001-gear-moves-diff`
 **Created**: 2026-08-16
+**Amended**: 2026-08-17 — added User Story 4 (per-holder view) after a real swapping session was restored by hand from a per-owner view alone and the round trips it forces showed up as the main cost.
 **Status**: Draft
 **Input**: User description: build a tool that takes two gear-vault snapshots, one from before a gear-swapping session and one from after, and reports which gear items moved and where they went, so the owner can put the gear back.
+
+## Clarifications
+
+### Session 2026-08-17
+
+- Q: What should the per-holder view say about a vault-sourced piece whose slot cannot be refilled because its original occupant was sold? → A: Mark it as one to keep, naming the sold piece it replaced — unequipping it would only leave an empty slot.
+- Q: Where does the per-holder view sit in the fixed output order? → A: Third — after the per-champion restore view, before the unrecoverable list.
 
 ## User Scenarios & Testing _(mandatory)_
 
@@ -53,6 +61,24 @@ Some pieces are not merely moved — they were sold or consumed during the sessi
 1. **Given** a piece present in the before snapshot and absent from the after snapshot, **When** the owner runs the tool, **Then** it appears in the unrecoverable section and not among the moved items.
 2. **Given** an unrecoverable piece, **When** the owner reads its description, **Then** it is described as it last appeared, since there is no current appearance to describe.
 
+---
+
+### User Story 4 - Clear a rebuilt champion in one pass (Priority: P4)
+
+The person who rearranged the gear did not spread it thinly. They built a handful of champions up, each wearing pieces taken from many others. Restoring from the owner's side (User Story 2) means opening one champion, learning a piece is on a second, going there, and coming back. The owner also wants the inverse view: open a champion who is *wearing* moved gear and see, for each piece on them, which champion it came off — which is the same champion it goes back to. That empties a rebuilt champion in one pass instead of one piece per round trip.
+
+**Why this priority**: It is a reorganization of what User Story 1 already computes, and the restore can be completed without it, so it is the last thing to build. Last is not least: in the reference session six champions hold 50 of the 108 moved pieces between them, so this view covers nearly half the work in six entries.
+
+**Independent Test**: Run against a pair of snapshots in which one champion was given pieces taken from several others, and confirm that champion appears once, lists every moved piece it is wearing, and names the correct origin for each.
+
+**Acceptance Scenarios**:
+
+1. **Given** a champion wearing three moved pieces taken from three different champions, **When** the owner reads that champion's entry, **Then** all three are listed, each naming the champion it came from.
+2. **Given** a piece that was unequipped before and is worn now, **When** the owner reads the entry for the champion wearing it, **Then** the entry says it came from the vault rather than naming a champion.
+3. **Given** a champion wearing no moved pieces, **When** the owner reads this view, **Then** that champion does not appear in it at all.
+4. **Given** one moved piece, **When** the owner reads both this view and the per-champion restore view, **Then** the two name the same origin champion for it.
+5. **Given** a piece taken from the vault into a slot whose original occupant was sold during the session, **When** the owner reads the entry for the champion wearing it, **Then** it is marked as one to keep and names the sold piece it replaced, rather than being listed for removal.
+
 ### Edge Cases
 
 - **Nothing changed.** Two identical snapshots produce an empty report, not an error.
@@ -63,6 +89,7 @@ Some pieces are not merely moved — they were sold or consumed during the sessi
 - **Snapshots supplied in the wrong order.** The report would be exactly inverted and still internally consistent, so it cannot be caught by reading it. The tool warns when the "before" snapshot is not the older of the two.
 - **The same snapshot supplied twice.** Produces an empty report, which is correct but likely a mistake; the tool says so.
 - **An unreadable or missing snapshot.** Fails immediately with a message naming the file, rather than reporting an empty or partial diff that reads like "nothing moved".
+- **A piece taken from the vault into a slot with no original to put back.** Every other vault piece leaves on its own when the slot it occupies is restored, because restoring puts the original back and displaces it. Two cases have no original: the slot was empty before, and the original was sold during the session. The first needs a deliberate unequip; the second is better left worn, since taking it off only leaves an empty slot. All three outcomes look identical on the page unless the report separates them.
 
 ## Requirements _(mandatory)_
 
@@ -83,6 +110,9 @@ Some pieces are not merely moved — they were sold or consumed during the sessi
 - **FR-013**: The tool MUST warn when the snapshot named "before" is not the older of the two, since an inverted report is internally consistent and cannot be detected by reading it.
 - **FR-014**: The tool MUST report a failure that names the offending file when a snapshot cannot be read, and MUST NOT emit an empty or partial report in that case.
 - **FR-015**: The tool MUST NOT create any file, including when given a path that does not exist. A mistyped snapshot path must fail, not quietly produce an empty database that a later run would then treat as a real but empty snapshot.
+- **FR-016**: The tool MUST provide a per-holder view: for every champion currently wearing at least one moved piece, each such piece and where it came from — a named champion, or an explicit statement that it came from the vault. Champions wearing no moved pieces MUST NOT appear. The view MUST be presented after the per-champion restore view and before the unrecoverable list.
+- **FR-017**: For a piece that came from the vault, the per-holder view MUST distinguish three cases: a slot the restore refills, where the piece returns to the vault unaided and needs no action; a slot that was empty before, which the owner has to unequip deliberately; and a slot whose original occupant is unrecoverable, where the piece MUST be marked as one to keep, naming the piece it replaced. A report that treats these alike either invents a step, hides one, or tells the owner to empty a slot they have nothing to refill with.
+- **FR-018**: The per-holder view and the per-champion restore view MUST agree. A moved piece worn by a champion appears in both, and both name the same champion as the one it belongs to.
 
 ### Key Entities
 
@@ -102,7 +132,9 @@ Some pieces are not merely moved — they were sold or consumed during the sessi
 - **SC-003**: Every item named in the report can be located in the game from its printed description alone. Where more than one piece matches a description, the report says so, and the owner can pick any match without affecting the outcome.
 - **SC-004**: The owner can complete a full restore working champion by champion from the report, without re-deriving which champion owned which piece.
 - **SC-005**: Pieces that cannot be recovered are identifiable as such before the owner starts, so no time is spent searching for them.
-- **SC-006**: Against the reference pair of snapshots the report accounts for 34 moved items across 16 champions, 47 unrecoverable and 58 newly acquired, with 4 of the moved items also having changed level. This check is conditional on those snapshots being present locally; they hold personal account data and are excluded from version control.
+- **SC-006**: Against the first reference pair of snapshots (the 08-12 → 08-16 pair) the report accounts for 34 moved items across 16 champions, 47 unrecoverable and 58 newly acquired, with 4 of the moved items also having changed level. This check is conditional on those snapshots being present locally; they hold personal account data and are excluded from version control.
+- **SC-007**: The owner can empty a champion the swapper built up working only from that champion's entry in the per-holder view, without opening another champion's entry to discover where any of its pieces belongs.
+- **SC-008**: Against the second reference pair (the before/after pair spanning one real swapping session, 2026-08-16) the report accounts for 108 moved pieces: 92 that left a champion, across 44 champions, and 50 now worn, across 6 champions — of which 34 came off another champion and 16 out of the vault. Nothing is unrecoverable, nothing was newly acquired, 4 of the moved pieces also changed level, and exactly one visible description matches more than one item. Conditional on those snapshots being present locally, for the same reason as SC-006.
 
 ## Assumptions
 

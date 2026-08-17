@@ -7,7 +7,7 @@
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]** — parallelizable (different file, no dependency on an incomplete task)
-- **[US1/US2/US3]** — the user story this task serves
+- **[US1/US2/US3/US4]** — the user story this task serves
 
 ## Path Conventions
 
@@ -109,16 +109,43 @@ All paths are repo-relative from the repository root. Run commands from the repo
 
 - [ ] T033 [US3] Implement the "Gone — cannot restore" output section in `oracle/analytics/gear-moves.mjs` per `contracts/cli.md`, rendered from **before** rows and visually distinct from the moved list. Collisions here are counted over the before snapshot: all 47 gone items in the reference window have fingerprints absent from the after snapshot, so an after-scoped lookup returns `undefined` for every one and a naive template prints "undefined identical".
 
-**Checkpoint**: All three sections complete.
+**Checkpoint**: Three of the four sections complete — everything the pre-amendment scope called for.
 
 ---
 
-## Phase 6: Polish & Cross-Cutting Concerns
+## Phase 6: User Story 4 — Clear a rebuilt champion in one pass (Priority: P4)
 
-- [ ] T034 [P] Add a numbered entry for `gear-moves.mjs` to `oracle/analytics/README.md` under `## Run`, matching the format of the `analyze.mjs`, `champion-gear.mjs` and `speed.mjs` entries, including its full `node --experimental-sqlite …` invocation and why both arguments are required
-- [ ] T035 Confirm empty-result legibility: two identical snapshots produce all three section headers with zero entries and exit 0, never an error and never a silent empty output
-- [ ] T036 If the local snapshots happen to be present, smoke-test against `oracle/resources/2026-08-12-RSLHelper.db` → `oracle/resources/2026-08-16-RSLHelper.db` and confirm 34 moved items across 16 champions, 47 gone and 58 new, with 4 of the moved also leveled. These files are git-ignored personal data and absent from a fresh checkout — skip this task when they are missing; it is not the acceptance gate.
-- [ ] T037 Run the verification gate from the repository root: `npm run build && npm test && npm run lint` — all three must pass
+**Goal**: The same moves keyed by the champion *wearing* them, so a rebuilt champion is emptied in one pass instead of one round trip per piece.
+
+**Independent test**: Run against snapshots where one champion was given pieces from several others; that champion appears once, lists every moved piece it wears, and names the correct origin for each.
+
+### Tests for User Story 4
+
+- [ ] T034 [P] [US4] Test `slotsBefore` keys a champion's before items by `item.slot` — an item with `slot: 5` lands under 5 — and returns an empty map for a champion wearing nothing, in `oracle/analytics/__tests__/gear-moves.test.mjs`
+- [ ] T035 [P] [US4] Test `byHolder` groups by the wearing champion, includes only moves with `to !== null`, and omits champions wearing no moved pieces, in `oracle/analytics/__tests__/gear-moves.test.mjs`
+- [ ] T036 [P] [US4] Test `byHolder` marks a piece that came off another champion as `return`, with `from` naming that champion, in `oracle/analytics/__tests__/gear-moves.test.mjs`
+- [ ] T037 [P] [US4] Test `byHolder` marks a vault-sourced piece `auto` when the holder's slot held a piece that still exists, in `oracle/analytics/__tests__/gear-moves.test.mjs`
+- [ ] T038 [P] [US4] Test `byHolder` marks a vault-sourced piece `unequip` when the holder's slot was empty in the before snapshot, in `oracle/analytics/__tests__/gear-moves.test.mjs`. This case does not occur in either reference snapshot pair — the unit test is its only coverage.
+- [ ] T039 [P] [US4] Test `byHolder` marks a vault-sourced piece `keep` when the slot's original occupant is in `goneIds`, and sets `replaced` to that occupant, in `oracle/analytics/__tests__/gear-moves.test.mjs`. Also absent from both reference pairs; guards the one branch whose failure mode is advising the owner to strip a slot they cannot refill.
+- [ ] T040 [P] [US4] Test the FR-018 agreement invariant in `oracle/analytics/__tests__/gear-moves.test.mjs`: for a fixture where champion A's piece is worn by champion B, `byHolder` files it under B with `from: A` and the per-champion restore data files it under A — the two never disagree about which champion it belongs to
+
+### Implementation for User Story 4
+
+- [ ] T041 [US4] Implement `slotsBefore(beforeItems, beforeLoc)` in `oracle/analytics/gear-moves.mjs`, returning `Map<champId, Map<slotId, item>>`. Slot comes from `item.slot` — never from which champion column referenced the item (six of nine columns disagree with their slot id).
+- [ ] T042 [US4] Implement `byHolder(moved, goneIds, slotsBefore)` in `oracle/analytics/gear-moves.mjs` per `data-model.md`, returning `Map<champId, entry[]>` with `{ item, from, disposition, replaced }`. Four dispositions: `return` when `from` is a champion; for vault-sourced pieces `auto` (slot's original still exists), `unequip` (slot was empty before) or `keep` (slot's original is gone — set `replaced`). See research.md D11; the three-way split is decided, not open.
+- [ ] T043 [US4] Implement the "Strip list by holder" output section in `oracle/analytics/gear-moves.mjs` per `contracts/cli.md` — **third**, after "Restore by champion" and before "Gone", with a header counting champions and pieces, and one explicit line per disposition (`auto` prints as a stated no-op, never as an omission)
+
+**Checkpoint**: Both groupings of the moves are available; a restore can be driven from either end.
+
+---
+
+## Phase 7: Polish & Cross-Cutting Concerns
+
+- [ ] T044 [P] Add a numbered entry for `gear-moves.mjs` to `oracle/analytics/README.md` under `## Run`, matching the format of the `analyze.mjs`, `champion-gear.mjs` and `speed.mjs` entries, including its full `node --experimental-sqlite …` invocation and why both arguments are required
+- [ ] T045 Confirm empty-result legibility: two identical snapshots produce all four section headers with zero entries and exit 0, never an error and never a silent empty output
+- [ ] T046 If the local snapshots happen to be present, smoke-test against `oracle/resources/2026-08-12-RSLHelper.db` → `oracle/resources/2026-08-16-RSLHelper.db` and confirm 34 moved items across 16 champions, 47 gone and 58 new, with 4 of the moved also leveled. These files are git-ignored personal data and absent from a fresh checkout — skip this task when they are missing; it is not the acceptance gate.
+- [ ] T047 If the local snapshots happen to be present, smoke-test the driver-session pair `oracle/resources/2026-08-16-pre-driver.db` → `oracle/resources/2026-08-16-post-driver.db` and confirm 108 moved pieces — 92 off 44 champions, 50 onto 6 champions, of which 34 `return` and 16 `auto` — with 0 gone, 0 new, 4 moved pieces leveled and exactly one fingerprint shared by two items. Same git-ignored caveat as T046; skip when absent.
+- [ ] T048 Run the verification gate from the repository root: `npm run build && npm test && npm run lint` — all three must pass
 
 ---
 
@@ -130,8 +157,9 @@ All paths are repo-relative from the repository root. Run commands from the repo
 - **Phase 2 (Foundational)** → blocks all user stories. T002 must land first: it changes shared behaviour every later task depends on, and T012 asserts it.
 - **Phase 3 (US1)** → depends on Phase 2. Delivers the MVP.
 - **Phase 4 (US2)** → depends on US1's `describeItem` and diff; adds no new exported function
-- **Phase 5 (US3)** → depends on US1's `diffLocations` and `collisionCounts`
-- **Phase 6 (Polish)** → last
+- **Phase 5 (US3)** → depends on US1's `diffLocations` and `collisionCounts`. Also supplies `gone`, which US4's `keep` disposition reads as `goneIds` — so US4 lands after US3, not merely after US1.
+- **Phase 6 (US4)** → depends on US1's `diffLocations` and `describeItem`, and on US3's `gone`. T040 asserts agreement with US2's grouping, so it is written after Phase 4.
+- **Phase 7 (Polish)** → last
 
 ### Within Phase 2
 
@@ -145,7 +173,8 @@ All tests T013–T023 are parallel with each other. Implementation order: T024 �
 
 - T010, T011, T012 after T009
 - T013 through T023 — eleven independent test cases in one file; if one agent owns the file, write them in a single pass
-- T034 is independent of all code tasks and can run at any point
+- T034 through T040 — seven more independent test cases in that same file
+- T044 is independent of all code tasks and can run at any point
 
 ⚠️ Note: every test task targets the same file, `oracle/analytics/__tests__/gear-moves.test.mjs`. They are marked [P] because they are logically independent, but concurrent edits to one file will conflict — have one agent write them, or serialize the writes.
 
@@ -159,7 +188,7 @@ Phases 1–3 (T001–T029) produce a working, useful tool: every moved piece nam
 
 ### Incremental Delivery
 
-US2 reorganizes existing information into the shape the work actually takes — high convenience, no new data. US3 adds the one category the tool cannot fix but must not hide. Each is independently valuable and independently testable.
+US2 reorganizes existing information into the shape the work actually takes — high convenience, no new data. US3 adds the one category the tool cannot fix but must not hide. US4 reorganizes it a second time, keyed by who is wearing the gear rather than who is missing it, which is what a session concentrated on a few rebuilt champions actually costs to undo. Each is independently valuable and independently testable.
 
 ### Blast Radius
 
@@ -167,4 +196,6 @@ One task reaches outside this feature. T002 edits `oracle/lib/decode.mjs`, which
 
 ### Test Count
 
-16 unit tests total: 4 in Foundational (T010, T011, T012 plus the scaffold in T009), 11 in US1 (T013–T023), 2 in US3 (T031, T032). Fifteen are carried through from the reviewed design; T012 is new, added to close the FR-012/FR-015 coverage gap.
+23 unit tests total: 4 in Foundational (T010, T011, T012 plus the scaffold in T009), 11 in US1 (T013–T023), 2 in US3 (T031, T032), 7 in US4 (T034–T040). Fifteen are carried through from the reviewed design; T012 closes the FR-012/FR-015 coverage gap, and the US4 seven come with the 2026-08-17 amendment.
+
+Two of them — T038 (`unequip`) and T039 (`keep`) — cover dispositions that appear in neither reference snapshot pair. Running the tool cannot exercise them, so the unit tests are not a supplement to manual verification there; they are the whole of it.

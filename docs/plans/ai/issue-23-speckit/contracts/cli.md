@@ -50,7 +50,7 @@ an error — "nothing moved" and "I could not read your snapshot" must not look 
 
 ## Output
 
-Plain text on stdout, three sections, always in this order. Sections with no content are still
+Plain text on stdout, four sections, always in this order. Sections with no content are still
 announced, so an empty result is legible rather than ambiguous.
 
 ### 1. Moved items
@@ -80,7 +80,31 @@ RESTORE BY CHAMPION (16 affected)
             now   unequipped
 ```
 
-### 3. Gone — cannot restore
+### 3. Strip list by holder
+
+Grouped by the champion **wearing** moved gear — the inverse index of section 2. Each piece names
+where it came from, which for a piece taken off another champion is also where it goes back. Only
+champions wearing at least one moved piece appear (FR-016).
+
+The header counts the two kinds, so the size of the job is visible before reading the lines.
+
+```
+STRIP LIST BY HOLDER (6 champions, 50 pieces)
+  Ash'nar Dragonsoul  — 9 moved pieces (4 to hand back, 5 from the vault)
+    Gloves  return    to Turvold
+            Mythical r6 +16 Feral  C.DMG 80 | DEF 19, C.RATE% 17, HP 714 (+325g), ATK 68
+    Weapon  auto      back to the vault when this slot is restored
+            Mythical r6 +16 Feral  ATK 265 | SPD 11 (+1g), C.RATE 7, C.DMG 32, ACC 10
+    Boots   unequip   take off deliberately — this slot was empty before
+            Epic r6 +16 Shield  SPD 45 | RES 21, HP% 6, C.DMG 18, ATK% 6
+    Ring    keep      nothing to put back — replaced Epic r6 +16 Zeal Ring [Orcs], which was SOLD
+            Mythical r6 +12 Feral [Orcs]  ATK 170 | HP 255, ATK% 13, HP% 6, DEF 91
+```
+
+The four dispositions are fixed by FR-017 and research.md D11. `auto` is the common case and is an
+explicit no-op line rather than an omission: silence there reads as "this piece was missed".
+
+### 4. Gone — cannot restore
 
 Items present before and absent after. Rendered from their **before** row, and visually distinct —
 this is the one class the tool cannot help with.
@@ -106,6 +130,12 @@ GONE - CANNOT RESTORE (47)
   missing — never reduced to a bare id (FR-011).
 - **Newly acquired items get no section.** They appear only as the "now holding" side of a restore
   line.
+- **The two grouped views agree.** A piece with disposition `return` in section 3 appears in section
+  2 under the champion named there, and vice versa (FR-018). They are separate traversals of one
+  `moved` array, so agreement is a contract term rather than an assumption.
+- **A vault-sourced piece states its disposition explicitly** — `auto`, `unequip` or `keep` — never
+  a bare "came from the vault", which would leave a required step and a no-op looking identical
+  (FR-017).
 
 ---
 

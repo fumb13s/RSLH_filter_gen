@@ -1,6 +1,6 @@
 # Implementation Plan: Gear Movement Diff
 
-**Branch**: `001-gear-moves-diff` | **Date**: 2026-08-16 | **Spec**: [spec.md](./spec.md)
+**Branch**: `001-gear-moves-diff` | **Date**: 2026-08-16, amended 2026-08-17 | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/specs/001-gear-moves-diff/spec.md`
 
 ## Summary
@@ -8,6 +8,8 @@
 Add a read-only CLI to the gear vault analytics suite that diffs two account snapshots and reports which gear moved, where it was, and where it is now, so a manual restore can be performed in the game UI.
 
 The technical approach is settled rather than exploratory: the design was derived by measuring the real snapshots and survived four rounds of adversarial review against this codebase. Two findings drive it. First, location must be read from the champion table's nine gear-slot columns, because the artifact table's equipped-champion pointer is left stale on unequip — 36 such pointers exist on the reference snapshot, all one-directional, and trusting them would fabricate 36 moves. Second, items must be printed by their in-game visible attributes rather than by internal id, because the restore happens in a UI that never shows ids; a visible fingerprint is discriminating enough, with only 2 of 8485 items colliding.
+
+The 2026-08-17 amendment adds a second grouping of the same moves. A real session was restored by hand from the per-owner view alone, and the cost that showed up was round trips: the gear is not spread thinly but concentrated on a few rebuilt champions — six champions held 50 of 108 moved pieces — so the owner repeatedly opened one champion, learned a piece was on another, and went there. The per-holder view (US4) inverts the index so a rebuilt champion is emptied in one pass.
 
 ## Technical Context
 
@@ -31,7 +33,7 @@ No `.hivemind/specify/memory/constitution.md` exists in this repo, so there are 
 | --- | --- | --- |
 | Verification gate `npm run build && npm test && npm run lint` before commit | PASS | Carried into the plan as the definition of done |
 | Analytics tools are advisory and never mutate snapshots | PASS (after D9) | Both readers open `readOnly: true`. The champion reader already did; the shared artifact reader in `oracle/lib/decode.mjs` opened read-write and is changed here — see research.md D9. Without that change the read-only guarantee in `contracts/cli.md` would be unachievable. |
-| Pure logic exported and unit-tested; I/O and printing below a marker comment | PASS | Six exported functions; marker matches `speed.mjs:137` and `champion-gear.mjs:228` |
+| Pure logic exported and unit-tested; I/O and printing below a marker comment | PASS | Eight exported functions; marker matches `speed.mjs:137` and `champion-gear.mjs:228` |
 | Tests use hand-built objects, not DB fixtures | PASS | Snapshots are git-ignored personal data and cannot be fixtures |
 | One snapshot-reading mechanism, not several | PASS | Extends `readChampRows` rather than adding a second champion reader |
 | No secrets, credentials, or local absolute paths in committed artifacts | PASS | All paths in this plan are repo-relative |
@@ -90,7 +92,7 @@ One edit reaches outside the suite: `oracle/lib/decode.mjs` is shared with the d
 // Below this line nothing is unit-tested: DB reads, layout and printing.
 ```
 
-Above the marker, six exported pure functions:
+Above the marker, eight exported pure functions:
 
 | Function | Signature | Returns |
 | --- | --- | --- |
@@ -100,6 +102,8 @@ Above the marker, six exported pure functions:
 | `describeItem` | `(item)` | one-line human-readable description |
 | `collisionCounts` | `(items)` | `Map<fingerprint, count>` |
 | `champNames` | `(beforeRows, afterRows)` | `Map<champId, { name, missing }>` |
+| `slotsBefore` | `(beforeItems, beforeLoc)` | `Map<champId, Map<slotId, item>>` |
+| `byHolder` | `(moved, goneIds, slotsBefore)` | `Map<champId, entry[]>` — the per-holder view (US4) |
 
 `moved` entries are `{ id, from: champId|null, to: champId|null, item, leveledFrom }`. **`moved[].item` is the AFTER row; `gone[]` holds BEFORE rows**, because a gone item has no after row at all. `leveledFrom` is the before level when the level changed, else null.
 
@@ -150,13 +154,33 @@ Collision scope follows the row being rendered:
 - **Moved items** render from the after snapshot, so count over the after snapshot's items.
 - **Gone items** have no after row, so render from the before row and count over the **before** snapshot's items. All 47 gone items in the reference window have fingerprints absent from the after snapshot, so an after-scoped lookup returns `undefined` for every one of them and a naive template prints "undefined identical".
 
+### The per-holder view (US4)
+
+The inverse index of "restore by champion": keyed by the champion **wearing** moved gear rather than the one missing it. It answers the question asked while standing on a rebuilt champion — where does this piece go back to — so that champion can be emptied in one pass instead of one round trip per piece.
+
+`slotsBefore` inverts `beforeLoc` into `Map<champId, Map<slotId, item>>`. Slot comes from `item.slot` (see the slot-order trap above), never from a column index. It exists as its own exported function because the disposition below needs *what a champion held in that slot before*, which the flat `Map<itemId, champId>` cannot answer.
+
+`byHolder` walks the moved entries with `to !== null` and classifies each into one of four dispositions. Only the vault-sourced ones need thought — a piece that came off another champion simply goes back to it:
+
+| Disposition | When | What the report says |
+| --- | --- | --- |
+| `return` | `from` is a champion | Hand it back to that champion — the origin is also the destination |
+| `auto` | `from` is the vault, and the holder's slot had an occupant that still exists | No action: restoring that slot displaces this piece to the vault by itself |
+| `unequip` | `from` is the vault, and the holder's slot was empty before | The owner must take it off deliberately; nothing will displace it |
+| `keep` | `from` is the vault, and the slot's original occupant is **gone** | Leave it on, naming the sold piece it replaced — removing it would only empty a slot that cannot be refilled |
+
+The `keep` case is the one a naive implementation gets wrong in the harmful direction: it would tell the owner to strip a champion of a piece and leave the slot bare, because the piece that "belongs" there no longer exists. It is decided in the spec's Session 2026-08-17 clarifications, not left to the implementer.
+
+On the reference driver-session pair all 16 vault-sourced pieces are `auto` and 34 are `return`, so `unequip` and `keep` have no natural coverage there and must be unit-tested with hand-built rows.
+
 ### Output
 
-Three sections, printed to stdout:
+Four sections, printed to stdout, always in this order:
 
 1. **Moved items** — flat list, description plus `before → after`, each location a champion name or `(unequipped)`.
 2. **Restore by champion** — grouped, only changed slots, what the champion should hold and where that piece is now.
-3. **Gone — cannot restore** — visually distinct; rendered from before rows.
+3. **Strip list by holder** — grouped by the champion wearing moved gear; each piece with its origin and disposition (FR-016; placement fixed by the Session 2026-08-17 clarification).
+4. **Gone — cannot restore** — visually distinct; rendered from before rows.
 
 Newly-acquired items get no section; they surface as the "now holding" side of a restore line. Moved items whose level changed carry a `[leveled +12→+16 during session]` tag — 4 of the 34 moved items in the reference window, not the 19 that leveled vault-wide, since only moved and gone items are printed.
 

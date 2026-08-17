@@ -203,3 +203,59 @@ is that verification for the analytics half.
 - *Weaken the contract to match the current behaviour.* Rejected: it documents a defect as a
   feature, and the defect is the kind that destroys data confidence — an empty database that looks
   like a real snapshot.
+
+## D10. The per-holder view is the same moves, keyed by who is wearing them
+
+**Decision**: Add a fourth output section grouped by the champion currently **wearing** moved gear —
+each piece on them plus the champion it came off — rather than treating "restore by champion" as
+sufficient. Placed third, after the per-owner view and before the unrecoverable list.
+
+**Rationale**: Measured on a real swapping session, gear is not spread thinly. Six champions were
+built up and held **50 of the 108 moved pieces** between them, while 38 more were stripped of one to
+three pieces each. Working only from the per-owner view, every one of those 50 costs a round trip:
+open the champion who is missing a piece, learn it is on a rebuilt champion, go there, come back.
+Keyed the other way, the same 50 pieces are six entries, and a rebuilt champion empties in one pass.
+
+The two views are the same data, so the cost is a grouping and a print loop, not a second diff. That
+they must agree is stated as FR-018 rather than left implicit, because they are computed by
+different traversals of the same `moved` array and could drift.
+
+Not every moved piece appears in the new view: it lists only the ones currently **on** a champion.
+The 58 pieces sitting in the vault have no holder to open, and remain the per-owner view's business.
+
+**Alternatives considered**:
+
+- *Print the flat moved list sorted by current holder.* Cheaper, but the flat list already exists and
+  the owner's problem is not sort order — it is that a holder's pieces belong to many different
+  champions and each needs naming next to the piece.
+- *Replace the per-owner view with this one.* Rejected: it answers "what is this champion wearing
+  that isn't theirs", not "what is this champion missing". A champion whose piece went to the vault
+  has no holder entry at all, so the restore would be incomplete.
+
+## D11. A vault-sourced piece is classified by what its slot gets back
+
+**Decision**: In the per-holder view, a piece the swapper pulled out of the vault carries one of
+three dispositions — `auto`, `unequip`, or `keep` — decided by what the holder had in that slot in
+the before snapshot. A piece that came off another champion is always `return`.
+
+**Rationale**: The obvious rule, "vault pieces go back to the vault", is wrong twice.
+
+| Holder's slot in the before snapshot | Disposition | Why |
+| --- | --- | --- |
+| Held a piece that still exists | `auto` | Restoring the slot puts the original back and displaces this one; telling the owner to unequip it invents a step |
+| Was empty | `unequip` | Nothing will ever displace it — omitting it leaves the account short of the pre-session state with no sign why |
+| Held a piece that is now **gone** | `keep` | There is nothing to put back, so unequipping only leaves an empty slot; the report says to leave it and names the sold piece it replaced |
+
+Measured on the reference driver-session pair: all 16 vault-sourced pieces are `auto`, because every
+one landed in a slot that had an occupant. That is what makes the other two branches dangerous —
+they are invisible in the data on hand, so they must be covered by hand-built unit tests rather than
+by running the tool and reading the output. The `keep` branch is reachable in practice: the earlier
+reference pair carries 47 gone items.
+
+**Alternatives considered**:
+
+- *Treat `keep` as `unequip` — restore the pre-session state verbatim.* Rejected in the spec's
+  Session 2026-08-17 clarification. It is the one variant that gives advice against the owner's
+  interest: strip a working piece to leave a slot that cannot be refilled.
+- *Say nothing and let the unrecoverable section carry it.* Makes the owner join two sections by eye
+  to discover that one line of instruction is wrong.

@@ -57,3 +57,20 @@ what the tool should do when the two snapshots are supplied in the wrong order �
 resolved to a default (warn and proceed, FR-013) rather than raised, because an inverted report is
 internally consistent and therefore undetectable by a reader, which makes silence the only clearly
 wrong answer.
+
+## Re-validation: 2026-08-17 amendment
+
+Re-checked after User Story 4 (per-holder view), FR-016 to FR-018, SC-007 and SC-008 were added.
+Every box above still holds. Three notes:
+
+- **Clarifications are now recorded in the spec**, under `## Clarifications` → Session 2026-08-17.
+  Two questions were asked and answered rather than defaulted: what to do with a vault-sourced piece
+  whose slot cannot be refilled (keep it, and say why), and where the new view sits in the fixed
+  output order (third). Both changed the requirements — FR-017 gained its third case and FR-016 its
+  placement clause — so neither was cosmetic.
+- **SC-008 repeats SC-006's tradeoff**, citing counts against a second specific pair of snapshots.
+  Retained on the same grounds and with the same conditional marking: it is a real oracle, it is not
+  runnable in a fresh checkout, and SC-001 through SC-005 and SC-007 stand without it.
+- **Two of the four dispositions in FR-017 (`unequip`, `keep`) occur in neither reference pair.**
+  That is recorded in tasks.md rather than left implicit, because it means running the tool can
+  never demonstrate them and the unit tests are their only coverage.
