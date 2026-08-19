@@ -318,13 +318,58 @@ archive, not at capture time (see *Rejected alternatives*).
 
 Two cautions carried from these captures:
 
-- **Survivor counts are not outcomes.** Live Arena battles ended `4/3` and `4/4` (player/enemy survivors)
-  — wins on points with the enemy team still standing. A naive "enemy team wiped" rule would score
-  both as losses. This is the concrete evidence behind the *Index row* section's refusal to emit a
-  `win` field.
+- **Survivor counts are not outcomes.** Live Arena battles ended `4/3` and `4/4` (player/enemy
+  survivors) with the enemy team still standing. A naive "enemy team wiped" rule would score both as
+  losses. This is the concrete evidence behind the *Index row* section's refusal to emit a `win` field.
+
+  ~~— wins on points with the enemy team still standing.~~ **Wrong as written**, corrected
+  2026-08-19, and kept visible because it was quoted as authority and misled a later analysis into
+  looking for a score that does not exist. **Live Arena has no points.** Per the account owner there
+  are three end-conditions and only three:
+
+  | end condition | outcome |
+  |---|---|
+  | one team is wiped | the surviving team wins |
+  | one player leaves | the other player wins |
+  | 15-minute timeout | **both** players lose |
+
+  So a `4/3` or `4/4` win is an **opponent-left** win. The conclusion above is untouched — survivor
+  counts still are not outcomes — but the mechanism matters: "points" implies a score that might be
+  recoverable from the log, and there is no such quantity to recover.
 - **One session is not the id space.** Three of the five tuples above appeared only after a second
   night of capture, and none of 2026-08-12's two reappeared on 2026-08-13. Treat this table as
   "what has been seen", never "what exists".
+
+### How a battle ended is readable; who won is not
+
+Established 2026-08-19 over 10 Live Arena battles captured in one session, with outcomes supplied by
+the account owner (8 wins, 2 losses; screenshots for the wins).
+
+The **event kinds in the last push** separate the two observed end-conditions:
+
+| last push carries | ended by | battles |
+|---|---|---|
+| `dmg`, `HeroDeadResult`, `counter`, `skill` … | a team wiped | 4 |
+| `UnappliedEffectResult`, `StatsChangeResult`, `RoundFinishedResult` only | a player left | 6 |
+
+The six quiet ones are not a guess. The owner won five of them with the enemy at 3, 2, 1, 2 and 1
+deaths of 4 and the player side at 0 — so no team wiped, and a timeout loses for both, which a win
+excludes. Opponent-left is the only remaining branch. The sixth is the owner leaving a battle they
+were losing.
+
+The **15-minute timeout has never been captured.** The longest battle on record is 26 turns.
+
+What this does not give is the winner:
+
+- A wipe does not say *whose* team died. That is the per-side `dead` count, already in the row.
+- A quiet push does not say *which player* left, and nothing structural distinguishes the five
+  opponent-left battles from the one owner-left battle. Damage ratio does separate them empirically
+  — 3.53–∞ when the opponent left, 0.07 when the owner did — but that is players quitting when they
+  are losing, a behavioural regularity rather than a logged fact, and it inherits every bias of who
+  happens to be playing.
+
+Neither belongs in a `win` field. The end-condition is a property of the log; the outcome is not in
+it, and for a left battle it is decided after the last byte is written.
 
 ## Architecture
 
