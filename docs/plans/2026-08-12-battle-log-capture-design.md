@@ -212,6 +212,66 @@ Settling it needs a prospective session: screenshot opponents' blessings while t
 That would also separate 5★ from 6★, which is impossible from this side — both reduce the enemy
 aura by 20% and differ only in the ally-boost half.
 
+#### What `stamina` actually is
+
+`stamina` is the **turn meter**. Every champion starts a battle at 0, it fills in proportion to
+`stats.spd`, whoever reaches 100 acts, and taking a turn resets it to 0 and increments that hero's
+`turns`. None of that is stated anywhere in the log — it is what the numbers turn out to be.
+
+The useful consequence is that it is *predictable*. In any push, every hero who has not yet acted
+(`turns === 0`) sits on one shared line:
+
+```
+stamina  =  b × stats.spd
+```
+
+with a single `b` per push — the elapsed fill, shared across **both** teams. And `b` is not
+arbitrary. Fitted over the archive with no seed value, it always comes out a near-integer multiple of
+**≈0.0696**: the engine advances in discrete steps of `spd × 0.0696` turn meter rather than
+continuously. That is why several champions can sit above 100 at once without having acted — they
+crossed in the same step, and the highest meter took the turn.
+
+At that step size a champion needs `1438 / spd` steps to reach 100, so the first turn of a battle
+lands on step 3 when the fastest champion on the field is ≥ ~479 and step 4 when it is ≥ ~359.
+**Steps 3 and 4 are the only values observed**, which is the expected range for the mode and an
+independent check on the step size.
+
+**Using it as a detector.** The residual `stamina − b × spd` is turn meter the tick does not explain,
+and differencing `stamina` like this is the *only* way to see a meter change at all — see *What the
+log will not tell you about turn meter* below. Two rules keep it honest:
+
+- Estimate `b` as the **median** of `stamina / spd`, never least squares. A hero whose meter really
+  was manipulated is precisely the outlier a least-squares fit drags the baseline onto, hiding the
+  thing being looked for.
+- **Reject the battle** if `b / 0.0696` is not near-integer, or if fewer than 5 heroes sit within 1.5
+  of the line. The baseline is untrustworthy there, and a fit forced onto a battle full of real meter
+  manipulation invents outliers instead of finding them.
+
+**Verification status — this one is solid.** Of 58 Live Arena battles, 52 pass the filter above.
+Within them **342 of 364** hero sightings (94.0%) sit within 1.0 TM of the line. Restricting to
+champions seen at least 3 times that never deviate gives **17 champions over 248 sightings with a
+worst single deviation of 1.0 TM** — Niamhe 44 sightings (max 0.5), Predator 32 (0.8), Solanar 31
+(0.7), Tekteon 27 (0.7), Odin 24 (0.7). A model that reproduces a quarter of a thousand observations
+to within one point is what makes a residual of +8 worth taking seriously.
+
+⚠️ **The ~6% that do not fit are not noise, and are deliberately not characterised here.** Some
+champions arrive at line 0 holding turn meter the tick does not account for — residuals well outside
+the control band, up to roughly +14 TM. What causes it, and whether it belongs to the champion or to
+the gear, is **open**. A first account of it did not survive review and is not repeated here; the
+detector above is what finds these, but naming the cause needs a source outside the logs.
+
+##### What the log will not tell you about turn meter
+
+`StaminaChangeResults` is the most common event kind in the archive and carries **`{turn, t, k}` and
+nothing else** — which hero's meter changed, never by how much or why.
+`ChangeStaminaModificationResult` has the same shape. No magnitude is ever readable from an event;
+every number in this section comes from differencing `stamina` across pushes.
+
+Worse for anything happening at the start: **line 0 carries `events: []` in every battle measured**,
+so whatever resolves before the first turn is invisible by construction. A champion can arrive at
+line 0 already holding turn meter it should not have, with no event, no buff entry and no flag to say
+where it came from.
+
 ### Events
 
 36 distinct kinds, in two classes.
