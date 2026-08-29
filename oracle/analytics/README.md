@@ -67,6 +67,12 @@ own database, and nothing is ever deleted.
    to stdout, so redirect it if you want a file. An extra argument is an error rather than something
    ignored.
 
+   The report opens with the row counts for both snapshots and how many rows in each could not be
+   decoded. Both item lists are filtered before the diff sees them, so a row that decodes in one
+   snapshot and not the other is reclassified silently — readable-then-corrupt lands in *Gone*. If
+   the two unreadable counts differ, the tool says so and the gone list should be read as
+   approximate.
+
    Four sections. *Moved items* is the flat audit list. *Restore by champion* is what you work from
    when you know who is missing something: one champion, only its changed slots. *Strip list by
    holder* is the same moves keyed the other way — open a champion that was geared up and every

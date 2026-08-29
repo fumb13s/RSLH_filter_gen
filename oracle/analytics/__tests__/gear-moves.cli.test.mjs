@@ -260,6 +260,41 @@ test("a sold piece is reported as gone, from its before row, with where it was l
   expect(gone).toContain("last seen on Elhain");
 });
 
+// --- provenance -------------------------------------------------------------
+
+// Both item lists reaching the diff are post-filter, so the reader needs to know how much each
+// snapshot dropped before trusting a section built out of the difference between them.
+test("the report opens with the row and unreadable counts for both snapshots", () => {
+  expect(report.out.split("\n")[0])
+    .toBe("snapshots: before 9 rows, 0 unreadable · after 9 rows, 0 unreadable");
+  // The caveat is for disagreement only; firing it on every run would train the reader past it.
+  expect(report.out).not.toContain("treat GONE as approximate");
+});
+
+// The failure mode the counts exist for. Piece 21 is untouched between the two snapshots — same
+// row, same champion — but its after row no longer decodes, so the diff watches it vanish and files
+// it under "sold or consumed". Nothing about the resulting gone entry distinguishes it from a real
+// sale, which makes the caveat the only thing standing between the reader and a wasted hunt.
+test("a row that decodes before and not after is called out as a caveat on the gone list", () => {
+  const d = mkdtempSync(join(tmpdir(), "gear-moves-corrupt-"));
+  try {
+    const b = join(d, "before.db"), a = join(d, "after.db");
+    const champs = [{ ID: 1, Name: "Elhain", Weapon: 21 }];
+    makeSnapshot(b, { items: [at(21), at(22)], champs });
+    // rarity 0 is out of the 1..6 the decoder accepts, which is what isCorrupt() drops rows on.
+    makeSnapshot(a, { items: [at(21, { rarity: 0 }), at(22)], champs });
+    const r = run(b, a);
+    expect(r.code).toBe(0);
+    expect(r.out.split("\n")[0])
+      .toBe("snapshots: before 2 rows, 0 unreadable · after 2 rows, 1 unreadable");
+    expect(r.out).toContain("treat GONE as approximate");
+    // ...and the entry it is warning about really is sitting in the gone list.
+    expect(r.out).toContain("GONE - CANNOT RESTORE (1)");
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
 // --- warnings (FR-013) ------------------------------------------------------
 
 // An inverted report is internally CONSISTENT — every line is simply backwards — so it cannot be

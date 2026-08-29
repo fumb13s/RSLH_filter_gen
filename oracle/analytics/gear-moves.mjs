@@ -274,6 +274,26 @@ export function action(entry, names) {
 // end-to-end instead — __tests__/gear-moves.cli.test.mjs builds a pair of throwaway snapshots, runs
 // the tool over them and asserts on what actually reaches stdout and stderr.
 
+// 0. Provenance, before any of it is read. Both item lists reaching the diff are POST-filter —
+// readArtifacts drops rows whose 64-bit garbage cannot be decoded — so a row that decodes in one
+// snapshot and not in the other is silently reclassified, and in the direction that matters most:
+// readable-then-corrupt lands in GONE - CANNOT RESTORE, the one section the reader is told to trust
+// and stop looking. Corrupt-then-readable is quieter but also wrong — the piece drops out of the
+// diff and resurfaces only as the "now holding" side of whatever it displaced.
+//
+// Equal counts do not prove no row flipped; unequal ones prove some did. That is the difference
+// between a reader who knows to discount the gone list and one with nothing to notice it by. Both
+// sides are printed the way compare.mjs prints them, since that is the other two-snapshot tool.
+function printProvenance(before, after) {
+  const side = (s) => `${s.total} rows, ${s.corrupt.length} unreadable`;
+  console.log(`snapshots: before ${side(before)} · after ${side(after)}`);
+  if (before.corrupt.length !== after.corrupt.length) {
+    console.log("  the snapshots disagree about how many rows decode, so a piece can be listed as"
+      + " gone only because its row stopped decoding — treat GONE as approximate");
+  }
+  console.log("");
+}
+
 // 1. Moved items — the flat audit list. Every piece that changed hands, described as it looks NOW,
 // with where it was and where it is. A restore can be driven from this section alone.
 function printMoved(moved, names, afterCounts) {
@@ -354,9 +374,9 @@ function printGone(gone, beforeLoc, names, beforeCounts) {
 }
 
 function loadSnapshot(path) {
-  const { items } = readArtifacts(path);
+  const { items, corrupt, total } = readArtifacts(path);
   const champRows = readChampRows(path);
-  return { items, champRows, loc: locationsFrom(champRows) };
+  return { items, corrupt, total, champRows, loc: locationsFrom(champRows) };
 }
 
 // A snapshot that cannot be read is reported as a failure naming the file, never as an empty report
@@ -438,6 +458,7 @@ function main() {
   const holders = byHolder(moved, new Set(gone.map((it) => it.id)),
     slotsBefore(before.items, before.loc));
 
+  printProvenance(before, after);
   printMoved(moved, names, afterCounts);
   printRestoreByChampion(moved, names, afterCounts);
   printStripList(holders, names, afterCounts, beforeCounts);
