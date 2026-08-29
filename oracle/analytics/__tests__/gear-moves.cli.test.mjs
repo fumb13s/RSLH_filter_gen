@@ -354,3 +354,15 @@ test("anything that is not exactly two option-free paths is a usage error", () =
   expect(existsSync(join(dir, "out.md"))).toBe(false);
   expect(existsSync("out.md")).toBe(false);
 });
+
+// An empty argument counts. The case is an unset shell variable — `gear-moves.mjs a.db b.db "$OUT"`
+// — where the caller believes they asked for an output file. Dropping empties first would run that
+// as a correct two-argument invocation and print to stdout without a word, which is the same
+// trimmed-to-fit behaviour the checks above exist to remove. champs.mjs drops them for the opposite
+// reason: its argument is an optional selector, and this tool has no optional argument at all.
+test("an empty argument is counted, not silently dropped", () => {
+  const r = run(beforeDb, afterDb, "");
+  expect(r.code).toBe(1);
+  expect(r.err).toContain("got 3");
+  expect(r.out).not.toContain("MOVED ITEMS");
+});

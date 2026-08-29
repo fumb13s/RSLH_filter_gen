@@ -443,8 +443,15 @@ function usageError(problem) {
 // the first two arguments made both ways of carrying restore.mjs's `-o out.md` habit fail quietly:
 // trailing, the flag was read past and vanished with no comment; leading, it was opened as the
 // before snapshot and the run died complaining about a file called "-o".
+//
+// An empty argument is an argument, deliberately unlike champs.mjs's parseArgs, which drops empties.
+// The argument that one protects is an OPTIONAL selector, where "" would quietly widen the match to
+// every champion; here both arguments are required paths and "" is never one of them. Dropping them
+// would let `gear-moves.mjs before.db after.db "$OUT"` with $OUT unset run as a two-argument
+// invocation — the caller asked for an output file, got a report on stdout and no complaint. That is
+// the same trimmed-to-fit failure the rest of this function exists to remove.
 function main() {
-  const args = process.argv.slice(2).filter((a) => a !== "");
+  const args = process.argv.slice(2);
   const flag = args.find((a) => a.startsWith("-"));
   if (flag) usageError(`unrecognised option ${flag}: this tool takes no options`);
   if (args.length !== 2) usageError(`need exactly two snapshots, got ${args.length}`);
