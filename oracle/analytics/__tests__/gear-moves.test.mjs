@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect } from "vitest";
 import { action, ambiguity, byHolder, byOwner, champNames, collisionCounts, corruptFlips,
-  describeItem, diffLocations, label, leveledTag, locationsFrom, slotsBefore,
+  describeItem, diffLocations, label, leveledTag, locationsFrom, lostAmbiguity, slotsBefore,
   sortedGroups } from "../gear-moves.mjs";
 import { fingerprint } from "../gear-common.mjs";
 import { readArtifacts } from "../decode.mjs";
@@ -534,6 +534,18 @@ test("ambiguity marks a shared appearance and stays silent on a unique one", () 
   const counts = collisionCounts([twin, item({ id: 2 })]);
   expect(ambiguity(twin, counts)).toContain("(2 identical — either will do)");
   expect(ambiguity(item({ slot: 6 }), counts)).toBe("");
+});
+
+// A piece that is gone has no substitute, so its marker must not offer one — "either will do" three
+// lines under "Nothing here can be put back" tells a reader to stop worrying about something they
+// have actually lost. The count still has to fire, or two byte-identical gone lines read as a
+// duplication bug; it just states the fact and offers nothing.
+test("lostAmbiguity counts lookalikes without promising a substitute", () => {
+  const sold = item({ id: 10 });
+  const counts = collisionCounts([sold, item({ id: 11 })]);
+  expect(lostAmbiguity(sold, counts)).toContain("(2 pieces looked like this before)");
+  expect(lostAmbiguity(sold, counts)).not.toContain("either will do");
+  expect(lostAmbiguity(item({ slot: 6 }), counts)).toBe("");
 });
 
 // The scope is the caller's to get right, and this is what getting it wrong looks like: a gone item

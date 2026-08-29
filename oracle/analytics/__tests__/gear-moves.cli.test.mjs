@@ -199,11 +199,23 @@ test("a piece that moved and leveled carries the tag", () => {
 // finds whichever section prints it first and stops testing the one it was written for.
 test("indistinguishable pieces are marked, each against the snapshot its row came from", () => {
   expect(sectionOf("MOVED ITEMS")).toMatch(/ATK 265 \| SPD 12.*\(2 identical — either will do\)/);
-  expect(sectionOf("GONE - CANNOT")).toMatch(/DEF 100 \| HP 200.*\(2 identical — either will do\)/);
+  expect(sectionOf("GONE - CANNOT"))
+    .toMatch(/DEF 100 \| HP 200.*\(2 pieces looked like this before\)/);
   // The sold piece named on a `keep` line has no after row either, for exactly the same reason.
-  expect(sectionOf("STRIP LIST BY HOLDER")).toMatch(/replaced .*DEF 100 \| HP 200.*\(2 identical/);
+  expect(sectionOf("STRIP LIST BY HOLDER"))
+    .toMatch(/replaced .*DEF 100 \| HP 200.*\(2 pieces looked like this before\)/);
   // And silence where a description really is unique, since silence is what carries that meaning.
   expect(sectionOf("MOVED ITEMS")).not.toMatch(/ATK 200 \| SPD 5.*identical/);
+});
+
+// A piece that is gone has no substitute, and a marker that says one exists is worse than no marker:
+// the reader stops hunting for something they have actually lost. Pinned on the rendered report
+// rather than on the helper, because it is the pairing of scope to wording that has to hold — the
+// gone section and the `— SOLD` line are the two places counted over BEFORE.
+test("nothing that is gone offers the reader a choice it does not have", () => {
+  expect(sectionOf("GONE - CANNOT")).not.toContain("either will do");
+  expect(lineWith("— SOLD")).not.toContain("either will do");
+  expect(lineWith("— SOLD")).toContain("(2 pieces looked like this before)");
 });
 
 // FR-009: only champions that LOST something, and only the slots that changed. Biggest job first so

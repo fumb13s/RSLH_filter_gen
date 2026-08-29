@@ -20,6 +20,8 @@ Each entry carries a severity tag indicating its semver impact: `[major]`, `[min
 - [patch] Two pieces that read identically in slots 1-6 are counted as identical again: the "either will do" marker keyed the stored faction on every slot but is only printed on accessories, so it could split a genuine pair and stay quiet (#23)
 - [patch] `gear-moves.mjs` extends the stopped-decoding caveat to the strip list, which draws the replaced piece on a `keep` line from the same gone list and so can assert a piece was SOLD when it only stopped decoding (#23)
 - [patch] `gear-moves.mjs` states the started-decoding caveat as the decode flip it counts. "The after snapshot decodes N pieces the before one does not" is equally true of every piece acquired during the session, so the number could not be reconciled with the report; it also no longer asserts a move, since a row that started decoding may have sat still (#23)
+- [patch] `gear-moves.mjs` stops offering a substitute for a piece that is gone: the two places that name a sold piece — the gone list and the `— SOLD` line in the strip list — now read "(2 pieces looked like this before)" instead of "either will do", which promised a replacement that does not exist and, even where a twin survives, never said which one it was (#23)
+- [patch] `gear-moves.mjs` omits the main/substat separator on a piece that has no substats, instead of trailing off as `ATK 265 |  · #1`. A low-rank artifact at +0 has none, and that is the gear that gets sold, so these land in the gone list in quantity (#23)
 
 ### Changed
 

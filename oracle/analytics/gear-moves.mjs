@@ -256,15 +256,32 @@ export function describeItem(it) {
 // it goes. Nothing here touches a database or console.
 
 // Ambiguity is stated, never implied. Silence has to mean "this description is unique", so a shared
-// appearance says so and tells the reader either piece will serve (FR-006).
+// appearance says so (FR-006).
 //
 // `counts` is the caller's choice of scope and the whole correctness of the marker rests on it:
-// after-scoped for a moved item, before-scoped for a gone one. The `?? 1` is for an item genuinely
-// absent from the map, not a licence to pass the wrong one — a gone item counted against the after
-// snapshot misses the map every time and reads as unique on every line.
+// after-scoped for a piece that still exists, before-scoped for one that does not. The `?? 1` is for
+// an item genuinely absent from the map, not a licence to pass the wrong one — a gone item counted
+// against the after snapshot misses the map every time and reads as unique on every line.
+const lookalikes = (it, counts) => counts.get(fingerprint(it)) ?? 1;
+
+// For a piece that still exists. The end state is a permutation of pieces the reader cannot tell
+// apart, so any of them really will serve, and saying so saves a hunt for one specific id.
 export function ambiguity(it, counts) {
-  const n = counts.get(fingerprint(it)) ?? 1;
+  const n = lookalikes(it, counts);
   return n > 1 ? `   (${n} identical — either will do)` : "";
+}
+
+// For a piece that does not. "either will do" is a promise of a substitute, and a sold piece has
+// none — printed three lines under "Nothing here can be put back" it invites the reader to stop
+// worrying about something they have actually lost, the same misread SC-005 exists to prevent. Even
+// where a twin does survive (one of a pair sold, one kept) the report never says WHICH, so the
+// phrase has no referent the reader can act on.
+//
+// The count itself still has to fire: without it two byte-identical gone lines read as the tool
+// printing the same piece twice. So this states the fact and offers nothing.
+export function lostAmbiguity(it, counts) {
+  const n = lookalikes(it, counts);
+  return n > 1 ? `   (${n} pieces looked like this before)` : "";
 }
 
 // A location is always a name or an explicit "(unequipped)" — never blank, never a bare id (FR-004).
@@ -404,10 +421,12 @@ function printStripList(holders, names, afterCounts, beforeCounts) {
       console.log(`    ${slot} ${e.disposition.padEnd(8)}  ${action(e, names)}`);
       console.log(`    ${" ".repeat(7)} ${describeItem(e.item)}${ambiguity(e.item, afterCounts)}`);
       // The sold piece is counted against the BEFORE snapshot for the same reason the gone section
-      // is: it has no after row for an after-scoped count to find.
+      // is: it has no after row for an after-scoped count to find. It gets the gone section's
+      // wording too, and for the same reason — the line ends in "— SOLD", so there is no second
+      // copy to offer.
       if (e.replaced) {
         console.log(`    ${" ".repeat(7)} replaced ${describeItem(e.replaced)}`
-          + `${ambiguity(e.replaced, beforeCounts)}  — SOLD`);
+          + `${lostAmbiguity(e.replaced, beforeCounts)}  — SOLD`);
       }
     }
   }
@@ -426,7 +445,7 @@ function printGone(gone, beforeLoc, names, beforeCounts) {
   if (gone.length) console.log("  These were sold or consumed. Nothing here can be put back.");
   for (const it of [...gone].sort((a, b) => a.slot - b.slot || a.id - b.id)) {
     const was = beforeLoc.get(it.id) ?? null;
-    console.log(`  ${describeItem(it)}${ambiguity(it, beforeCounts)}`);
+    console.log(`  ${describeItem(it)}${lostAmbiguity(it, beforeCounts)}`);
     console.log(`      ${was === null ? "was unequipped" : `last seen on ${label(was, names)}`}`);
   }
   console.log("");
