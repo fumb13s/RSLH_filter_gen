@@ -69,9 +69,11 @@ own database, and nothing is ever deleted.
 
    The report opens with the row counts for both snapshots and how many rows in each could not be
    decoded. Both item lists are filtered before the diff sees them, so a row that decodes in one
-   snapshot and not the other is reclassified silently — readable-then-corrupt lands in *Gone*. If
-   the two unreadable counts differ, the tool says so and the gone list should be read as
-   approximate.
+   snapshot and not the other is reclassified silently — which is why the tool compares *which* rows
+   failed to decode, not how many. A piece that stopped decoding lands in *Gone* though it was never
+   sold, and the tool says so and marks that list approximate; a piece that started decoding is
+   missing from *Moved* instead, and gets its own line. Equal unreadable counts do not mean neither
+   happened, and neither line is printed without a flip to report.
 
    Four sections. *Moved items* is the flat audit list. *Restore by champion* is what you work from
    when you know who is missing something: one champion, only its changed slots. *Strip list by
