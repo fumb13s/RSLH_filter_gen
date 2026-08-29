@@ -133,11 +133,12 @@ const lineWith = (text) => report.out.split("\n").find((l) => l.includes(text));
 // One section's text. Slicing on a champion name instead would land in whichever section mentions it
 // first: the moved list indents its locations six spaces, so a naive search for "  Kael" finds a
 // destination there long before the group header further down.
+//
+// Defaults to the shared fixture's report; the throwaway pairs below pass their own.
 const HEADS = ["MOVED ITEMS", "RESTORE BY CHAMPION", "STRIP LIST BY HOLDER", "GONE - CANNOT"];
-const sectionOf = (head) => {
+const sectionOf = (head, out = report.out) => {
   const next = HEADS[HEADS.indexOf(head) + 1];
-  return report.out.slice(report.out.indexOf(head),
-    next ? report.out.indexOf(next) : report.out.length);
+  return out.slice(out.indexOf(head), next ? out.indexOf(next) : out.length);
 };
 
 test("a correctly ordered pair of readable snapshots produces a report and says nothing on stderr",
@@ -324,6 +325,36 @@ test("a flip is called out even when both snapshots hold the same number of unre
       .toBe("snapshots: before 3 rows, 1 unreadable · after 2 rows, 1 unreadable");
     expect(r.out).toContain("GONE holds 1 piece that stopped decoding rather than being sold");
     expect(r.out).toContain("GONE - CANNOT RESTORE (1)");
+  });
+});
+
+// GONE is not the only section a stopped row leaks into. goneIds is built from that same list, so
+// the vault piece now sitting in the slot is classified `keep` and the strip list asserts the piece
+// it replaced was SOLD — piece 21 here was not sold, it stopped decoding. The instruction is a no-op
+// either way (`auto` would also say "do nothing"), so what the caveat has to reach is the claim, and
+// it can only do that by naming this section too.
+test("the stopped caveat names the strip list, whose replaced line calls the piece SOLD", () => {
+  withPair({
+    before: {
+      items: [at(21), at(11)],
+      champs: [{ ID: 2, Name: "Kael", Weapon: 21 }],
+    },
+    after: {
+      items: [at(21, { rarity: 0 }), at(11)],
+      champs: [{ ID: 2, Name: "Kael", Weapon: 11 }],
+    },
+  }, (r) => {
+    expect(r.code).toBe(0);
+    // The mis-label really is printed — this is the limitation, reproduced rather than described.
+    const strip = sectionOf("STRIP LIST BY HOLDER", r.out);
+    expect(strip).toMatch(/keep\s+came from the vault — leave it on/);
+    // ...naming piece 21, which is in GONE for having stopped decoding, not for having been sold.
+    expect(strip).toMatch(/replaced .*ATK 200 \| SPD 5.*— SOLD/);
+    expect(r.out).toContain("GONE - CANNOT RESTORE (1)");
+    expect(sectionOf("GONE - CANNOT", r.out)).toContain("ATK 200 | SPD 5");
+    // ...and the caveat covers both sections rather than only the one it is named after.
+    expect(r.out).toContain("treat GONE as approximate,"
+      + ` and any "— SOLD" line in the strip list with it`);
   });
 });
 

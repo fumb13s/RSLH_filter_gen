@@ -190,6 +190,13 @@ export function byOwner(moved) {
 // contains a `keep` or an `unequip` — all 16 vault-sourced pieces there are `auto` — so running the
 // tool can never show these two. Their unit tests are not a supplement to manual verification; they
 // are the whole of it.
+//
+// `keep` inherits the gone list's one soft edge, since goneIds is that list: it also holds pieces
+// that merely STOPPED DECODING (see corruptFlips), so `replaced` can name a piece that was never
+// sold and the strip list prints "— SOLD" about it. The instruction survives — `auto` and `keep`
+// both come out as "do nothing to this piece", and the replaced piece's own move is missing from
+// MOVED either way — so all that is wrong is the claim about the replaced piece. That is why the
+// stopped caveat in printProvenance names this list as well as GONE.
 export function byHolder(moved, goneIds, slotsByChamp) {
   const holders = new Map();
   for (const m of moved) {
@@ -325,7 +332,7 @@ function printProvenance(before, after) {
   const { stopped, started } = corruptFlips(before, after);
   if (stopped) {
     console.log(`  GONE holds ${count(stopped, "piece")} that stopped decoding rather than being`
-      + " sold — treat GONE as approximate");
+      + ` sold — treat GONE as approximate, and any "— SOLD" line in the strip list with it`);
   }
   if (started) {
     console.log(`  the after snapshot decodes ${count(started, "piece")} the before one does not,`

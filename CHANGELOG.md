@@ -18,6 +18,7 @@ Each entry carries a severity tag indicating its semver impact: `[major]`, `[min
 - [patch] `gear-moves.mjs` rejects an extra argument or an option instead of ignoring it, so `-o report.md` carried over from `restore.mjs` fails with usage rather than vanishing. An empty argument counts as an argument, so an unset shell variable cannot pad a run out into a correct-looking one (#23)
 - [patch] `gear-moves.mjs` reports how many rows each snapshot dropped as unreadable, and calls out a row that decodes in only one of them — an undecodable row made a piece look sold with nothing in the report to show otherwise. The call-out compares *which* rows failed to decode rather than how many, since equal counts hide a piece that stopped decoding while a different unreadable one was sold, and unequal counts cast doubt on a clean gone list. Each direction names the section it undermines: one puts a phantom in the gone list, the other leaves the moved list short (#23)
 - [patch] Two pieces that read identically in slots 1-6 are counted as identical again: the "either will do" marker keyed the stored faction on every slot but is only printed on accessories, so it could split a genuine pair and stay quiet (#23)
+- [patch] `gear-moves.mjs` extends the stopped-decoding caveat to the strip list, which draws the replaced piece on a `keep` line from the same gone list and so can assert a piece was SOLD when it only stopped decoding (#23)
 
 ### Changed
 
