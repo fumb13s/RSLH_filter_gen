@@ -71,10 +71,10 @@ own database, and nothing is ever deleted.
    decoded. Both item lists are filtered before the diff sees them, so a row that decodes in one
    snapshot and not the other is reclassified silently — which is why the tool compares *which* rows
    failed to decode, not how many. A piece that stopped decoding lands in *Gone* though it was never
-   sold, and the tool says so and marks that list approximate — along with any `— SOLD` line in the
-   strip list, which names a replaced piece out of that same list; a piece that started decoding is
-   missing from *Moved* instead, and gets its own line. Equal unreadable counts do not mean neither
-   happened, and neither line is printed without a flip to report.
+   sold; the tool says so and marks that list approximate, along with the strip list's `— SOLD`
+   lines, which name a replaced piece out of that same list. A piece that started decoding is missing
+   from *Moved* instead, and gets its own line. Equal unreadable counts do not mean neither happened,
+   and neither line is printed without a flip to report.
 
    Four sections. *Moved items* is the flat audit list. *Restore by champion* is what you work from
    when you know who is missing something: one champion, only its changed slots. *Strip list by
