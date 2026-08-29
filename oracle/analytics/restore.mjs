@@ -24,28 +24,16 @@ import { DatabaseSync } from "node:sqlite";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, FACTION_NAMES, ITEM_RARITIES, lookupName,
   statDisplayName } from "@rslh/core";
 import { readArtifacts } from "./decode.mjs";
+// SLOT_COLUMNS and fingerprint are shared with gear-moves.mjs, which diffs the same snapshot pair.
+// Two tools disagreeing about which pieces look alike is worse than either alone, since the owner
+// has no way to adjudicate — so neither keeps its own copy. SLOT_LABEL stays here: it is this
+// report's markdown wording (Shoes = Boots, Glouves = Gloves), not a fact about the schema.
+import { SLOT_COLUMNS, fingerprint } from "./gear-common.mjs";
 
-// The Champs equipped-slot columns. Two are misspelled in the schema (Glouves, Amulett) and one is
-// named for the game's own wording (Shoes = Boots); SLOT_LABEL is what the reader sees.
-export const SLOT_COLS = ["Weapon", "Helmet", "Shield", "Glouves", "Chest", "Shoes", "Ring",
-  "Amulett", "Banner"];
 export const SLOT_LABEL = { Weapon: "Weapon", Helmet: "Helmet", Shield: "Shield", Glouves: "Gloves",
   Chest: "Chest", Shoes: "Boots", Ring: "Ring", Amulett: "Amulet", Banner: "Banner" };
 
 // --- pure helpers -----------------------------------------------------------
-
-// Visible-attribute fingerprint, substats order-normalized. Two pieces that share one are
-// indistinguishable on screen, so the report says "either will do" rather than sending the reader
-// hunting for a specific id it cannot see. Order-normalized because the substat COLUMN order is
-// storage detail: the game lists them in its own order, and an order-sensitive key would call two
-// identical-looking pieces different.
-export function fingerprint(it) {
-  return [
-    it.set, it.slot, it.rarity, it.rank, it.faction,
-    `${it.mainStat.statId}:${it.mainStat.isFlat}:${it.mainStat.value}`,
-    it.substats.map((s) => `${s.statId}:${s.isFlat}:${s.value}`).sort().join("+"),
-  ].join("|");
-}
 
 // Every slot whose occupant changed, from both sides.
 //   restore[champId]   what that champion LOST — the piece that belongs there, and where it is now
@@ -59,7 +47,7 @@ export function diffSlots(before, after) {
   let gone = 0;
   for (const cid of new Set([...before.champs.keys(), ...after.champs.keys()])) {
     const ca = before.champs.get(cid), cb = after.champs.get(cid);
-    for (const col of SLOT_COLS) {
+    for (const col of SLOT_COLUMNS) {
       const wasId = Number(ca?.[col] ?? 0), nowId = Number(cb?.[col] ?? 0);
       if (wasId === nowId) continue;
       if (wasId > 0) {
@@ -96,7 +84,7 @@ function newest(suffix) {
 function readChamps(dbPath) {
   const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
-    const st = db.prepare(`SELECT ID, Name, SPD, ${SLOT_COLS.join(", ")} FROM Champs`);
+    const st = db.prepare(`SELECT ID, Name, SPD, ${SLOT_COLUMNS.join(", ")} FROM Champs`);
     st.setReadBigInts(true);
     return st.all().map((r) => Object.fromEntries(Object.entries(r)
       .map(([k, v]) => [k, typeof v === "bigint" ? Number(v) : v])));
@@ -113,7 +101,7 @@ export function load(dbPath) {
   const champs = readChamps(dbPath);
   const loc = new Map();
   for (const c of champs) {
-    for (const col of SLOT_COLS) {
+    for (const col of SLOT_COLUMNS) {
       const id = Number(c[col] ?? 0);
       if (id > 0) loc.set(id, Number(c.ID));
     }
@@ -192,7 +180,7 @@ export function buildReport(before, after, meta) {
   for (const [cid, rows] of [...restore.entries()].sort(bySize(name))) {
     P(`### ${name(cid)} #${cid} — ${rows.length} slot${rows.length > 1 ? "s" : ""}${spd(cid)}`);
     P(``);
-    for (const r of rows.sort((x, y) => SLOT_COLS.indexOf(x.col) - SLOT_COLS.indexOf(y.col))) {
+    for (const r of rows.sort((x, y) => SLOT_COLUMNS.indexOf(x.col) - SLOT_COLUMNS.indexOf(y.col))) {
       if (r.gone) {
         P(`- **${SLOT_LABEL[r.col]}** — ⚠️ GONE (sold/consumed): ${describe(r.item, collisions)}`);
         continue;
@@ -223,7 +211,7 @@ export function buildReport(before, after, meta) {
       + ` ${rows.length - backHome} from the vault)${spd(cid)}`
       + `${newChamps.has(cid) ? " · **new this session**" : ""}`);
     P(``);
-    for (const r of rows.sort((x, y) => SLOT_COLS.indexOf(x.col) - SLOT_COLS.indexOf(y.col))) {
+    for (const r of rows.sort((x, y) => SLOT_COLUMNS.indexOf(x.col) - SLOT_COLUMNS.indexOf(y.col))) {
       P(`- **${SLOT_LABEL[r.col]}** ${r.cameFrom === null
         ? "→ back to **the vault** (displaced automatically when this slot is restored)"
         : `→ back to ${label(r.cameFrom)}`}`);

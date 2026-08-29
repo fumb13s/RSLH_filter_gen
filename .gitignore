@@ -14,3 +14,8 @@ index.jsonl
 index.jsonl.tmp
 .hivemind
 .claude
+
+# Scratch left in a worktree by the PR-authoring step: the body is written here, passed to
+# `gh pr create -F`, and then has no further use. It is not project content and must not become
+# committable by a `git add -A`.
+pr-body.md
