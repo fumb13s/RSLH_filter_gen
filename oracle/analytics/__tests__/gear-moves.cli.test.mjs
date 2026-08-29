@@ -361,14 +361,20 @@ test("the stopped caveat names the strip list, whose replaced line calls the pie
 // The other direction, and the reason it gets a line of its own rather than the GONE wording: there
 // is nothing wrong with GONE here. Piece 21 came out of the vault onto Elhain, but its before row
 // did not decode, so the diff never saw a piece that could have moved and MOVED is silently short.
+//
+// The wording names the decode flip, not "the after snapshot decodes pieces the before one does
+// not": piece 71 satisfies that reading too — it was simply acquired mid-session — so a reader
+// counting new gear against this line could never make the number come out.
 test("a row that decodes only in the after snapshot is called out as a gap in the moved list", () => {
   withPair({
     before: { items: [at(21, { rarity: 0 }), at(22)], champs: [{ ID: 1, Name: "Elhain" }] },
-    after: { items: [at(21), at(22)], champs: [{ ID: 1, Name: "Elhain", Weapon: 21 }] },
+    after: { items: [at(21), at(22), at(71)], champs: [{ ID: 1, Name: "Elhain", Weapon: 21 }] },
   }, (r) => {
     expect(r.code).toBe(0);
-    expect(r.out).toContain("the after snapshot decodes 1 piece the before one does not,"
-      + " so its move is absent from MOVED");
+    // One flip, and the acquired piece is not counted into it even though the after snapshot holds
+    // it and the before one does not.
+    expect(r.out).toContain("1 piece did not decode in the before snapshot but does in the after"
+      + " one, so any move of it is absent from MOVED");
     // The claim is checked, not just printed: the move really is missing.
     expect(r.out).toContain("MOVED ITEMS (0)");
     // ...and GONE is not disparaged on its way past, because nothing is wrong with it.

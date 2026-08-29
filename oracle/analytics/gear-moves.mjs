@@ -326,6 +326,13 @@ const count = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 // hedging the whole report, and neither fires without a flip to report: a caveat on every run is one
 // the reader learns to skip. Both sides are printed the way compare.mjs prints them, since that is
 // the other two-snapshot tool.
+//
+// Each caveat names the CONDITION rather than the symptom, so its number can be reconciled with the
+// report. "The after snapshot decodes N pieces the before one does not" was the first wording of the
+// started line and is equally true of every piece bought during the session — dozens on a real run,
+// against a line reading 1. A number the reader cannot reconcile is a line they learn to skip, which
+// is the same failure the fires-only-on-a-flip rule above is guarding against. It says "any move of
+// it" for the same reason: a flipped row may have sat still, so a move is not there to assert.
 function printProvenance(before, after) {
   const side = (s) => `${s.total} rows, ${s.corrupt.length} unreadable`;
   console.log(`snapshots: before ${side(before)} · after ${side(after)}`);
@@ -335,8 +342,9 @@ function printProvenance(before, after) {
       + ` sold — treat GONE as approximate, and any "— SOLD" line in the strip list with it`);
   }
   if (started) {
-    console.log(`  the after snapshot decodes ${count(started, "piece")} the before one does not,`
-      + ` so${started === 1 ? " its move is" : " their moves are"} absent from MOVED`);
+    console.log(`  ${count(started, "piece")} did not decode in the before snapshot but`
+      + ` ${started === 1 ? "does" : "do"} in the after one, so any move of`
+      + ` ${started === 1 ? "it" : "them"} is absent from MOVED`);
   }
   console.log("");
 }
