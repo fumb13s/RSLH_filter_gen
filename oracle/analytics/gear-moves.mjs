@@ -139,6 +139,24 @@ export function slotsBefore(beforeItems, beforeLoc) {
   return slots;
 }
 
+// "Restore by champion": the moves keyed by the champion that LOST the piece, so the owner opens a
+// champion once and sees every slot that changed on it. A move out of the vault has no owner missing
+// it and is not in here at all — it is the strip list's business (FR-009).
+//
+// Its own function rather than a few lines inside the printer, because the strip list below is a
+// SEPARATE traversal of the same `moved` array and the two have to agree (FR-018). An agreement test
+// can only catch drift if it calls both sides; re-deriving this grouping in the test would pin a
+// copy, and the printer could then be changed without a single test noticing.
+export function byOwner(moved) {
+  const owners = new Map();
+  for (const m of moved) {
+    if (m.from === null) continue;
+    if (!owners.has(m.from)) owners.set(m.from, []);
+    owners.get(m.from).push(m);
+  }
+  return owners;
+}
+
 // The inverse index of "restore by champion": the same moves keyed by the champion WEARING the gear
 // rather than the one missing it. It answers the question asked while standing on a champion the
 // swapper built up — where does this piece go back to — so that champion empties in one pass instead
@@ -256,14 +274,9 @@ function printMoved(moved, names, afterCounts) {
 // Ordering the steps is not needed: equipping a piece in the game displaces the current occupant
 // automatically, so within a champion the slots can be done in any order.
 function printRestoreByChampion(moved, names, afterCounts) {
-  const byOwner = new Map();
-  for (const m of moved) {
-    if (m.from === null) continue;          // out of the vault — nobody is missing it
-    if (!byOwner.has(m.from)) byOwner.set(m.from, []);
-    byOwner.get(m.from).push(m);
-  }
-  console.log(`RESTORE BY CHAMPION (${byOwner.size} affected)`);
-  for (const [champId, rows] of sortedGroups(byOwner, names)) {
+  const owners = byOwner(moved);
+  console.log(`RESTORE BY CHAMPION (${owners.size} affected)`);
+  for (const [champId, rows] of sortedGroups(owners, names)) {
     console.log(`  ${label(champId, names)}`);
     for (const m of rows.sort(bySlotThenId)) {
       const slot = lookupName(ARTIFACT_SLOT_NAMES, m.item.slot).padEnd(7);

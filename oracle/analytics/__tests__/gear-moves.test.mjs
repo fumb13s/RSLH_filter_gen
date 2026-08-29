@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect } from "vitest";
-import { byHolder, champNames, collisionCounts, describeItem, diffLocations, fingerprint,
+import { byHolder, byOwner, champNames, collisionCounts, describeItem, diffLocations, fingerprint,
   locationsFrom, slotsBefore } from "../gear-moves.mjs";
 import { readArtifacts } from "../decode.mjs";
 import { readChampRows } from "../champs.mjs";
@@ -299,9 +299,38 @@ test("slotsBefore returns an empty map when nothing is worn", () => {
   expect(slotsBefore([item({ id: 11 })], new Map([[11, 1]])).get(2)).toBeUndefined();
 });
 
-// --- byHolder (US4) ---------------------------------------------------------
-
 const move = (o = {}) => ({ id: 11, from: 1, to: 2, item: item({ id: 11 }), leveledFrom: null, ...o });
+
+// --- byOwner (US2) ----------------------------------------------------------
+
+// FR-009: a champion appears only if it LOST something, and only the slots that changed are listed.
+// A champion that merely gained gear belongs in the strip list, not here — listing it would tell the
+// owner to restore slots that were never disturbed.
+test("byOwner groups moved pieces under the champion that lost them", () => {
+  const a = move({ id: 11, from: 1, to: 9, item: item({ id: 11, slot: 5 }) });
+  const b = move({ id: 12, from: 1, to: 3, item: item({ id: 12, slot: 1 }) });
+  const c = move({ id: 13, from: 2, to: 9, item: item({ id: 13, slot: 2 }) });
+  const owners = byOwner([a, b, c]);
+  expect([...owners.keys()].sort()).toEqual([1, 2]);
+  expect(owners.get(1)).toEqual([a, b]);
+  expect(owners.get(2)).toEqual([c]);
+  expect(owners.has(9)).toBe(false);          // 9 only GAINED gear
+});
+
+// A piece taken out of the vault leaves nobody short of it, so no champion is missing anything on its
+// account. Filing it under a champion would invent a restore step.
+test("byOwner omits moves that came out of the vault", () => {
+  expect(byOwner([move({ from: null, to: 9 })]).size).toBe(0);
+});
+
+// An item taken off a champion and left unequipped is still a loss for that champion, so it must
+// appear — the destination being the vault changes nothing about who is missing it.
+test("byOwner keeps a move that ended in the vault", () => {
+  const toVault = move({ id: 11, from: 4, to: null });
+  expect(byOwner([toVault]).get(4)).toEqual([toVault]);
+});
+
+// --- byHolder (US4) ---------------------------------------------------------
 
 // The point of the view: open a champion the swapper built up and empty it in one pass, instead of
 // one round trip per piece (SC-007).
@@ -367,18 +396,25 @@ test("byHolder marks a vault piece `keep` when the slot's original was sold, nam
 // agreement is asserted rather than assumed: whatever byHolder names as a piece's origin is the same
 // champion the per-owner view files it under, which is what makes handing a piece back close a line
 // in both.
-test("byHolder and the per-champion restore grouping name the same origin for a piece", () => {
-  const m = move({ id: 11, from: 1, to: 2 });
-  const holderEntry = byHolder([m], new Set(), new Map()).get(2)[0];
+//
+// Both sides call the SHIPPED function — byOwner is what printRestoreByChampion groups with. An
+// earlier version of this test re-derived the per-owner grouping inline, which pinned a copy: the
+// printer's grouping could have been changed to disagree and nothing here would have failed, on the
+// one requirement the CLI contract calls out as a contract term rather than an assumption.
+test("byHolder and byOwner name the same origin for a piece", () => {
+  const handedBack = move({ id: 11, from: 1, to: 2 });
+  const fromVault = move({ id: 12, from: null, to: 2, item: item({ id: 12, slot: 1 }) });
+  const holders = byHolder([handedBack, fromVault], new Set(), new Map());
+  const owners = byOwner([handedBack, fromVault]);
 
-  // The per-champion restore view groups by `from`, exactly as printRestoreByChampion does.
-  const byOwner = new Map();
-  for (const x of [m]) if (x.from !== null) byOwner.set(x.from, [...(byOwner.get(x.from) ?? []), x]);
+  const [returned, vaulted] = holders.get(2);
+  expect(returned.disposition).toBe("return");
+  expect(owners.get(returned.from).map((m) => m.item)).toContain(returned.item);
 
-  expect(holderEntry.disposition).toBe("return");
-  expect(holderEntry.from).toBe(1);
-  expect([...byOwner.keys()]).toEqual([1]);
-  expect(byOwner.get(holderEntry.from)[0].item).toBe(holderEntry.item);
+  // The other direction of the same term: a piece with no owner to hand it back to appears in the
+  // strip list only, so its holder entry must not claim an origin the per-owner view never lists.
+  expect(vaulted.from).toBe(null);
+  expect([...owners.keys()]).toEqual([1]);
 });
 
 // --- reading a snapshot that is not there (FR-012, FR-015) ------------------
