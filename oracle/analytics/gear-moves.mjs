@@ -253,6 +253,12 @@ export function sortedGroups(groups, names) {
 // common case and gets a stated no-op line rather than being left out: silence there reads as "this
 // piece was missed" (FR-017).
 //
+// Every line states where the piece CAME FROM before it says what to do with it (FR-016): `return`
+// names the champion, and the three vault dispositions all open on the vault. That was inferable
+// before — from the group header's "N from the vault" and from the disposition word itself — and
+// FR-016 exists precisely to stop the reader inferring. An entry has to be workable on its own,
+// read out of order, with no other line in view.
+//
 // `keep` is a named case and the default THROWS, which is the whole point of writing it this way.
 // With `keep` on the default arm, any disposition byHolder did not produce — a typo, a fourth one
 // added without a line here — rendered "leave it on": the one piece of advice that costs the owner a
@@ -260,11 +266,12 @@ export function sortedGroups(groups, names) {
 export function action(entry, names) {
   switch (entry.disposition) {
     case "return": return `to ${label(entry.from, names)}`;
-    case "auto": return "back to the vault on its own when this slot is restored — no action";
-    case "unequip": return "take off deliberately — this slot was empty before, so nothing"
-      + " will displace it";
-    case "keep": return "leave it on — the piece it replaced was sold, so taking this off would"
-      + " only empty the slot";
+    case "auto": return "came from the vault — back there on its own when this slot is restored,"
+      + " no action";
+    case "unequip": return "came from the vault — take off deliberately, this slot was empty"
+      + " before, so nothing will displace it";
+    case "keep": return "came from the vault — leave it on, the piece it replaced was sold, so"
+      + " taking this off would only empty the slot";
     default: throw new Error(`unknown disposition ${JSON.stringify(entry.disposition)}`);
   }
 }

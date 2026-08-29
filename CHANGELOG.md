@@ -20,4 +20,5 @@ Each entry carries a severity tag indicating its semver impact: `[major]`, `[min
 
 ### Changed
 
+- [patch] `gear-moves.mjs` strip list states where every piece came from, not just the ones handed back to a champion: the three vault dispositions say so in words instead of leaving it to be inferred from the group header (#23)
 - [patch] `gear-moves.mjs` and `restore.mjs` share one copy of the slot columns and the visible-attribute fingerprint (`oracle/analytics/gear-common.mjs`), so the two reports cannot disagree about which pieces are indistinguishable (#23)

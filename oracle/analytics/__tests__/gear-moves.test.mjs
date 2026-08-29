@@ -498,6 +498,18 @@ test("action gives each disposition its own instruction", () => {
   expect(action({ disposition: "keep" }, n)).toContain("leave it on");
 });
 
+// FR-016. Where the piece came from is STATED on every line, not left to be inferred from the
+// disposition word or from the group header further up. An entry read on its own — which is how the
+// report is used, one champion at a time — has to name an origin, and for a vault piece the vault
+// is that origin.
+test("action states an origin for every disposition, not just the one with a champion", () => {
+  const n = names({ 4: { name: "Turvold", missing: false } });
+  expect(action({ disposition: "return", from: 4 }, n)).toContain("Turvold");
+  for (const disposition of ["auto", "unequip", "keep"]) {
+    expect(action({ disposition }, n), disposition).toContain("came from the vault");
+  }
+});
+
 // The regression test for the harmful direction. `keep` used to be the default arm, so ANY
 // unrecognised disposition — a typo, a fourth one added without a line — rendered "leave it on":
 // advice that costs the owner a slot they cannot refill. It has to fail where it can be seen.

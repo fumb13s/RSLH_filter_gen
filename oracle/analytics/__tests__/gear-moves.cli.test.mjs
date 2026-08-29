@@ -229,12 +229,16 @@ test("restore by champion lists only the slots a champion actually lost", () => 
 
 // FR-017: all four dispositions, each saying what to DO. `auto` is a stated no-op rather than an
 // omission — silence there reads as "this piece was missed".
+//
+// FR-016 as well: each line also names where the piece came from, so an entry read on its own is
+// workable. `return` names a champion; the three vault cases say so in words rather than leaving it
+// to be inferred from the disposition column and the group header.
 test("the strip list gives every piece a disposition and an instruction", () => {
   expect(lineWith("Weapon  return")).toContain("to Elhain");
   expect(lineWith("Helmet  return")).toContain("to Varkos Headsplitter (champion no longer exists)");
-  expect(lineWith("Chest   auto")).toContain("no action");
-  expect(lineWith("Helmet  unequip")).toContain("take off deliberately");
-  expect(lineWith("Chest   keep")).toContain("leave it on");
+  expect(lineWith("Chest   auto")).toContain("came from the vault — back there on its own");
+  expect(lineWith("Helmet  unequip")).toContain("came from the vault — take off deliberately");
+  expect(lineWith("Chest   keep")).toContain("came from the vault — leave it on");
 });
 
 // The `keep` case in full. The piece it displaced was sold, so there is nothing to put back and
