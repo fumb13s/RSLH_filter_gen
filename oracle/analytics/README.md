@@ -63,6 +63,10 @@ own database, and nothing is ever deleted.
    pattern that default globs for — that is exactly what stops a routine refresh overwriting it —
    so a default would reliably pick the wrong file and produce a plausible, wrong report.
 
+   Two positional arguments and no options — unlike `restore.mjs`, there is no `-o`; the report goes
+   to stdout, so redirect it if you want a file. An extra argument is an error rather than something
+   ignored.
+
    Four sections. *Moved items* is the flat audit list. *Restore by champion* is what you work from
    when you know who is missing something: one champion, only its changed slots. *Strip list by
    holder* is the same moves keyed the other way — open a champion that was geared up and every

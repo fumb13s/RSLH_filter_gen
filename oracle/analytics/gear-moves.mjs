@@ -9,6 +9,9 @@
 //     before.db   the snapshot taken BEFORE the session
 //     after.db    the snapshot taken AFTER it
 //
+// Two positional arguments and no options; the report goes to stdout. Anything else is rejected
+// rather than ignored, because restore.mjs next door takes `-o out.md` and the habit carries.
+//
 // Both are required and neither is ever inferred. The suite's usual "newest snapshot" default is
 // deliberately absent: kept baselines are named outside the /-RSLHelper\.db$/ pattern that default
 // globs for — that is what stops a routine refresh overwriting them — so a default would reliably
@@ -269,14 +272,20 @@ function printRestoreByChampion(moved, names, afterCounts) {
 // What the owner actually has to do about each piece on a champion that was built up. `auto` is the
 // common case and gets a stated no-op line rather than being left out: silence there reads as "this
 // piece was missed" (FR-017).
+//
+// `keep` is a named case and the default THROWS, which is the whole point of writing it this way.
+// With `keep` on the default arm, any disposition byHolder did not produce — a typo, a fourth one
+// added without a line here — rendered "leave it on": the one piece of advice that costs the owner a
+// slot they cannot refill. A disposition this code does not recognise has to fail where it is seen.
 function action(entry, names) {
   switch (entry.disposition) {
     case "return": return `to ${label(entry.from, names)}`;
     case "auto": return "back to the vault on its own when this slot is restored — no action";
     case "unequip": return "take off deliberately — this slot was empty before, so nothing"
       + " will displace it";
-    default: return "leave it on — the piece it replaced was sold, so taking this off would"
+    case "keep": return "leave it on — the piece it replaced was sold, so taking this off would"
       + " only empty the slot";
+    default: throw new Error(`unknown disposition ${JSON.stringify(entry.disposition)}`);
   }
 }
 
@@ -380,15 +389,28 @@ function warnAboutOrder(beforePath, afterPath) {
   }
 }
 
+const USAGE = "usage: node --experimental-sqlite oracle/analytics/gear-moves.mjs"
+  + " <before.db> <after.db>\n"
+  + "Two positional snapshots and nothing else. The report goes to stdout; there is no -o, unlike"
+  + " restore.mjs next door — redirect if you want a file.\n"
+  + "Neither path is inferred: a kept baseline is deliberately named outside the pattern the other"
+  + " tools glob for, so a default would reliably pick the wrong file.";
+
+function usageError(problem) {
+  console.error(`${problem}\n${USAGE}`);
+  process.exit(1);
+}
+
+// Anything that is not exactly two positionals is rejected rather than trimmed to fit. Reading only
+// the first two arguments made both ways of carrying restore.mjs's `-o out.md` habit fail quietly:
+// trailing, the flag was read past and vanished with no comment; leading, it was opened as the
+// before snapshot and the run died complaining about a file called "-o".
 function main() {
   const args = process.argv.slice(2).filter((a) => a !== "");
-  if (args.length < 2) {
-    console.error("need two snapshots: node --experimental-sqlite"
-      + " oracle/analytics/gear-moves.mjs <before.db> <after.db>\n"
-      + "Neither is inferred: a kept baseline is deliberately named outside the pattern the other"
-      + " tools glob for, so a default would reliably pick the wrong file.");
-    process.exit(1);
-  }
+  const flag = args.find((a) => a.startsWith("-"));
+  if (flag) usageError(`unrecognised option ${flag}: this tool takes no options`);
+  if (args.length !== 2) usageError(`need exactly two snapshots, got ${args.length}`);
+
   const [beforePath, afterPath] = args;
   warnAboutOrder(beforePath, afterPath);
 
