@@ -306,6 +306,18 @@ test("describeItem shows faction on an accessory and omits it elsewhere", () => 
     .not.toContain("Sacred Order");
 });
 
+// A low-rank piece at +0 carries no substats, and that is exactly the gear that gets sold — so Gone
+// is where these land, in quantity, on a real run. An unconditional separator renders them as
+// "ATK 265 |  · #1", which reads as a line the tool truncated, in the one section it tells the
+// reader to stop worrying about.
+test("describeItem drops the substat separator on a piece with no substats", () => {
+  const line = describeItem(item({ substats: [] }));
+  expect(line).toContain("ATK 265 · #1");
+  expect(line).not.toContain("|");
+  // Still separated when there is something to separate.
+  expect(describeItem(item())).toContain("ATK 265 | SPD 12");
+});
+
 // --- gone items (US3) -------------------------------------------------------
 
 // A sold piece is not a move — no amount of re-equipping brings it back, so it must never reach the

@@ -235,6 +235,11 @@ const setName = (id) => (id === 0 ? "(setless)" : lookupName(ARTIFACT_SET_NAMES,
 // Faction labels carry a known id-space discrepancy tracked as deferred in DESIGN.md §9. It affects
 // human-readable labels only, never the raw ids fingerprinting compares, and is printed here the way
 // every other tool in the suite prints it rather than corrected in passing.
+//
+// The main/substat separator is conditional because a piece can genuinely have no substats — a
+// low-rank artifact at +0 — and that is exactly the gear that gets sold, so Gone is where these land
+// in quantity. Printed unconditionally the line trails off as "ATK 265 |  · #1", which reads as
+// truncated output in the one section the tool tells the reader to stop worrying about.
 export function describeItem(it) {
   const subs = it.substats
     .map((s) => `${stat(s)}${s.glyph ? ` (+${num(s.glyph)}g)` : ""}`).join(", ");
@@ -243,7 +248,7 @@ export function describeItem(it) {
   const asc = it.ascStat ? ` · asc ${stat(it.ascStat)}` : "";
   return `${ITEM_RARITIES[it.rarity]} r${it.rank} +${it.level} ${setName(it.set)} `
     + `${lookupName(ARTIFACT_SLOT_NAMES, it.slot)}${faction}`
-    + `  ${stat(it.mainStat)} | ${subs}${asc} · #${it.id}`;
+    + `  ${stat(it.mainStat)}${subs ? ` | ${subs}` : ""}${asc} · #${it.id}`;
 }
 
 // --- what each line SAYS ----------------------------------------------------
