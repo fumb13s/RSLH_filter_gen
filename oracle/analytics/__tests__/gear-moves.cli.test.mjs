@@ -275,28 +275,74 @@ test("the report opens with the row and unreadable counts for both snapshots", (
   expect(report.out).not.toContain("treat GONE as approximate");
 });
 
-// The failure mode the counts exist for. Piece 21 is untouched between the two snapshots — same
+// A throwaway pair outside the shared fixture, for cases that need rows of their own. The directory
+// goes whatever the assertions do. Throughout these, rarity 0 is out of the 1..6 the decoder
+// accepts, which is what isCorrupt() drops a row on.
+function withPair({ before, after }, assert) {
+  const d = mkdtempSync(join(tmpdir(), "gear-moves-corrupt-"));
+  try {
+    const b = join(d, "before.db"), a = join(d, "after.db");
+    makeSnapshot(b, before);
+    makeSnapshot(a, after);
+    assert(run(b, a));
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
+// The failure mode the caveat exists for. Piece 21 is untouched between the two snapshots — same
 // row, same champion — but its after row no longer decodes, so the diff watches it vanish and files
 // it under "sold or consumed". Nothing about the resulting gone entry distinguishes it from a real
 // sale, which makes the caveat the only thing standing between the reader and a wasted hunt.
 test("a row that decodes before and not after is called out as a caveat on the gone list", () => {
-  const d = mkdtempSync(join(tmpdir(), "gear-moves-corrupt-"));
-  try {
-    const b = join(d, "before.db"), a = join(d, "after.db");
-    const champs = [{ ID: 1, Name: "Elhain", Weapon: 21 }];
-    makeSnapshot(b, { items: [at(21), at(22)], champs });
-    // rarity 0 is out of the 1..6 the decoder accepts, which is what isCorrupt() drops rows on.
-    makeSnapshot(a, { items: [at(21, { rarity: 0 }), at(22)], champs });
-    const r = run(b, a);
+  const champs = [{ ID: 1, Name: "Elhain", Weapon: 21 }];
+  withPair({
+    before: { items: [at(21), at(22)], champs },
+    after: { items: [at(21, { rarity: 0 }), at(22)], champs },
+  }, (r) => {
     expect(r.code).toBe(0);
     expect(r.out.split("\n")[0])
       .toBe("snapshots: before 2 rows, 0 unreadable · after 2 rows, 1 unreadable");
     expect(r.out).toContain("treat GONE as approximate");
     // ...and the entry it is warning about really is sitting in the gone list.
     expect(r.out).toContain("GONE - CANNOT RESTORE (1)");
-  } finally {
-    rmSync(d, { recursive: true, force: true });
-  }
+  });
+});
+
+// Equal unreadable counts with a flip underneath them — the case comparing the two counts could not
+// see, and the reason this is keyed on ids instead. One row stopped decoding while a different one,
+// unreadable all along, was sold; both sides read "1 unreadable" and the report said nothing. Piece
+// 21 is in the section the reader is told to trust, and it was never sold.
+test("a flip is called out even when both snapshots hold the same number of unreadable rows", () => {
+  const champs = [{ ID: 1, Name: "Elhain", Weapon: 21 }];
+  withPair({
+    before: { items: [at(21), at(22), at(31, { rarity: 0 })], champs },
+    after: { items: [at(21, { rarity: 0 }), at(22)], champs },
+  }, (r) => {
+    expect(r.code).toBe(0);
+    expect(r.out.split("\n")[0])
+      .toBe("snapshots: before 3 rows, 1 unreadable · after 2 rows, 1 unreadable");
+    expect(r.out).toContain("GONE holds 1 piece that stopped decoding rather than being sold");
+    expect(r.out).toContain("GONE - CANNOT RESTORE (1)");
+  });
+});
+
+// The other direction, and the reason it gets a line of its own rather than the GONE wording: there
+// is nothing wrong with GONE here. Piece 21 came out of the vault onto Elhain, but its before row
+// did not decode, so the diff never saw a piece that could have moved and MOVED is silently short.
+test("a row that decodes only in the after snapshot is called out as a gap in the moved list", () => {
+  withPair({
+    before: { items: [at(21, { rarity: 0 }), at(22)], champs: [{ ID: 1, Name: "Elhain" }] },
+    after: { items: [at(21), at(22)], champs: [{ ID: 1, Name: "Elhain", Weapon: 21 }] },
+  }, (r) => {
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("the after snapshot decodes 1 piece the before one does not,"
+      + " so its move is absent from MOVED");
+    // The claim is checked, not just printed: the move really is missing.
+    expect(r.out).toContain("MOVED ITEMS (0)");
+    // ...and GONE is not disparaged on its way past, because nothing is wrong with it.
+    expect(r.out).not.toContain("treat GONE as approximate");
+  });
 });
 
 // --- warnings (FR-013) ------------------------------------------------------

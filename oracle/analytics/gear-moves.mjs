@@ -62,6 +62,36 @@ export function champNames(beforeRows, afterRows) {
   return names;
 }
 
+// Rows that decode in one snapshot and not the other, counted in each direction. Both item lists
+// reaching the diff are POST-filter — readArtifacts drops rows whose 64-bit garbage cannot be
+// decoded — so a row that flips is silently reclassified, and the two directions cost the reader
+// different things:
+//
+//   stopped   readable before, unreadable after. The diff finds no after row and files the piece
+//             under GONE - CANNOT RESTORE, the one section the reader is told to trust and stop
+//             looking at. Exactly this many of its entries were never sold.
+//   started   unreadable before, readable after. The piece is absent from the before list, so it is
+//             never iterated and no move of it is reported at all; it surfaces only as the "now
+//             holding" side of whatever it displaced.
+//
+// Counted by ID and not by comparing the two corrupt COUNTS, which was the first cut and misses the
+// case it exists for: before [21 ok, 22 ok, 30 corrupt] against after [21 corrupt, 22 ok] holds one
+// corrupt row on each side, so equal counts stay quiet while piece 21 sits in GONE unsold. Counts
+// cry wolf in the other direction too — a corrupt row that was simply sold reads 1 against 0 and
+// warns about a GONE list that is clean. Row counts are no use either: gear is bought and sold on
+// every real run, so the two always differ.
+//
+// A row whose ID column is itself garbage is invisible here, since isCorrupt rejects id <= 0 and it
+// can never match a readable id. Nothing could track such a row across two snapshots anyway.
+export function corruptFlips(before, after) {
+  const idsOf = (snap) => new Set(snap.items.map((it) => it.id));
+  const readableBefore = idsOf(before), readableAfter = idsOf(after);
+  return {
+    stopped: after.corrupt.filter((id) => readableBefore.has(id)).length,
+    started: before.corrupt.filter((id) => readableAfter.has(id)).length,
+  };
+}
+
 // What changed between two snapshots, and only what changed.
 //
 //   moved  one entry per item whose LOCATION differs. `item` is the AFTER row, because the owner is
@@ -281,22 +311,25 @@ export function action(entry, names) {
 // end-to-end instead — __tests__/gear-moves.cli.test.mjs builds a pair of throwaway snapshots, runs
 // the tool over them and asserts on what actually reaches stdout and stderr.
 
-// 0. Provenance, before any of it is read. Both item lists reaching the diff are POST-filter —
-// readArtifacts drops rows whose 64-bit garbage cannot be decoded — so a row that decodes in one
-// snapshot and not in the other is silently reclassified, and in the direction that matters most:
-// readable-then-corrupt lands in GONE - CANNOT RESTORE, the one section the reader is told to trust
-// and stop looking. Corrupt-then-readable is quieter but also wrong — the piece drops out of the
-// diff and resurfaces only as the "now holding" side of whatever it displaced.
-//
-// Equal counts do not prove no row flipped; unequal ones prove some did. That is the difference
-// between a reader who knows to discount the gone list and one with nothing to notice it by. Both
-// sides are printed the way compare.mjs prints them, since that is the other two-snapshot tool.
+const count = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+// 0. Provenance, before any of it is read: how much of each snapshot decoded, and — when a specific
+// row decodes in only one of them — which way it went, because the two directions send the reader
+// somewhere different (see corruptFlips). Each caveat names the section it undermines rather than
+// hedging the whole report, and neither fires without a flip to report: a caveat on every run is one
+// the reader learns to skip. Both sides are printed the way compare.mjs prints them, since that is
+// the other two-snapshot tool.
 function printProvenance(before, after) {
   const side = (s) => `${s.total} rows, ${s.corrupt.length} unreadable`;
   console.log(`snapshots: before ${side(before)} · after ${side(after)}`);
-  if (before.corrupt.length !== after.corrupt.length) {
-    console.log("  the snapshots disagree about how many rows decode, so a piece can be listed as"
-      + " gone only because its row stopped decoding — treat GONE as approximate");
+  const { stopped, started } = corruptFlips(before, after);
+  if (stopped) {
+    console.log(`  GONE holds ${count(stopped, "piece")} that stopped decoding rather than being`
+      + " sold — treat GONE as approximate");
+  }
+  if (started) {
+    console.log(`  the after snapshot decodes ${count(started, "piece")} the before one does not,`
+      + ` so${started === 1 ? " its move is" : " their moves are"} absent from MOVED`);
   }
   console.log("");
 }
@@ -344,9 +377,8 @@ function printStripList(holders, names, afterCounts, beforeCounts) {
   console.log(`STRIP LIST BY HOLDER (${holders.size} champions, ${pieces} pieces)`);
   for (const [champId, entries] of sortedGroups(holders, names)) {
     const handBack = entries.filter((e) => e.from !== null).length;
-    console.log(`  ${label(champId, names)}  — ${entries.length} moved`
-      + ` piece${entries.length === 1 ? "" : "s"} (${handBack} to hand back,`
-      + ` ${entries.length - handBack} from the vault)`);
+    console.log(`  ${label(champId, names)}  — ${count(entries.length, "moved piece")}`
+      + ` (${handBack} to hand back, ${entries.length - handBack} from the vault)`);
     for (const e of entries.sort(bySlotThenId)) {
       const slot = lookupName(ARTIFACT_SLOT_NAMES, e.item.slot).padEnd(7);
       console.log(`    ${slot} ${e.disposition.padEnd(8)}  ${action(e, names)}`);

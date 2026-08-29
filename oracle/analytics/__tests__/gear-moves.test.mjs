@@ -14,8 +14,8 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect } from "vitest";
-import { action, ambiguity, byHolder, byOwner, champNames, collisionCounts, describeItem,
-  diffLocations, label, leveledTag, locationsFrom, slotsBefore,
+import { action, ambiguity, byHolder, byOwner, champNames, collisionCounts, corruptFlips,
+  describeItem, diffLocations, label, leveledTag, locationsFrom, slotsBefore,
   sortedGroups } from "../gear-moves.mjs";
 import { fingerprint } from "../gear-common.mjs";
 import { readArtifacts } from "../decode.mjs";
@@ -152,6 +152,38 @@ test("diffLocations ignores an item that exists only in the after snapshot", () 
   expect(gone).toEqual([]);
 });
 
+// --- corruptFlips (provenance) ----------------------------------------------
+
+// Only `items` and `corrupt` are read, which is the shape readArtifacts hands back.
+const snap = (readable, corrupt = []) => ({ items: readable.map((id) => item({ id })), corrupt });
+
+// The case the first cut missed, and the reason this is keyed on ids rather than on the two corrupt
+// COUNTS: those are 1 and 1 here, so the caveat stayed silent while piece 21 sat in GONE having
+// never been sold. It stopped decoding; 30, unreadable in the before snapshot, is what actually went.
+test("corruptFlips catches a flip the two corrupt counts agree about", () => {
+  const before = snap([21, 22], [30]), after = snap([22], [21]);
+  expect(before.corrupt.length).toBe(after.corrupt.length);   // what the count comparison saw
+  expect(corruptFlips(before, after)).toEqual({ stopped: 1, started: 0 });
+});
+
+// Counts cry wolf in the other direction too: an already-unreadable row that is simply sold reads 1
+// against 0 and told the reader to discount a GONE list with nothing wrong in it.
+test("corruptFlips stays quiet when an unreadable row was merely sold", () => {
+  expect(corruptFlips(snap([21], [30]), snap([21]))).toEqual({ stopped: 0, started: 0 });
+});
+
+// The quieter direction, wrong in its own way: the piece is absent from the before list, so it is
+// never iterated and no move of it reaches MOVED at all. Counted apart because the reader's response
+// differs — discount GONE for one, know MOVED is short for the other.
+test("corruptFlips counts a row that starts decoding as its own direction", () => {
+  expect(corruptFlips(snap([21], [30]), snap([21, 30]))).toEqual({ stopped: 0, started: 1 });
+});
+
+// Acquiring gear changes the row counts on every real run, so those can never be the signal.
+test("corruptFlips reports nothing when both snapshots decode fully", () => {
+  expect(corruptFlips(snap([21, 22]), snap([21, 22, 71]))).toEqual({ stopped: 0, started: 0 });
+});
+
 // --- fingerprint (shared with restore.mjs via gear-common.mjs) --------------
 
 // The regression test for the whole ambiguity feature. Substats are stored in an arbitrary order, so
@@ -167,7 +199,7 @@ test("fingerprint ignores the order substats happen to be stored in", () => {
 
 test("fingerprint separates items differing in any visible attribute", () => {
   const base = item();
-  for (const change of [{ slot: 6 }, { set: 9 }, { rarity: 4 }, { rank: 5 }, { faction: 3 }]) {
+  for (const change of [{ slot: 6 }, { set: 9 }, { rarity: 4 }, { rank: 5 }]) {
     expect(fingerprint(item(change))).not.toBe(fingerprint(base));
   }
   expect(fingerprint(item({ mainStat: { statId: 2, isFlat: true, value: 200 } })))
@@ -194,6 +226,20 @@ test("fingerprint separates items differing only in their ascension bonus", () =
   expect(fingerprint(base)).not.toBe(fingerprint(asc({ statId: 4, isFlat: true, value: 204 })));
   expect(fingerprint(base)).not.toBe(fingerprint(asc({ statId: 1, isFlat: false, value: 204 })));
   expect(fingerprint(base)).toBe(fingerprint(asc({ statId: 1, isFlat: true, value: 204 })));
+});
+
+// The key and the description have to agree about faction or the marker lies in one direction or
+// the other. Asserting against describeItem rather than against a hardcoded expectation is the
+// point: whichever of the two is changed, this fails, so they cannot drift apart again.
+test("fingerprint keys faction exactly where the description prints it", () => {
+  const acc = (faction) => item({ slot: 7, isAccessory: true, faction });
+  expect(describeItem(acc(3))).not.toBe(describeItem(acc(4)));
+  expect(fingerprint(acc(3))).not.toBe(fingerprint(acc(4)));
+  // Slots 1-6 never show it, so two pieces that read identically must key identically — otherwise
+  // the "either will do" marker stays quiet on a pair the reader cannot tell apart.
+  const art = (faction) => item({ slot: 5, isAccessory: false, faction });
+  expect(describeItem(art(3))).toBe(describeItem(art(0)));
+  expect(fingerprint(art(3))).toBe(fingerprint(art(0)));
 });
 
 // --- collisionCounts --------------------------------------------------------
