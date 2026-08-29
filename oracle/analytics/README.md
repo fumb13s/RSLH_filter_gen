@@ -51,6 +51,38 @@ own database, and nothing is ever deleted.
    multi-modal, so a changed set value would move it less than the noise it already carries.
 
    Design: `docs/plans/2026-08-14-champion-speed-solver-design.md`.
+5. What moved between two snapshots, and where it went:
+   `node --experimental-sqlite oracle/analytics/gear-moves.mjs <before.db> <after.db>`
+
+   For putting an account back after someone else rearranged the gear on it. Bracket the session
+   with two snapshots and this turns the delta into a worklist: every piece that changed hands,
+   where it was, and where it is now.
+
+   **Both arguments are required and neither is inferred.** The "newest snapshot" default the other
+   tools use is deliberately absent here: a kept baseline is named outside the `*-RSLHelper.db`
+   pattern that default globs for — that is exactly what stops a routine refresh overwriting it —
+   so a default would reliably pick the wrong file and produce a plausible, wrong report.
+
+   Four sections. *Moved items* is the flat audit list. *Restore by champion* is what you work from
+   when you know who is missing something: one champion, only its changed slots. *Strip list by
+   holder* is the same moves keyed the other way — open a champion that was geared up and every
+   moved piece on it names where it goes back, so it empties in one pass instead of a round trip per
+   piece. *Gone — cannot restore* is the one section the tool cannot help with; read it first, so
+   no time is spent hunting for something that was sold.
+
+   In the strip list a piece that came out of the vault carries one of three verdicts: `auto` (do
+   nothing — restoring the slot displaces it by itself), `unequip` (take it off by hand, the slot
+   was empty before and nothing will displace it), or `keep` (leave it on — the piece it replaced
+   was sold, so removing it would only leave the slot bare).
+
+   Pieces are described the way they look in the game, because the restore happens in a UI that
+   never shows internal ids; where two are indistinguishable the line says so and either will do. A
+   `[leveled +12->+16 during session]` tag means the printed values now read differently than they
+   did in the baseline. Locations come from the `Champs` slot columns, never `Artifacts.cID` — that
+   pointer keeps naming the last wearer after a piece is unequipped.
+
+   Advisory and strictly read-only: both reads open read-only, nothing is written, and a mistyped
+   path fails rather than creating an empty database.
 
 ### Reading a champion report
 

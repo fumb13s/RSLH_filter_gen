@@ -43,13 +43,23 @@ export function suggestNames(rows, selector, limit = 8) {
 
 // readOnly makes SELECT-only structural rather than conventional, and — the reason it's here — it
 // refuses to CREATE the file: without it a typo'd snapshot path leaves a stray 0-byte .db behind
-// before failing on the missing table. Fraction/SPD/EmpLvl are for speed.mjs; champion-gear.mjs
-// ignores them.
+// before failing on the missing table.
+//
+// The column list is the union of what three consumers want, and each ignores the rest:
+// Fraction/SPD/EmpLvl are speed.mjs's, and the nine gear-slot columns are gear-moves.mjs's.
+// Those nine carry the schema's own misspellings (Glouves, Amulett) and must be copied verbatim.
+// Their ORDER IS NOT SLOT-ID ORDER — Weapon is slot 5, Helmet is 1, Shield 6, Glouves 3, Chest 2,
+// Shoes 4, and only Ring/Amulett/Banner line up — so a consumer takes an item's slot from the item,
+// never from the column that referenced it.
+//
+// Naming the columns is load-bearing, not stylistic: SELECT * throws RangeError ERR_OUT_OF_RANGE
+// because RecentBattleTicks holds values beyond JS number range.
 export function readChampRows(dbPath) {
   const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
     const st = db.prepare(
-      "SELECT ID, Name, Role, Rarity, Rang, Lvl, Fraction, SPD, EmpLvl FROM Champs");
+      "SELECT ID, Name, Role, Rarity, Rang, Lvl, Fraction, SPD, EmpLvl,"
+      + " Weapon, Helmet, Shield, Glouves, Chest, Shoes, Ring, Amulett, Banner FROM Champs");
     st.setReadBigInts(true);
     const rows = st.all().map((r) => Object.fromEntries(
       Object.entries(r).map(([k, v]) => [k, typeof v === "bigint" ? Number(v) : v])));
