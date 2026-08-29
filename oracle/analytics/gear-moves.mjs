@@ -15,6 +15,10 @@
 // pick the wrong file and produce a plausible, wrong report.
 //
 // Advisory only. Both reads open readOnly and nothing is written anywhere.
+//
+// This overlaps restore.mjs, which answers a narrower version of the same question and writes
+// markdown. Which of the two survives is a maintainer decision that has not been taken; until it is,
+// everything they must not disagree about lives in gear-common.mjs.
 
 import { realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -22,16 +26,7 @@ import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, FACTION_NAMES, ITEM_RARITIES, 
   statDisplayName } from "@rslh/core";
 import { readChampRows } from "./champs.mjs";
 import { readArtifacts } from "./decode.mjs";
-
-// The Champs equipped-slot columns, in the schema's own spelling — Glouves and Amulett are
-// misspelled there and copying them verbatim is the only thing that makes the SELECT work.
-//
-// This list is an iteration order over columns and NOTHING ELSE. Its position is not the slot id:
-// Weapon is slot 5, Helmet 1, Shield 6, Glouves 3, Chest 2, Shoes 4, and only Ring/Amulett/Banner
-// line up. Indexing 1..9 as slot ids mislabels six of the nine, so an item's slot is always read
-// from `item.slot`, never from the column that referenced it.
-export const SLOT_COLUMNS = ["Weapon", "Helmet", "Shield", "Glouves", "Chest", "Shoes", "Ring",
-  "Amulett", "Banner"];
+import { SLOT_COLUMNS, fingerprint } from "./gear-common.mjs";
 
 // Who is wearing what, read from the Champs slot columns and NEVER from Artifacts.cID. That pointer
 // is not cleared on unequip, so it keeps naming the last wearer indefinitely — 36 such stale
@@ -90,23 +85,6 @@ export function diffLocations(beforeItems, beforeLoc, afterItems, afterLoc) {
       leveledFrom: before.level === after.level ? null : before.level });
   }
   return { moved, gone };
-}
-
-// A key over everything a person can SEE on a piece. Two items sharing one are indistinguishable on
-// screen, so the report says "either will do" rather than sending the reader hunting for a specific
-// id the game never displays.
-//
-// The substat terms are SORTED before joining, and that is load-bearing rather than tidy. Substats
-// are stored in an arbitrary order, so two visually identical pieces can differ only in storage
-// order: measured over 8485 items an order-sensitive key finds 0 collisions, while the real group of
-// 2 appears only order-insensitively. Getting it wrong does not miss a case — it reports every item
-// as unique, turning the ambiguity marker into dead code that never fires.
-export function fingerprint(it) {
-  return [
-    it.slot, it.set, it.rarity, it.rank, it.faction,
-    `${it.mainStat.statId}:${it.mainStat.isFlat}:${it.mainStat.value}`,
-    it.substats.map((s) => `${s.statId}:${s.isFlat}:${s.value}:${s.glyph}`).sort().join("+"),
-  ].join("|");
 }
 
 // How many items share each visible appearance. Scoped to whichever snapshot the rendered row came

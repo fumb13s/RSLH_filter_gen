@@ -7,8 +7,9 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect } from "vitest";
-import { byHolder, byOwner, champNames, collisionCounts, describeItem, diffLocations, fingerprint,
+import { byHolder, byOwner, champNames, collisionCounts, describeItem, diffLocations,
   locationsFrom, slotsBefore } from "../gear-moves.mjs";
+import { fingerprint } from "../gear-common.mjs";
 import { readArtifacts } from "../decode.mjs";
 import { readChampRows } from "../champs.mjs";
 
@@ -143,7 +144,7 @@ test("diffLocations ignores an item that exists only in the after snapshot", () 
   expect(gone).toEqual([]);
 });
 
-// --- fingerprint ------------------------------------------------------------
+// --- fingerprint (shared with restore.mjs via gear-common.mjs) --------------
 
 // The regression test for the whole ambiguity feature. Substats are stored in an arbitrary order, so
 // two pieces that look identical in the game can differ only in storage order. Measured over 8485
@@ -171,6 +172,20 @@ test("fingerprint separates items differing in any visible attribute", () => {
   // Flat vs percent is a different stat to the eye: "HP 402" and "HP% 402" are not the same piece.
   expect(fingerprint(item({ substats: [sub(1, true, 12)] })))
     .not.toBe(fingerprint(item({ substats: [sub(1, false, 12)] })));
+});
+
+// The ascension bonus is printed on the line (`· asc HP 204`), so two pieces alike everywhere else
+// but differing in it read differently on screen. Pooled as "either will do", "pick any match" hands
+// over a piece with a different bonus stat — and ascension is live data, not hypothetical: items in
+// the committed fixture carry one.
+test("fingerprint separates items differing only in their ascension bonus", () => {
+  const asc = (o) => item({ ascStat: o });
+  const base = asc({ statId: 1, isFlat: true, value: 204 });
+  expect(fingerprint(base)).not.toBe(fingerprint(asc(null)));
+  expect(fingerprint(base)).not.toBe(fingerprint(asc({ statId: 1, isFlat: true, value: 180 })));
+  expect(fingerprint(base)).not.toBe(fingerprint(asc({ statId: 4, isFlat: true, value: 204 })));
+  expect(fingerprint(base)).not.toBe(fingerprint(asc({ statId: 1, isFlat: false, value: 204 })));
+  expect(fingerprint(base)).toBe(fingerprint(asc({ statId: 1, isFlat: true, value: 204 })));
 });
 
 // --- collisionCounts --------------------------------------------------------
