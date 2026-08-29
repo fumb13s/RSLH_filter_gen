@@ -209,12 +209,18 @@ export function describeItem(it) {
     + `  ${stat(it.mainStat)} | ${subs}${asc} · #${it.id}`;
 }
 
-// --- CLI: I/O and formatting ------------------------------------------------
-// Below this line nothing is unit-tested: DB reads, layout and printing.
+// --- what each line SAYS ----------------------------------------------------
+// Still pure and still unit-tested. These decide the wording; the printers below only decide where
+// it goes. Nothing here touches a database or console.
 
 // Ambiguity is stated, never implied. Silence has to mean "this description is unique", so a shared
 // appearance says so and tells the reader either piece will serve (FR-006).
-function ambiguity(it, counts) {
+//
+// `counts` is the caller's choice of scope and the whole correctness of the marker rests on it:
+// after-scoped for a moved item, before-scoped for a gone one. The `?? 1` is for an item genuinely
+// absent from the map, not a licence to pass the wrong one — a gone item counted against the after
+// snapshot misses the map every time and reads as unique on every line.
+export function ambiguity(it, counts) {
   const n = counts.get(fingerprint(it)) ?? 1;
   return n > 1 ? `   (${n} identical — either will do)` : "";
 }
@@ -222,7 +228,7 @@ function ambiguity(it, counts) {
 // A location is always a name or an explicit "(unequipped)" — never blank, never a bare id (FR-004).
 // A champion consumed during the session keeps the name the before snapshot recorded and is marked
 // gone, because its gear still needs a home named (FR-011).
-function label(champId, names) {
+export function label(champId, names) {
   if (champId === null) return "(unequipped)";
   const entry = names.get(champId);
   if (!entry) return `unknown champion #${champId}`;
@@ -232,10 +238,41 @@ function label(champId, names) {
 // Levelling changes the values printed on a piece, so one that moved AND leveled cannot be matched
 // against what the baseline showed. Say so rather than let the reader conclude they have the wrong
 // item (FR-008).
-const leveledTag = (m) =>
+export const leveledTag = (m) =>
   (m.leveledFrom === null ? "" : `   [leveled +${m.leveledFrom}->+${m.item.level} during session]`);
 
 const bySlotThenId = (a, b) => a.item.slot - b.item.slot || a.item.id - b.item.id;
+
+// Biggest job first, then by name so the report is stable run to run.
+export function sortedGroups(groups, names) {
+  return [...groups.entries()].sort((a, b) =>
+    b[1].length - a[1].length || label(a[0], names).localeCompare(label(b[0], names)));
+}
+
+// What the owner actually has to do about each piece on a champion that was built up. `auto` is the
+// common case and gets a stated no-op line rather than being left out: silence there reads as "this
+// piece was missed" (FR-017).
+//
+// `keep` is a named case and the default THROWS, which is the whole point of writing it this way.
+// With `keep` on the default arm, any disposition byHolder did not produce — a typo, a fourth one
+// added without a line here — rendered "leave it on": the one piece of advice that costs the owner a
+// slot they cannot refill. A disposition this code does not recognise has to fail where it is seen.
+export function action(entry, names) {
+  switch (entry.disposition) {
+    case "return": return `to ${label(entry.from, names)}`;
+    case "auto": return "back to the vault on its own when this slot is restored — no action";
+    case "unequip": return "take off deliberately — this slot was empty before, so nothing"
+      + " will displace it";
+    case "keep": return "leave it on — the piece it replaced was sold, so taking this off would"
+      + " only empty the slot";
+    default: throw new Error(`unknown disposition ${JSON.stringify(entry.disposition)}`);
+  }
+}
+
+// --- CLI: I/O and layout ----------------------------------------------------
+// Below this line is not unit-tested: DB reads, section order, and console.log. It is covered
+// end-to-end instead — __tests__/gear-moves.cli.test.mjs builds a pair of throwaway snapshots, runs
+// the tool over them and asserts on what actually reaches stdout and stderr.
 
 // 1. Moved items — the flat audit list. Every piece that changed hands, described as it looks NOW,
 // with where it was and where it is. A restore can be driven from this section alone.
@@ -267,26 +304,6 @@ function printRestoreByChampion(moved, names, afterCounts) {
     }
   }
   console.log("");
-}
-
-// What the owner actually has to do about each piece on a champion that was built up. `auto` is the
-// common case and gets a stated no-op line rather than being left out: silence there reads as "this
-// piece was missed" (FR-017).
-//
-// `keep` is a named case and the default THROWS, which is the whole point of writing it this way.
-// With `keep` on the default arm, any disposition byHolder did not produce — a typo, a fourth one
-// added without a line here — rendered "leave it on": the one piece of advice that costs the owner a
-// slot they cannot refill. A disposition this code does not recognise has to fail where it is seen.
-function action(entry, names) {
-  switch (entry.disposition) {
-    case "return": return `to ${label(entry.from, names)}`;
-    case "auto": return "back to the vault on its own when this slot is restored — no action";
-    case "unequip": return "take off deliberately — this slot was empty before, so nothing"
-      + " will displace it";
-    case "keep": return "leave it on — the piece it replaced was sold, so taking this off would"
-      + " only empty the slot";
-    default: throw new Error(`unknown disposition ${JSON.stringify(entry.disposition)}`);
-  }
 }
 
 // 3. Strip list by holder — the inverse index of section 2, and the reason it exists: the gear is
@@ -334,12 +351,6 @@ function printGone(gone, beforeLoc, names, beforeCounts) {
     console.log(`      ${was === null ? "was unequipped" : `last seen on ${label(was, names)}`}`);
   }
   console.log("");
-}
-
-// Biggest job first, then by name so the report is stable run to run.
-function sortedGroups(groups, names) {
-  return [...groups.entries()].sort((a, b) =>
-    b[1].length - a[1].length || label(a[0], names).localeCompare(label(b[0], names)));
 }
 
 function loadSnapshot(path) {

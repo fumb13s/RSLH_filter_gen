@@ -15,6 +15,7 @@ Each entry carries a severity tag indicating its semver impact: `[major]`, `[min
 
 - [patch] Open the shared artifact reader read-only, so a mistyped snapshot path fails instead of creating an empty database (#23)
 - [patch] Count two gear pieces as identical only when they really look alike: the "either will do" marker now accounts for substat glyphs and the ascension bonus, both of which are printed on the line (#23)
+- [patch] `gear-moves.mjs` rejects an extra argument or an option instead of ignoring it, so `-o report.md` carried over from `restore.mjs` fails with usage rather than vanishing (#23)
 
 ### Changed
 

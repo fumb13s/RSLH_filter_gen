@@ -1,14 +1,22 @@
 // oracle/analytics/__tests__/gear-moves.test.mjs
 //
-// Hand-built rows and items throughout — no database fixtures. That is not a style preference:
-// snapshots hold personal account data, are excluded from version control, and are absent from a
-// fresh checkout, so a fixture-based test would be unrunnable for anyone else.
+// The pure half of gear-moves.mjs: the diff, the groupings, and the wording of a line. Hand-built
+// rows and items throughout, because at this level a database would only be a slower way to reach
+// the same objects.
+//
+// It stops at console.log. The other half — section order, the DB reads, the warnings — is covered
+// by gear-moves.cli.test.mjs, which builds throwaway snapshots and runs the tool over them. An
+// earlier version of this header claimed a fixture-based test would be unrunnable for anyone else
+// because real snapshots hold personal data and are gitignored; that is true of the REAL snapshots
+// and false of a synthetic one, as decode.test.mjs's makeTempDb and the committed oracle/known-gear.db
+// both already showed.
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect } from "vitest";
-import { byHolder, byOwner, champNames, collisionCounts, describeItem, diffLocations,
-  locationsFrom, slotsBefore } from "../gear-moves.mjs";
+import { action, ambiguity, byHolder, byOwner, champNames, collisionCounts, describeItem,
+  diffLocations, label, leveledTag, locationsFrom, slotsBefore,
+  sortedGroups } from "../gear-moves.mjs";
 import { fingerprint } from "../gear-common.mjs";
 import { readArtifacts } from "../decode.mjs";
 import { readChampRows } from "../champs.mjs";
@@ -430,6 +438,83 @@ test("byHolder and byOwner name the same origin for a piece", () => {
   // strip list only, so its holder entry must not claim an origin the per-owner view never lists.
   expect(vaulted.from).toBe(null);
   expect([...owners.keys()]).toEqual([1]);
+});
+
+// --- the wording of a line --------------------------------------------------
+
+const names = (o) => new Map(Object.entries(o).map(([id, v]) => [Number(id), v]));
+
+// FR-004: a location is a name or an explicit "(unequipped)", never blank and never a bare id. A
+// blank would read as "this piece did not move" and an id identifies nothing in a UI that never
+// shows one.
+test("label names every location, including the vault and an unknown id", () => {
+  const n = names({ 1: { name: "Elhain", missing: false } });
+  expect(label(null, n)).toBe("(unequipped)");
+  expect(label(1, n)).toBe("Elhain");
+  expect(label(99, n)).toBe("unknown champion #99");
+});
+
+// FR-011: a champion consumed mid-session still has to have its gear housed somewhere, so it keeps
+// the name the before snapshot recorded and is marked rather than dropped to an id.
+test("label marks a champion that no longer exists but still names it", () => {
+  expect(label(9, names({ 9: { name: "Varkos Headsplitter", missing: true } })))
+    .toBe("Varkos Headsplitter (champion no longer exists)");
+});
+
+// FR-008. The values printed on a leveled piece read higher than the baseline showed, so without the
+// tag the reader concludes they are holding the wrong item.
+test("leveledTag fires only on a piece that leveled, and states both levels", () => {
+  expect(leveledTag(move({ leveledFrom: null }))).toBe("");
+  expect(leveledTag(move({ leveledFrom: 12, item: item({ level: 16 }) })))
+    .toBe("   [leveled +12->+16 during session]");
+});
+
+// FR-006. Silence has to mean "this description is unique", so the marker appears exactly when the
+// count says more than one piece looks like this.
+test("ambiguity marks a shared appearance and stays silent on a unique one", () => {
+  const twin = item({ id: 1 });
+  const counts = collisionCounts([twin, item({ id: 2 })]);
+  expect(ambiguity(twin, counts)).toContain("(2 identical — either will do)");
+  expect(ambiguity(item({ slot: 6 }), counts)).toBe("");
+});
+
+// The scope is the caller's to get right, and this is what getting it wrong looks like: a gone item
+// counted against the after snapshot is absent from the map on every line, so every one of them
+// reads as unique. The `?? 1` fallback keeps the line printable — it does not make the scope safe.
+test("ambiguity reads as unique for an item missing from the counts it was handed", () => {
+  const sold = item({ id: 41, set: 6 });
+  expect(ambiguity(sold, collisionCounts([item({ id: 11, set: 5 })]))).toBe("");
+  expect(ambiguity(sold, collisionCounts([sold, item({ id: 42, set: 6 })])))
+    .toContain("(2 identical");
+});
+
+// FR-017. All four dispositions say what to DO, and `auto` is a stated no-op rather than an omission
+// — silence there reads as "this piece was missed".
+test("action gives each disposition its own instruction", () => {
+  const n = names({ 4: { name: "Turvold", missing: false } });
+  expect(action({ disposition: "return", from: 4 }, n)).toBe("to Turvold");
+  expect(action({ disposition: "auto" }, n)).toContain("no action");
+  expect(action({ disposition: "unequip" }, n)).toContain("take off deliberately");
+  expect(action({ disposition: "keep" }, n)).toContain("leave it on");
+});
+
+// The regression test for the harmful direction. `keep` used to be the default arm, so ANY
+// unrecognised disposition — a typo, a fourth one added without a line — rendered "leave it on":
+// advice that costs the owner a slot they cannot refill. It has to fail where it can be seen.
+test("action refuses to guess at a disposition it does not know", () => {
+  expect(() => action({ disposition: "kepe" }, new Map())).toThrow(/unknown disposition/);
+  expect(() => action({ disposition: undefined }, new Map())).toThrow(/unknown disposition/);
+});
+
+// Biggest job first so the reader starts where the work is, then by name so two runs over the same
+// snapshots produce the same report.
+test("sortedGroups orders by size, then by the printed name", () => {
+  const n = names({
+    1: { name: "Zavia", missing: false }, 2: { name: "Ashra", missing: false },
+    3: { name: "Marius", missing: false },
+  });
+  const groups = new Map([[1, ["a"]], [2, ["b"]], [3, ["c", "d"]]]);
+  expect(sortedGroups(groups, n).map(([id]) => id)).toEqual([3, 2, 1]);
 });
 
 // --- reading a snapshot that is not there (FR-012, FR-015) ------------------
