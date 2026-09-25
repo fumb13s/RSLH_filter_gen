@@ -10,9 +10,16 @@ export default tseslint.config(
     // de-obfuscated form), the extracted SFC workers and wasm, and the two gitignored derived dirs
     // that hold throwaway probe scripts. Ignore by directory, not by `oracle/**`, so new tooling
     // there is linted by default rather than silently exempt.
+    //
+    // `.hivemind/` is exempt for a different reason: it is throwaway worker scratch that is never
+    // committed, so a probe script left under `.hivemind/scratch/` must not fail `eslint .`. The
+    // `**/` prefix is load-bearing: `.worktrees/` is gitignored but NOT eslint-ignored, so linting
+    // from the root checkout while a worker is active walks `.worktrees/<issue>/.hivemind/scratch/`
+    // too, and an anchored `.hivemind/**` would miss it.
     ignores: [
       "**/dist/**",
       "**/node_modules/**",
+      "**/.hivemind/**",
       "oracle/resources/**",
       "oracle/probe/gen/**",
       "oracle/analytics/out/**",
