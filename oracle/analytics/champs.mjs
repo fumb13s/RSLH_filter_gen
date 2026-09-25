@@ -3,9 +3,11 @@
 // once.
 import { DatabaseSync } from "node:sqlite";
 
-// Empty-Name rows are placeholders (they hold no gear, and they are the one place Role disagrees
-// across copies of a name), so they never reach the matcher. `typeof` first because Name has no NOT
-// NULL constraint, and `null.trim()` throws.
+// Empty-Name rows are placeholders: there is no name to match a selector against or to print, and they
+// are the one place Role disagrees across copies of a name, so they never reach the matcher. What this
+// is NOT is a claim that they hold no gear — a caller that needs a piece's LOCATION rather than a
+// champion's name reads through readAllChampRows below. `typeof` first because Name has no NOT NULL
+// constraint, and `null.trim()` throws.
 export const isRealChamp = (r) => typeof r.Name === "string" && r.Name.trim() !== "";
 
 // An arg ending .db or containing a separator is the snapshot; the first other arg is the selector.
@@ -41,19 +43,40 @@ export function suggestNames(rows, selector, limit = 8) {
 
 // --- I/O --------------------------------------------------------------------
 
+// The roster: every row a champion selector can match, or a report can name. Placeholders are dropped
+// here rather than by each caller because every consumer of a NAME wants them gone.
+export function readChampRows(dbPath) {
+  return readAllChampRows(dbPath).filter(isRealChamp);
+}
+
+// Every row, placeholders included. gear-moves.mjs wants this for LOCATIONS: a placeholder row is not
+// a champion anyone can open, but a piece sitting in its slot columns is still not in the vault, and a
+// row dropped here makes that piece read as unequipped. A report then sends the owner to the vault for
+// something that is on something — silently, since nothing distinguishes it from a real vault piece.
+// Names still come from readChampRows above, so a blank name can never be printed.
+//
 // readOnly makes SELECT-only structural rather than conventional, and — the reason it's here — it
 // refuses to CREATE the file: without it a typo'd snapshot path leaves a stray 0-byte .db behind
-// before failing on the missing table. Fraction/SPD/EmpLvl are for speed.mjs; champion-gear.mjs
-// ignores them.
-export function readChampRows(dbPath) {
+// before failing on the missing table.
+//
+// The column list is the union of what three consumers want, and each ignores the rest:
+// Fraction/SPD/EmpLvl are speed.mjs's, and the nine gear-slot columns are gear-moves.mjs's.
+// Those nine carry the schema's own misspellings (Glouves, Amulett) and must be copied verbatim.
+// Their ORDER IS NOT SLOT-ID ORDER — Weapon is slot 5, Helmet is 1, Shield 6, Glouves 3, Chest 2,
+// Shoes 4, and only Ring/Amulett/Banner line up — so a consumer takes an item's slot from the item,
+// never from the column that referenced it.
+//
+// Naming the columns is load-bearing, not stylistic: SELECT * throws RangeError ERR_OUT_OF_RANGE
+// because RecentBattleTicks holds values beyond JS number range.
+export function readAllChampRows(dbPath) {
   const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
     const st = db.prepare(
-      "SELECT ID, Name, Role, Rarity, Rang, Lvl, Fraction, SPD, EmpLvl FROM Champs");
+      "SELECT ID, Name, Role, Rarity, Rang, Lvl, Fraction, SPD, EmpLvl,"
+      + " Weapon, Helmet, Shield, Glouves, Chest, Shoes, Ring, Amulett, Banner FROM Champs");
     st.setReadBigInts(true);
-    const rows = st.all().map((r) => Object.fromEntries(
+    return st.all().map((r) => Object.fromEntries(
       Object.entries(r).map(([k, v]) => [k, typeof v === "bigint" ? Number(v) : v])));
-    return rows.filter(isRealChamp);
   } finally {
     db.close();
   }

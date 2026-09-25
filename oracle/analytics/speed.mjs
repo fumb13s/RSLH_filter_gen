@@ -83,8 +83,14 @@ export function otherWearers(items, champId, rows) {
   for (const it of items) {
     const owner = it.equippedChampId;
     if (!owner || owner === champId) continue;
-    // A placeholder Champs row is dropped by readChampRows but still owns gear. Naming the owner by
-    // id beats reporting the piece as free, which is the one answer that is certainly wrong.
+    // `owner` is Artifacts.cID, and it can name a row the roster read dropped — a placeholder
+    // (empty-Name) row, or a champion since consumed. Naming it by id beats reporting the piece as
+    // free, which is the one answer that is certainly wrong.
+    //
+    // It is not the same claim as a placeholder row WEARING something. Worn gear is recorded in the
+    // Champs slot columns; cID is a back-pointer that is not cleared on unequip, so one pointing at a
+    // placeholder row says nothing about what that row holds. A caller that needs the slot columns
+    // reads them off every row — see readAllChampRows in champs.mjs.
     out.set(it.id, names.get(owner) ?? `#${owner}`);
   }
   return out;

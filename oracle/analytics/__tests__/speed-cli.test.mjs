@@ -227,8 +227,9 @@ test("otherWearers names the champion wearing each item, skipping free and own p
     .toEqual(new Map([[1, "Kantra the Cyclone"], [2, "Elhain"]]));
 });
 
-// A placeholder Champs row is dropped by readChampRows but still owns gear. Naming it by id beats
-// reporting the piece as free, which is the one answer that is certainly wrong.
+// equippedChampId is Artifacts.cID, which can name a row the roster read dropped — a placeholder
+// (empty-Name) row, or a champion since consumed. Naming it by id beats reporting the piece as free,
+// which is the one answer that is certainly wrong.
 test("otherWearers falls back to the champion id when the roster has no name for it", () => {
   expect(otherWearers([worn(1, 77)], 0, ROWS)).toEqual(new Map([[1, "#77"]]));
 });

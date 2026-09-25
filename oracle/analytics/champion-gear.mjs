@@ -28,7 +28,7 @@ export { isRealChamp, parseArgs, readChampRows, selectChamps };
 // against the 2026-07-12 snapshot: Role=1 champs are uniformly DEF-scaling, Role=2 top the HP
 // medians, Role=3 bottom the crit medians. It's static champion data — bare level-1 copies already
 // carry it, and 368 of 369 multi-copy names agree across copies (the one exception is a block of
-// empty-Name placeholder rows, which hold no gear and are filtered out on read).
+// empty-Name placeholder rows, which are filtered out on read).
 export const CHAMP_ROLE = { 0: "ATK-DPS", 1: "DEF-DPS", 2: "HP-DPS", 3: "Support" };
 export const CHAMP_ROLE_LABEL = { 0: "Attack", 1: "Defense", 2: "HP", 3: "Support" };
 

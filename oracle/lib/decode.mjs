@@ -38,8 +38,14 @@ export const ASC = { id: "ASCID", fl: "ASCFL", base: "ASCLVLID" };
 // with 64-bit garbage in sNgv/sNmlvlid that overflows a JS number, and node:sqlite throws on .all()
 // unless BigInt reads are on. N() coerces every column back to a Number downstream; callers filter
 // corrupt rows (see isCorrupt). `cols` is a comma-separated column list; rows are returned ORDER BY ID.
+//
+// readOnly matches readChampRows, and its point is the same: it refuses to CREATE the file. Without
+// it a typo'd snapshot path is silently created as an empty database, which a later run then reads
+// as a real snapshot holding no gear — a wrong answer that looks like a right one. Both callers
+// (oracle/probe/probe.mjs and oracle/analytics/decode.mjs) issue a single SELECT, so there is no
+// write path to lose.
 export function readArtifactRows(dbPath, cols) {
-  const db = new DatabaseSync(dbPath);
+  const db = new DatabaseSync(dbPath, { readOnly: true });
   const stmt = db.prepare(`SELECT ${cols} FROM Artifacts ORDER BY ID`);
   stmt.setReadBigInts(true);
   const rows = stmt.all();
