@@ -87,11 +87,10 @@ export function otherWearers(items, champId, rows) {
     // (empty-Name) row, or a champion since consumed. Naming it by id beats reporting the piece as
     // free, which is the one answer that is certainly wrong.
     //
-    // This reads as a contradiction of the "placeholder rows hold no gear" note in champion-gear.mjs
-    // and champs.mjs, and it is not one: the two are about different columns. Worn gear is recorded in
-    // the Champs slot columns, while cID is a back-pointer that is not cleared on unequip, so a stale
-    // one pointing at a placeholder row says nothing about what that row holds. gear-moves.mjs, which
-    // needs the slot columns to be right, reads every row rather than relying on either claim.
+    // It is not the same claim as a placeholder row WEARING something. Worn gear is recorded in the
+    // Champs slot columns; cID is a back-pointer that is not cleared on unequip, so one pointing at a
+    // placeholder row says nothing about what that row holds. A caller that needs the slot columns
+    // reads them off every row — see readAllChampRows in champs.mjs.
     out.set(it.id, names.get(owner) ?? `#${owner}`);
   }
   return out;
