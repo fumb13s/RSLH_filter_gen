@@ -55,3 +55,22 @@ export function fingerprint(it) {
     it.ascStat ? `${it.ascStat.statId}:${it.ascStat.isFlat}:${it.ascStat.value}` : "",
   ].join("|");
 }
+
+// How many items share each visible appearance, across ONE snapshot. Which snapshot is the caller's
+// to choose, and the marker's whole correctness rests on it: a row is counted against the snapshot it
+// is RENDERED from — the after one for a piece that still exists, the before one for a piece that is
+// gone.
+//
+// The counting lives beside the key because the scope rule is the other half of the same contract, and
+// it had forked exactly the way the key had: restore.mjs counted its gone rows against the after
+// snapshot, where a gone item's appearance is by definition absent, so the lookup missed on every one
+// of them — all 47 in the reference window. Both tools default a missing count to 1, so the miss does
+// not show up as a broken line; it shows up as a silent claim that the piece was unique.
+export function collisionCounts(items) {
+  const counts = new Map();
+  for (const it of items) {
+    const fp = fingerprint(it);
+    counts.set(fp, (counts.get(fp) ?? 0) + 1);
+  }
+  return counts;
+}

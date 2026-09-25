@@ -29,7 +29,7 @@ import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, FACTION_NAMES, ITEM_RARITIES, 
   statDisplayName } from "@rslh/core";
 import { readChampRows } from "./champs.mjs";
 import { readArtifacts } from "./decode.mjs";
-import { SLOT_COLUMNS, fingerprint } from "./gear-common.mjs";
+import { SLOT_COLUMNS, collisionCounts, fingerprint } from "./gear-common.mjs";
 
 // Who is wearing what, read from the Champs slot columns and NEVER from Artifacts.cID. That pointer
 // is not cleared on unequip, so it keeps naming the last wearer indefinitely — 36 such stale
@@ -118,19 +118,6 @@ export function diffLocations(beforeItems, beforeLoc, afterItems, afterLoc) {
       leveledFrom: before.level === after.level ? null : before.level });
   }
   return { moved, gone };
-}
-
-// How many items share each visible appearance. Scoped to whichever snapshot the rendered row came
-// from: moved items are drawn from the after snapshot, gone items from the before one. Counting gone
-// items against the after snapshot returns undefined for every one of them — all 47 in the reference
-// window — and a naive template then prints "undefined identical".
-export function collisionCounts(items) {
-  const counts = new Map();
-  for (const it of items) {
-    const fp = fingerprint(it);
-    counts.set(fp, (counts.get(fp) ?? 0) + 1);
-  }
-  return counts;
 }
 
 // What each champion was wearing before, keyed by slot. Exists as its own function because the

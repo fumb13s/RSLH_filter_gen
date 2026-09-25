@@ -14,10 +14,10 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect } from "vitest";
-import { action, ambiguity, byHolder, byOwner, champNames, collisionCounts, corruptFlips,
-  describeItem, diffLocations, label, leveledTag, locationsFrom, lostAmbiguity, slotsBefore,
+import { action, ambiguity, byHolder, byOwner, champNames, corruptFlips, describeItem,
+  diffLocations, label, leveledTag, locationsFrom, lostAmbiguity, slotsBefore,
   sortedGroups } from "../gear-moves.mjs";
-import { fingerprint } from "../gear-common.mjs";
+import { collisionCounts, fingerprint } from "../gear-common.mjs";
 import { readArtifacts } from "../decode.mjs";
 import { readChampRows } from "../champs.mjs";
 

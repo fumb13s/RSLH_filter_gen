@@ -24,11 +24,11 @@ import { DatabaseSync } from "node:sqlite";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, FACTION_NAMES, ITEM_RARITIES, lookupName,
   statDisplayName } from "@rslh/core";
 import { readArtifacts } from "./decode.mjs";
-// SLOT_COLUMNS and fingerprint are shared with gear-moves.mjs, which diffs the same snapshot pair.
-// Two tools disagreeing about which pieces look alike is worse than either alone, since the owner
-// has no way to adjudicate — so neither keeps its own copy. SLOT_LABEL stays here: it is this
-// report's markdown wording (Shoes = Boots, Glouves = Gloves), not a fact about the schema.
-import { SLOT_COLUMNS, fingerprint } from "./gear-common.mjs";
+// SLOT_COLUMNS, fingerprint and collisionCounts are shared with gear-moves.mjs, which diffs the same
+// snapshot pair. Two tools disagreeing about which pieces look alike is worse than either alone, since
+// the owner has no way to adjudicate — so neither keeps its own copy. SLOT_LABEL stays here: it is
+// this report's markdown wording (Shoes = Boots, Glouves = Gloves), not a fact about the schema.
+import { SLOT_COLUMNS, collisionCounts, fingerprint } from "./gear-common.mjs";
 
 export const SLOT_LABEL = { Weapon: "Weapon", Helmet: "Helmet", Shield: "Shield", Glouves: "Gloves",
   Chest: "Chest", Shoes: "Boots", Ring: "Ring", Amulett: "Amulet", Banner: "Banner" };
@@ -116,13 +116,24 @@ const num = (v) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
 const stat = (s) => `${num(s.value)}${s.isFlat ? "" : "%"} ${statDisplayName(s.statId, s.isFlat)}`;
 const setName = (id) => (id === 0 ? "(setless)" : lookupName(ARTIFACT_SET_NAMES, id));
 
-function describe(it, collisions, beforeLevel) {
+// One markdown line naming a piece by what the game shows on it.
+//
+// `collisions` is the caller's choice of scope and has to match the snapshot the row came from — see
+// collisionCounts. `lost` says the piece is gone, which changes what the lookalike count is allowed to
+// promise: "either will do" offers a substitute, and a sold piece has none. Even where a twin survives
+// (one of a pair sold, one kept) this report never says WHICH, so the phrase has no referent the reader
+// can act on — it just invites them to stop worrying about something they have actually lost. The count
+// itself still prints, or two byte-identical GONE lines read as the same piece listed twice.
+function describe(it, collisions, { beforeLevel = null, lost = false } = {}) {
   const subs = it.substats
     .map((s) => `${stat(s)}${s.glyph ? ` (+${num(s.glyph)} glyph)` : ""}`).join(", ");
   const fac = it.isAccessory && it.faction ? ` [${lookupName(FACTION_NAMES, it.faction)}]` : "";
   const asc = it.ascStat ? ` · asc ${stat(it.ascStat)}` : "";
   const dupes = collisions.get(fingerprint(it)) ?? 1;
-  const dupe = dupes > 1 ? `  **(${dupes} identical — either will do)**` : "";
+  const dupe = dupes > 1
+    ? (lost ? `  **(${dupes} pieces looked like this before)**`
+      : `  **(${dupes} identical — either will do)**`)
+    : "";
   // A piece the driver leveled reads higher than it did before, so flag it or the reader will think
   // they are looking at the wrong item.
   const lvl = beforeLevel != null && beforeLevel !== it.level
@@ -134,10 +145,10 @@ function describe(it, collisions, beforeLevel) {
 
 export function buildReport(before, after, meta) {
   const { restore, intruders, gone, slots } = diffSlots(before, after);
-  const collisions = new Map();
-  for (const it of after.all) {
-    collisions.set(fingerprint(it), (collisions.get(fingerprint(it)) || 0) + 1);
-  }
+  // Two scopes, deliberately. Every line but one renders an AFTER row and is counted there; the ⚠️ GONE
+  // line renders a BEFORE row, because no after row exists for it, and has to be counted there too.
+  const collisions = collisionCounts(after.all);
+  const beforeCollisions = collisionCounts(before.all);
   const newChamps = new Set([...after.champs.keys()].filter((id) => !before.champs.has(id)));
   const name = (id) => (before.champs.get(id) ?? after.champs.get(id))?.Name ?? `#${id}`;
   const holder = (id) => (after.champs.get(id) ?? before.champs.get(id))?.Name ?? `#${id}`;
@@ -182,11 +193,12 @@ export function buildReport(before, after, meta) {
     P(``);
     for (const r of rows.sort((x, y) => SLOT_COLUMNS.indexOf(x.col) - SLOT_COLUMNS.indexOf(y.col))) {
       if (r.gone) {
-        P(`- **${SLOT_LABEL[r.col]}** — ⚠️ GONE (sold/consumed): ${describe(r.item, collisions)}`);
+        P(`- **${SLOT_LABEL[r.col]}** — ⚠️ GONE (sold/consumed): `
+          + `${describe(r.item, beforeCollisions, { lost: true })}`);
         continue;
       }
       P(`- **${SLOT_LABEL[r.col]}** — now on ${label(r.nowOn)}`);
-      P(`  - ${describe(r.item, collisions, r.beforeLevel)}`);
+      P(`  - ${describe(r.item, collisions, { beforeLevel: r.beforeLevel })}`);
     }
     P(``);
   }
@@ -215,7 +227,7 @@ export function buildReport(before, after, meta) {
       P(`- **${SLOT_LABEL[r.col]}** ${r.cameFrom === null
         ? "→ back to **the vault** (displaced automatically when this slot is restored)"
         : `→ back to ${label(r.cameFrom)}`}`);
-      P(`  - ${describe(r.item, collisions, before.items.get(r.item.id)?.level)}`);
+      P(`  - ${describe(r.item, collisions, { beforeLevel: before.items.get(r.item.id)?.level })}`);
     }
     P(``);
   }
