@@ -199,7 +199,11 @@ test("fingerprint ignores the order substats happen to be stored in", () => {
 
 test("fingerprint separates items differing in any visible attribute", () => {
   const base = item();
-  for (const change of [{ slot: 6 }, { set: 9 }, { rarity: 4 }, { rank: 5 }]) {
+  // Level is in the list because both tools print it. It was left out on the grounds that the rarity,
+  // rank and stat values imply it, which holds only while the decoder's rounding keeps adjacent levels
+  // apart — a flat main stat is rounded to a whole number, so a small per-level gain can print the
+  // same value at +3 and +4 and pool two visibly different lines as "either will do".
+  for (const change of [{ slot: 6 }, { set: 9 }, { rarity: 4 }, { rank: 5 }, { level: 15 }]) {
     expect(fingerprint(item(change))).not.toBe(fingerprint(base));
   }
   expect(fingerprint(item({ mainStat: { statId: 2, isFlat: true, value: 200 } })))
@@ -226,6 +230,17 @@ test("fingerprint separates items differing only in their ascension bonus", () =
   expect(fingerprint(base)).not.toBe(fingerprint(asc({ statId: 4, isFlat: true, value: 204 })));
   expect(fingerprint(base)).not.toBe(fingerprint(asc({ statId: 1, isFlat: false, value: 204 })));
   expect(fingerprint(base)).toBe(fingerprint(asc({ statId: 1, isFlat: true, value: 204 })));
+});
+
+// The other half of why level is in the key, and the reason adding it needed no re-measurement: it is
+// on the line, so two pieces whose descriptions match print the same level and no genuine pair can be
+// split by keying it. Pinned to describeItem so that removing it from either side fails here.
+test("fingerprint keys level exactly where the description prints it", () => {
+  const at = (level) => item({ level });
+  expect(describeItem(at(12))).not.toBe(describeItem(at(16)));
+  expect(fingerprint(at(12))).not.toBe(fingerprint(at(16)));
+  expect(describeItem(at(16))).toBe(describeItem(item()));
+  expect(fingerprint(at(16))).toBe(fingerprint(item()));
 });
 
 // The key and the description have to agree about faction or the marker lies in one direction or

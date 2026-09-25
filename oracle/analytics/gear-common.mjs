@@ -45,11 +45,18 @@ export const SLOT_COLUMNS = ["Weapon", "Helmet", "Shield", "Glouves", "Chest", "
 // Gating cannot pool an accessory with an artifact by accident: `it.slot` is already in the key and
 // isAccessory is derived from it, so the two can never share one.
 //
-// Level is deliberately absent and costs nothing: it is implied by the rarity, rank and stat values
-// already in the key, since the values printed on a piece are what its level bought.
+// Level is in the key because both tools print it (`+16`), and the argument that kept it out — that
+// rarity, rank and the stat values already imply it — holds only while the decoder's rounding keeps
+// adjacent levels apart. decodeValue rounds a flat stat to a whole number, so at low rank and rarity,
+// where the per-level gain is small, two adjacent levels can round to the same printed main stat and
+// pool a +3 piece with a +4 one under "either will do" — two lines the reader can see are not the same
+// piece. That is the shape of the glyph and ascension-bonus omissions above.
+//
+// It cannot cause the opposite error: two pieces that read identically on screen necessarily print the
+// same level, so no genuine pair is split by adding the term.
 export function fingerprint(it) {
   return [
-    it.slot, it.set, it.rarity, it.rank, it.isAccessory ? it.faction : 0,
+    it.slot, it.set, it.rarity, it.rank, it.level, it.isAccessory ? it.faction : 0,
     `${it.mainStat.statId}:${it.mainStat.isFlat}:${it.mainStat.value}`,
     it.substats.map((s) => `${s.statId}:${s.isFlat}:${s.value}:${s.glyph}`).sort().join("+"),
     it.ascStat ? `${it.ascStat.statId}:${it.ascStat.isFlat}:${it.ascStat.value}` : "",
