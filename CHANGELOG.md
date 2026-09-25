@@ -7,6 +7,8 @@ Each entry carries a severity tag indicating its semver impact: `[major]`, `[min
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-25
+
 ### Fixed
 
 - Exclude `.hivemind/` from eslint, so a probe script a hivemind worker leaves under `.hivemind/scratch/` no longer fails `npm run lint`: flat config's default ignores are only `node_modules` and `.git`, and eslint reads no `.gitignore`. Pinned by a test, because the failure is invisible in a diff (#33)
