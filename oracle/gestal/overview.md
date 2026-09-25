@@ -343,3 +343,96 @@ out of the repo, like `../resources/`.
   model in `Gestal.Engine.Core` / `Gestal.Engine.Host`.
 - Beautify the renderer bundle for the sell-rules UI and the engine contract types.
 - Decode Raid's `static-data/…` blob (MessagePack + LZ4?) if the game's static data turns out useful.
+
+## Addendum — Gestal's sell rules, and translating `.hsf` (2026-09-26)
+Source: `Gestal.Engine.Core.dll` and `Gestal.Engine.Host.dll` 0.8.15, decompiled with `ilspycmd` (on a
+.NET 10 runtime in a scratch directory; the decompiled code is third-party and stays out of the repo).
+This amends two earlier points:
+- *Source availability*: the engine is **partly** obfuscated. Public type and member names are
+  intact, but private members are renamed (`A`, `m_A`) and some string literals are hidden behind
+  generated helper calls. The ILSpy output is still readable.
+- *Open / next*: the sell-rule model below comes from the decompiled engine; it no longer needs the
+  Windows build.
+
+### Gestal's sell rules
+**Where they apply.** Only in auto-battle, and only to gear dropped during the current run (item id
+above the highest id seen at run start); the existing vault is never swept. Auto-sell is armed by
+the master toggle in the gear-keep config document and is off in Minotaur (region 210) and
+ascension-material dungeons. The rules are re-read before every battle. Equipped items and items in
+Gestal's locked-gear list are never sold. Matches are sold through the injected helper, at most 32
+per command; when storage is full, an inbox prize is sold only if every piece in it matches.
+Gear-scoring weights play no part.
+
+**A rule** (`StoredGearSellRule`, in the account's `gear-sell-rules` document; C# property names —
+the on-disk JSON casing is unverified):
+- `Id`, `Name`, `Enabled`, `Keep` (new rules default to sell)
+- a cell: one `Slot` (Gestal 0–8) plus exactly one of `GearSetId` / `FactionId`; a faction cell is
+  only allowed on Ring / Amulet / Banner (slots 6–8)
+- optional criteria: `RarityIds[]`, `Ranks[]`, `MainStatIds[]`, `Level {Op, Value}`, `Reworked`,
+  `Substats[]` lines
+- a substat line: `Stats[]`, each `{StatId, Threshold {Op, Value}?, Rolls {Op, Value}?}`, plus
+  `Count` N and `MustHave`
+- `Op` is ≤, = or ≥ only
+
+**Matching** (`GearSellFilter`). Rules are checked in order; the first enabled rule that has at
+least one criterion and matches decides — `Keep` keeps, otherwise sell; no match keeps.
+1. The slot must match.
+2. An item with a set must match the rule's set, and faction is ignored. An item without a set must
+   match the rule's faction — so faction cells only catch setless accessories.
+3. Rarity, rank and main stat must be in the rule's lists (empty = any); then level and reworked.
+4. Each substat line counts the item's substats that are in the line and pass its value and roll
+   thresholds (a mythical roll counts as one extra roll). Must-have needs ≥ N, must-not-have
+   needs < N, and every line must pass.
+5. A rule with no criteria (cell only) is skipped.
+
+Thresholds are compared raw against the stored value, which is display × 100; the engine does no
+conversion. Set and faction ids are game ids; slot and stat ids are Gestal's.
+
+**Unused leftovers.** `GearKeepFilter` — a whitelist of keep rules by set / faction / rarity / rank
+plus per-slot main-stat and substat requirements — is still stored and shown in the auto-battle
+config, but its matcher is never called; only the document's `Enabled` flag is used, as the master
+toggle. `GearSellPolicy` (a rarity / rank cap) is always passed as `Permissive`.
+
+### Translating `.hsf` → Gestal
+Gestal has no `.hsf` support (no references in the engine or the UI), so an import means generating
+its sell-rules document ourselves. The core semantics already agree — ordered rules, first enabled
+match wins, `Keep` keeps, no match keeps — so a one-way translation covers most of `.hsf`, with
+fan-out and a few gaps.
+
+| `.hsf` (per `packages/core/src/evaluate.ts`) | Gestal rule | Notes |
+|--|--|--|
+| Rule order, `Keep`, `Use` | Same order, `Keep`, `Enabled` | Identical behaviour |
+| `ArtifactType` × `ArtifactSet` | One rule per (slot, set) cell | Slots remapped (below); set ids are game ids on both sides |
+| `Rank` (minimum) | `Ranks` = [N … 6] | Exact |
+| `Rarity` (minimum code) | `RarityIds` | 8 Rare → [3–6], 9 Epic → [4–6], 16 Legendary → [5, 6], 15 Mythical → [6] |
+| `MainStatID` | `MainStatIds` | Gestal splits flat / %; our evaluator ignores `MainStatF`, so the mapping needs a decision |
+| `Substats` (≤ 4, all required, value ≥ V) | One substat line per stat: that stat, value ≥ V × 100, count 1, must-have | Exact |
+| `LVLForCheck` (level ≥ N) | `Level` ≥ N | Maps, but see gap 4 |
+| `Faction` | Faction cell | Setless accessories only (gap 1) |
+
+- Slots, ours → Gestal: Helmet 1 → 1, Chest 2 → 4, Gloves 3 → 3, Boots 4 → 5, Weapon 5 → 0,
+  Shield 6 → 2, Ring 7 → 6, Amulet 8 → 7, Banner 9 → 8.
+- Substat stats, ours (`ID` + `IsFlat`) → Gestal: HP 1 → 1 flat / 4 %, ATK 2 → 3 flat / 6 %,
+  DEF 3 → 2 flat / 5 %, SPD 4 → 7, C.RATE 5 → 8, C.DMG 6 → 9, RES 7 → 11, ACC 8 → 10.
+
+Gaps:
+1. **Faction + set on accessories can't be expressed.** Gestal ignores faction on any item with a
+   set, so "set X Rings of faction Y" becomes "set X Rings of every faction". Sell rules like that
+   would have to be dropped (they would over-sell); keep rules only over-keep, which is safe.
+2. **Criteria-less rules are skipped.** An `.hsf` rule that only names sets / slots ("sell all set
+   X") does nothing in Gestal unless the translation adds an always-true criterion such as level ≥ 0.
+3. **Rule-count explosion.** An "any set, any slot" `.hsf` rule becomes several hundred Gestal
+   rules. The sample in `data/` has 20 such rules; Sellfile Creator exports already hold 12k–31k
+   rules. Matching copes; Gestal's rule-list UI likely would not.
+4. **Level rules never fire.** Gestal judges only fresh drops (level 0) and has no re-check as gear
+   is upgraded.
+5. **Faction id space still open.** Gestal cells use game faction ids; which space `.hsf` `Faction`
+   uses is unresolved.
+6. **No import path.** Either write the account's sell-rules document directly (it also syncs to
+   gestal.gg) or call the engine's bulk replace (`ReplaceGearSellRules`, which drops invalid cells).
+7. **Mac auto-sell unconfirmed.** In-app gear selling is Windows-only; whether auto-battle auto-sell
+   runs in the Mac build is unverified.
+
+Verdict: for filters our generator produces (specific sets and slots) the translation is faithful
+apart from gaps 1 and 4. Large any-set `.hsf` files translate on paper but yield an unwieldy number
+of Gestal rules.
