@@ -20,4 +20,4 @@ Each entry carries a severity tag indicating its semver impact: `[major]`, `[min
 
 ### Changed
 
-- [patch] `gear-moves.mjs` and `restore.mjs` share one copy of the slot columns and the visible-attribute fingerprint (`oracle/analytics/gear-common.mjs`), so the two reports cannot disagree about which pieces are indistinguishable (#23)
+- [patch] `gear-moves.mjs` and `restore.mjs` share one copy of the slot columns, the visible-attribute fingerprint and the per-snapshot lookalike count (`oracle/analytics/gear-common.mjs`), so the two reports cannot disagree about which pieces are indistinguishable (#23)
