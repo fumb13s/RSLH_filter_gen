@@ -84,15 +84,18 @@ own database, and nothing is ever deleted.
    no time is spent hunting for something that was sold.
 
    In the strip list a piece that came out of the vault carries one of three verdicts: `auto` (do
-   nothing — restoring the slot displaces it by itself), `unequip` (take it off by hand, the slot
-   was empty before and nothing will displace it), or `keep` (leave it on — the piece it replaced
-   was sold, so removing it would only leave the slot bare).
+   nothing — restoring the slot displaces it by itself, and a slot whose old occupant could not be
+   decoded lands here too, since "do nothing" is the only thing safe to say about it), `unequip`
+   (take it off by hand, the slot was empty before and nothing will displace it), or `keep` (leave
+   it on — the piece it replaced was sold, so removing it would only leave the slot bare).
 
    Pieces are described the way they look in the game, because the restore happens in a UI that
-   never shows internal ids; where two are indistinguishable the line says so and either will do. A
+   never shows internal ids; where two are indistinguishable the line says so — and says either will
+   do, unless the piece is gone, in which case there is no substitute to offer. A
    `[leveled +12->+16 during session]` tag means the printed values now read differently than they
-   did in the baseline. Locations come from the `Champs` slot columns, never `Artifacts.cID` — that
-   pointer keeps naming the last wearer after a piece is unequipped.
+   did in the baseline. Locations come from the `Champs` slot columns of every row, never
+   `Artifacts.cID` — that pointer keeps naming the last wearer after a piece is unequipped. Gear held
+   by a row with no name reads as `unknown champion #N`, not as unequipped.
 
    Advisory and strictly read-only: both reads open read-only, nothing is written, and a mistyped
    path fails rather than creating an empty database.
