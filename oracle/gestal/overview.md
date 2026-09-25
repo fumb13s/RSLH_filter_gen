@@ -5,18 +5,22 @@ auto-battle with auto-sell, summon/upgrade automation, cloud account sync. Like 
 the live game client — on macOS by injecting a helper into it.
 
 Snapshot **2026-09-26**: Gestal Desktop **0.8.15** (osx-arm64, stable channel), Raid **11.75.0**,
-fresh install, signed in to gestal.gg. **Raid was not running**, so Gestal had not attached or
-extracted anything yet.
+fresh install, signed in to gestal.gg. The first pass was made with **Raid not running**; the
+*Attached* section records a second look the same night, after Raid was launched and Gestal attached.
 
 Method: file listings, reads of its JSON/log files, `strings`/`nm`/`otool`/`codesign` on the
-bundle, and the sources embedded in its shipped source maps. No decompilation, no network capture.
+bundle, and the sources embedded in its shipped source maps; once attached, also `lsof` on the Raid
+process, the extracted documents and the engine log. No decompilation, no network capture.
 *Inferred* = read from type/method names or string literals, not from observed behaviour.
 
 ## TL;DR
 - **Data root:** `~/Library/Application Support/Gestal/` — downloaded catalogs + memory offsets,
-  gestal.gg login state, sync state, logs. No roster/gear until it attaches to a running Raid.
+  gestal.gg login state, sync state, logs; once attached, a full per-account dump.
+- **Once attached** it holds the whole account — every gear item, every champion, relics,
+  currencies, progress — re-read every ~10–20 s, plus game data read from memory and the battles
+  you play. Its `artifacts.json` is a candidate gear source for us on macOS.
 - **Raid keeps no gear on disk on macOS** — no counterpart to `*_RSLHelper.db`; gear exists only in
-  the running client.
+  the running client (and in Gestal's dump once it attaches).
 - **Access (macOS):** `task_for_pid` + `mach_vm_read_overwrite` with server-supplied IL2CPP offsets,
   plus a Rust helper dylib injected into Raid by thread hijack and reached over a shared-memory
   mailbox. It also *drives* the game through that helper.
@@ -92,15 +96,13 @@ Upstream: `https://api.gestal.gg` (API), `https://cdn.gestal.gg` (images, update
 | `Desktop/offsets_cache.json` (+ `.etag`) | `gameVersion` 11.75.0, `appModelRvas` / `applicationRvas`, and 454 field offsets over 152 IL2CPP classes (`class_Field` → byte offset) |
 | `auth-state.json` | gestal.gg profile: `guestChosen, email, displayName, avatarSlug, profileComplete, roles` — no token |
 | `active.json` | `{"schemaVersion":1,"payload":{"activeAccountKey":"local"}}` |
-| `accounts/local/` | Empty (nothing extracted yet) |
+| `accounts/local/` | Guest slot, empty. Attaching adds `accounts/<account-key>/` (see *Attached*) |
 | `sync/.lock`, `sync/<16-hex>/state.json` | Cloud-sync state: `serverUserKey, historyId, cursor, accounts, pending, parked, …`; `accounts` is `{}` |
 | `imagecache/<hash>.{webp,json}` | Images fetched through `/api/image` (so far the 16 faction banners) |
 | `logs/gestal-YYYYMMDD.log` | Serilog engine log, including ASP.NET request lines. `logs/electron-shell.log` appears only on shell failures |
 
-*Expected once attached (inferred, not observed):* per-account documents. File names the engine
-references include `roster`, `metadata.json`, `state.json`, `tab-pins.json`,
-`fusion-progress.json`, `gear-sell-rules`, `preferences.json` and `*.json.gz`; a code comment says
-a live Mac host keeps "its roster, accounts and logs" under this root.
+Attaching to a running Raid adds `accounts/<account-key>/`, `static/` and `battle-outbox/` — see
+*Attached: what it perceives* below.
 
 ### Electron profile (`gestal-desktop/`)
 Standard Chromium profile (Cookies, Local Storage, caches, GPU caches, …). The only app state is
@@ -118,6 +120,60 @@ the localStorage key `gestal.query-cache` (persisted TanStack Query cache, buste
     `ZendeskIntegrationStorage/`.
 - ⚠️ **No gear or roster on disk.** On macOS gear exists only in the running client (and, once
   Gestal attaches, in Gestal's own documents).
+
+## Attached: what it perceives
+Observed 2026-09-26 after launching Raid (native arm64) with Gestal running. The engine adopted the
+account at 00:56 (local time); a full extraction takes ~2 s
+(`accounts/<account-key>/diagnostics/last-extraction.json`). `lsof` on the Raid process shows
+`libgestal_mac_helper.dylib` mapped into it.
+
+From then on it **polls**: gear and roster are re-read roughly every 20 s, currencies every ~10 s,
+and each document is rewritten only when it changed (log: `Skipped artifacts (unchanged)`).
+
+### Account documents — `accounts/<account-key>/`
+`<account-key>` is a 16-hex id; the active account flips from `local` to it (`active.json`).
+
+| File | Contents |
+|--|--|
+| `metadata.json` | Display name, Raid player id (the identity source), avatar/frame ids, game version, last snapshot time, sync state |
+| `artifacts.json` (~10 MB) | Every gear item — see *Gear dump* under *Id spaces* |
+| `champions.json` (~6 MB) | Every champion, 31 fields: ids (`heroId`, `typeId`, `baseTypeId`), grade, level, ascension / empower / awaken levels, blessing, affinity, faction, `storageLocation` (0 roster · 1 Reserve · 2 Master vault), guardian flag, base and max-ascended stats, masteries, skills, relics, role, alternate-form data |
+| `relic-inventory.json` | Relics (type, rank, level, socketed stones, wearer) and loose stones |
+| `currency.json` | Silver, gems, energy and cap, account level, tokens, arena currencies, auto-battle tickets, mythical dust, broken hero parts, alliance coin, Plarium points, soulstones |
+| `arena.json` | Classic and tag-team arena: points, league, weekly wins/losses, timers |
+| `grim-forest.json` | Grim Forest map per difficulty: nodes, links, stages, rewards, completion |
+| `faction-guardian-state.json`, `great-hall-state.json`, `account-bonuses.json` | Guardian slots and deployed champions; Great Hall levels; affinity / arena / area bonuses |
+| `shard-tracker.json` | Shard inventory, mercy counters, summon statistics |
+| `gear-presets.json`, `account-snapshots.json` | Saved teams: champion → the 9 artifact ids it wears |
+| `gear-scoring-params.json`, `food-config.json` | User settings: gear-scoring weights; Food Upgrader |
+| `diagnostics/last-extraction.json` | Last extraction: time, success, elapsed ms, game version |
+
+### Game data read from memory — `static/`
+`skill-effect-catalog.json` (~5 MB: every skill with cooldown and effect formulas such as
+`3.2*ATK`, plus effect tags) and blessing, relic, mastery, empower, faction-guardian and Great Hall
+catalogs. Cached per game version and re-read from IL2CPP when the version changes. Values use the
+game's `/ 2**32` fixed point, as in RslHelper.db.
+
+### Battles
+It watches play: the team being launched and, when a battle ends, the stage, difficulty, result and
+cause, auto vs manual, and skill priorities. It also tracks which game screen is open (view keys).
+Both battles played during the session were captured.
+
+### Uploads, observed
+- Account sync pushed four documents — `gear-presets`, `account-snapshots`, `gear-scoring-params`,
+  `shard-tracker` — whose last-synced copies sit in `sync/<user-key>/base/<account-key>/`.
+  `artifacts.json` and `champions.json` were not among them.
+- `battle-outbox/<user-key>.json` queues battle telemetry: full builds of the launched team (every
+  gear piece's stats, relic, masteries, blessing), the team, the battle record (`battleId, kind,
+  stageId, difficultyId, outcome, finishCause, turns, durationMs, deadSlots, bossDamage, stars, …`)
+  and a roster list of champion ids. When read, nothing in it was marked confirmed (`confirmed*`
+  lists empty, `sharingGeneration: 0`).
+
+### Reading, observed
+- On 11.75.0 the external AppModel walk failed ("UserWrapper pointer was invalid"), so the account
+  identity came through the injected helper; the log calls this "a degraded path".
+- The helper's in-process gear capture stops at 8,192 items; with more gear the engine falls back to
+  an external walk of the gear pool ("never wrong, only slower").
 
 ## How it reads and drives Raid on macOS
 From `Gestal.Engine.Extraction.Mac.dll` names/imports and the helper's exports (mechanism
@@ -196,6 +252,25 @@ allows plus the set-bonus texts; both files agree.
 7 → 13 Accuracy, 9 → 16 Lifesteal, 18 → 26 Relentless, 31 → 41 Divine Offense, 1002 → 75
 Bloodshield, 1003 → 77 Reaction, 1004 → 76 Revenge.
 
+**Gear dump** (`accounts/<account-key>/artifacts.json`, one object per item) mixes both spaces:
+
+| Field | Meaning |
+|--|--|
+| `slot` | Gestal slot, 0-based (0 Weapon … 8 Banner) |
+| `gearSetId` | **Game** set id — the `.hsf` / RslHelper.db `aset` space; `null` = no set. The accessory sets seen are exactly our `ACCESSORY_SET_IDS` |
+| `factionId` | **Game** faction id on accessories (1–3 and 5–17 seen, never 4); `null` on the other slots |
+| `rarityId` | 1 Common … 6 Mythical |
+| `rank`, `level`, `ascensionLevel` | Stars, 0–16, 0–6 |
+| `mainStatId`, `mainStatValue` | Gestal stat id; the value looks like display × 100 (a DEF% main of `6000` = 60%) |
+| `substats[]` | `statId` (Gestal), `value` (× 100), `glyphBonusValue`, `rolls`, `isMythicalRoll` |
+| `ascensionStat` | `{statId, value}` |
+| `equippedOnHeroId` | Wearer's `heroId`; unset when unequipped |
+| `id`, `sellPrice`, `isNew`, `isReworked`, `isAnomalous` | As named |
+
+Substat ids 16–23 are the new damage-type substats (PvE / PvP / Boss / Dungeon DMG ±) that came with
+a fresh game release. Which id is which kind is inferred from the order of Gestal's scoring-weight
+keys; our `STAT_NAMES` (1–8) has no entries for them.
+
 **Artifact memory layout** (offsets for 11.75.0): `artifact_` Id 16, SellPrice 40, Level 48,
 AscendLevelHasValue 52, AscensionLevel 56, IsActivated 60, KindId 64 (slot kind), VariantId 68,
 RankId 72, RarityId 76, PrimaryBonus 80, SecondaryBonuses 88, AscensionBonuses 96, SetKindId 104,
@@ -252,10 +327,18 @@ out of the repo, like `../resources/`.
   decompilation or the renderer bundle.
 - **Catalogs:** `mappings.json` + `gearsets.json` give a server-maintained game-id → name table
   for all 69 sets — a cross-check for `ARTIFACT_SET_NAMES`.
+- **Gear source on macOS:** once Gestal is attached, `artifacts.json` is a complete, continuously
+  refreshed gear dump — a candidate stand-in for `RslHelper.db` on a machine without RSL Helper.
+  Sets and factions arrive in game ids; slots and stats need a Gestal → our mapping.
+- **New substats:** the damage-type substats (ids 16–23 in the dump) came with a fresh game
+  release; our `STAT_NAMES` doesn't cover them yet.
 
 ## Open / next
-- Launch Raid (native arm64) with Gestal running and inspect what lands under `accounts/<key>/`
-  (roster/gear document format, `gear-sell-rules`).
+- Map `artifacts.json` into our `Item` model (Gestal slot/stat ids → ours) if we want it as an
+  analytics or probe input.
+- No `gear-sell-rules` document appeared on macOS (gear selling looks Windows-only), so the
+  sell-rule model still needs the decompiled engine or the Windows build.
+- What gates the battle-outbox upload (`sharingGeneration`, `/api/me/data-sharing`).
 - Decompile the engine (`dotnet` + `ilspycmd`), starting with the sell rules and the extraction
   model in `Gestal.Engine.Core` / `Gestal.Engine.Host`.
 - Beautify the renderer bundle for the sell-rules UI and the engine contract types.
