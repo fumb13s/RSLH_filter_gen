@@ -29,7 +29,7 @@ import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, FACTION_NAMES, ITEM_RARITIES, 
   statDisplayName } from "@rslh/core";
 import { isRealChamp, readAllChampRows } from "./champs.mjs";
 import { readArtifacts } from "./decode.mjs";
-import { SLOT_COLUMNS, collisionCounts, fingerprint } from "./gear-common.mjs";
+import { COLUMN_SLOT, SLOT_COLUMNS, collisionCounts, fingerprint } from "./gear-common.mjs";
 
 // Who is wearing what, read from the Champs slot columns and NEVER from Artifacts.cID. That pointer
 // is not cleared on unequip, so it keeps naming the last wearer indefinitely — 36 such stale
@@ -131,15 +131,28 @@ export function diffLocations(beforeItems, beforeLoc, afterItems, afterLoc) {
 // per-holder disposition below needs "what did this champion hold in THIS slot before", a question
 // the flat Map<itemId, champId> cannot answer.
 //
-// The slot key comes from `item.slot` and never from which champion column referenced the item —
-// column order is not slot-id order, and six of the nine disagree.
-export function slotsBefore(beforeItems, beforeLoc) {
+// Occupancy is read from the champion ROW and the decoded item looked up second, which is what keeps
+// "this slot was empty" apart from "I could not read what was in it". Built the other way round — by
+// iterating the decoded items — a piece whose before row failed isCorrupt left its slot looking empty,
+// and byHolder then told the owner to strip whatever is sitting there now because "this slot was empty
+// before, so nothing will displace it". It was not empty, nothing else in the report restores it, and
+// the owner is left with a hole: the harm FR-017 names. No caveat covered it either, since a row that
+// is corrupt in BOTH snapshots is not a flip and corruptFlips reports neither direction for it.
+//
+// A slot whose occupant did not decode holds null rather than an item, so the distinction survives to
+// the caller. Keys are slot ids from COLUMN_SLOT, which agrees with `item.slot` for every decoded piece
+// — never the column's position in SLOT_COLUMNS, which disagrees with the slot id for six of the nine.
+export function slotsBefore(champRows, beforeItems) {
+  const byId = new Map(beforeItems.map((it) => [it.id, it]));
   const slots = new Map();
-  for (const it of beforeItems) {
-    const champId = beforeLoc.get(it.id);
-    if (champId === undefined) continue;
-    if (!slots.has(champId)) slots.set(champId, new Map());
-    slots.get(champId).set(it.slot, it);
+  for (const row of champRows) {
+    const champId = Number(row.ID);
+    for (const col of SLOT_COLUMNS) {
+      const itemId = Number(row[col] ?? 0);
+      if (itemId <= 0) continue;
+      if (!slots.has(champId)) slots.set(champId, new Map());
+      slots.get(champId).set(COLUMN_SLOT[col], byId.get(itemId) ?? null);
+    }
   }
   return slots;
 }
@@ -173,7 +186,10 @@ export function byOwner(moved) {
 // Only vault-sourced pieces need a decision, and "vault pieces go back to the vault" is wrong twice:
 //
 //   auto      the slot's original occupant still exists — restoring that slot displaces this piece
-//             by itself, so telling the owner to unequip it invents a step
+//             by itself, so telling the owner to unequip it invents a step. Also where a slot whose
+//             occupant did not DECODE lands: if that piece survives, restoring it displaces this one,
+//             and if it was sold the instruction is still "do nothing to this piece", which is what
+//             `keep` says too. `unequip` is the one thing that cannot be said about such a slot
 //   unequip   the slot was empty before — nothing will ever displace this piece, so omitting it
 //             leaves the account short of its pre-session state with no sign why
 //   keep      the slot's original occupant was SOLD — there is nothing to put back, so unequipping
@@ -197,10 +213,15 @@ export function byHolder(moved, goneIds, slotsByChamp) {
     if (m.to === null) continue;
     const entry = { item: m.item, from: m.from, disposition: "return", replaced: null };
     if (m.from === null) {
-      const original = slotsByChamp.get(m.to)?.get(m.item.slot) ?? null;
-      if (!original) entry.disposition = "unequip";
-      else if (goneIds.has(original.id)) { entry.disposition = "keep"; entry.replaced = original; }
-      else entry.disposition = "auto";
+      const held = slotsByChamp.get(m.to);
+      // `has` rather than a truthy check on the value: an occupied slot whose piece did not decode is
+      // stored as null, and it must not be read as an empty one.
+      const original = held?.has(m.item.slot) ? held.get(m.item.slot) : undefined;
+      if (original === undefined) entry.disposition = "unequip";
+      else if (original && goneIds.has(original.id)) {
+        entry.disposition = "keep";
+        entry.replaced = original;
+      } else entry.disposition = "auto";
     }
     if (!holders.has(m.to)) holders.set(m.to, []);
     holders.get(m.to).push(entry);
@@ -539,7 +560,7 @@ function main() {
   const beforeCounts = collisionCounts(before.items);
 
   const holders = byHolder(moved, new Set(gone.map((it) => it.id)),
-    slotsBefore(before.items, before.loc));
+    slotsBefore(before.allRows, before.items));
 
   printProvenance(before, after);
   printMoved(moved, names, afterCounts);

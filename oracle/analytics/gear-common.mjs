@@ -19,6 +19,16 @@
 export const SLOT_COLUMNS = ["Weapon", "Helmet", "Shield", "Glouves", "Chest", "Shoes", "Ring",
   "Amulett", "Banner"];
 
+// Which slot id each of those columns holds. It is the identity mapping on the NAME — the column names
+// are the slot names of ARTIFACT_SLOT_NAMES, once the schema's Glouves and Shoes are read as Gloves and
+// Boots — and it is written out because the column's POSITION in the list above is not its slot id.
+//
+// It exists so "was something in this slot" can be answered from a champion row alone, without decoding
+// the piece that was in it. Wherever there is a decoded item to ask, its slot still comes from
+// `item.slot`; this is for the case where there is not.
+export const COLUMN_SLOT = { Weapon: 5, Helmet: 1, Shield: 6, Glouves: 3, Chest: 2, Shoes: 4,
+  Ring: 7, Amulett: 8, Banner: 9 };
+
 // A key over everything a person can SEE on a piece. Two items sharing one are indistinguishable on
 // screen, so a report says "either will do" rather than sending the reader hunting for a specific id
 // the game never displays.

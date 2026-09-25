@@ -368,21 +368,26 @@ test("a gone item's collision count comes from the before snapshot, never the af
 
 // --- slotsBefore (US4) ------------------------------------------------------
 
-// Slot comes from the ITEM. The champion table's column order is not slot-id order — Weapon sits
-// first but is slot 5, Helmet second but slot 1 — so six of the nine columns disagree with their
-// position. Keying off column position would mislabel two thirds of the map.
-test("slotsBefore keys a champion's items by item.slot, not by column position", () => {
-  const weapon = item({ id: 11, slot: 5 });
-  const helmet = item({ id: 12, slot: 1 });
-  const slots = slotsBefore([weapon, helmet], new Map([[11, 1], [12, 1]]));
-  expect(slots.get(1).get(5)).toBe(weapon);
-  expect(slots.get(1).get(1)).toBe(helmet);
+// All nine columns, each asserted against the slot the item in it reports. The column-to-slot mapping
+// is what makes occupancy readable without the item, and it is easy to get wrong in a way nothing else
+// would catch: a column's POSITION in the list is not its slot id, and six of the nine disagree — so a
+// position-based mapping would file two thirds of the map under the wrong slot.
+test("slotsBefore files every column under the slot the item in it reports", () => {
+  const items = [[11, 5], [12, 1], [13, 6], [14, 3], [15, 2], [16, 4], [17, 7], [18, 8], [19, 9]]
+    .map(([id, slot]) => item({ id, slot }));
+  const slots = slotsBefore([champ({
+    ID: 7, Weapon: 11, Helmet: 12, Shield: 13, Glouves: 14, Chest: 15, Shoes: 16, Ring: 17,
+    Amulett: 18, Banner: 19,
+  })], items);
+  expect(slots.get(7).size).toBe(9);
+  for (const it of items) expect(slots.get(7).get(it.slot)).toBe(it);
 });
 
 test("slotsBefore separates two champions' items", () => {
   const mine = item({ id: 11, slot: 5 });
   const theirs = item({ id: 21, slot: 5 });
-  const slots = slotsBefore([mine, theirs], new Map([[11, 1], [21, 2]]));
+  const slots = slotsBefore(
+    [champ({ ID: 1, Weapon: 11 }), champ({ ID: 2, Weapon: 21 })], [mine, theirs]);
   expect(slots.get(1).get(5)).toBe(mine);
   expect(slots.get(2).get(5)).toBe(theirs);
 });
@@ -390,9 +395,18 @@ test("slotsBefore separates two champions' items", () => {
 // An unequipped piece has no champion to file it under, so a vault-only snapshot yields nothing and
 // a champion wearing nothing simply has no entry. byHolder has to tolerate the absence.
 test("slotsBefore returns an empty map when nothing is worn", () => {
-  expect(slotsBefore([item({ id: 11 })], new Map()).size).toBe(0);
-  expect(slotsBefore([], new Map()).size).toBe(0);
-  expect(slotsBefore([item({ id: 11 })], new Map([[11, 1]])).get(2)).toBeUndefined();
+  expect(slotsBefore([champ({ ID: 1 })], [item({ id: 11 })]).size).toBe(0);
+  expect(slotsBefore([], []).size).toBe(0);
+  expect(slotsBefore([champ({ ID: 1, Weapon: 11 })], [item({ id: 11 })]).get(2)).toBeUndefined();
+});
+
+// The state the item-first version could not express: the slot is occupied and what is in it is
+// unknown, because that row failed isCorrupt. Recorded as present-with-null, since "empty" is the one
+// reading that produces a harmful instruction downstream.
+test("slotsBefore marks a slot occupied by a row that did not decode", () => {
+  const slots = slotsBefore([champ({ ID: 1, Weapon: 11 })], []);
+  expect(slots.get(1).has(5)).toBe(true);
+  expect(slots.get(1).get(5)).toBe(null);
 });
 
 const move = (o = {}) => ({ id: 11, from: 1, to: 2, item: item({ id: 11 }), leveledFrom: null, ...o });
@@ -474,6 +488,17 @@ test("byHolder marks a vault piece `unequip` when the slot was empty before", ()
     .toMatchObject({ from: null, disposition: "unequip", replaced: null });
   // Same when the holder has no before entry at all rather than an empty one.
   expect(byHolder([vaultPiece], new Set(), new Map()).get(9)[0].disposition).toBe("unequip");
+});
+
+// A slot whose before occupant did not decode is not an empty slot, and the difference is the whole
+// distinction between the two lines: `unequip` tells the owner to strip the piece now in it because
+// nothing will displace it, but nothing will restore the slot either, so it stays bare. `auto` is the
+// honest instruction — do nothing to this piece — whether that occupant survived or was sold.
+test("byHolder marks a vault piece `auto` when the slot's original did not decode", () => {
+  const slots = new Map([[9, new Map([[5, null]])]]);
+  const vaultPiece = move({ id: 11, from: null, to: 9, item: item({ id: 11, slot: 5 }) });
+  expect(byHolder([vaultPiece], new Set(), slots).get(9)[0])
+    .toMatchObject({ from: null, disposition: "auto", replaced: null });
 });
 
 // The branch whose failure mode is harmful rather than merely wrong: treated as `unequip` it would

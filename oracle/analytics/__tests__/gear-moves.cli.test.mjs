@@ -395,6 +395,32 @@ test("a row that decodes only in the after snapshot is called out as a gap in th
   });
 });
 
+// The same undecodable row reaching the strip list instead of the gone list. Kael's weapon slot held
+// piece 21 before and 21's row does not decode, so the vault piece now in that slot must not be called
+// `unequip`: the slot was not empty, nothing in the report restores it, and stripping the piece leaves
+// the hole FR-017 names. Nothing warns about it either — 21 is unreadable in BOTH snapshots, so
+// corruptFlips sees no flip and neither caveat fires — which is why the disposition has to be right on
+// its own.
+test("a slot whose before occupant did not decode is not reported as having been empty", () => {
+  withPair({
+    before: {
+      items: [at(21, { rarity: 0 }), at(11)],
+      champs: [{ ID: 2, Name: "Kael", Weapon: 21 }],
+    },
+    after: {
+      items: [at(21, { rarity: 0 }), at(11)],
+      champs: [{ ID: 2, Name: "Kael", Weapon: 11 }],
+    },
+  }, (r) => {
+    expect(r.code).toBe(0);
+    const strip = sectionOf("STRIP LIST BY HOLDER", r.out);
+    expect(strip).toMatch(/Weapon {2}auto {6}came from the vault — back there on its own/);
+    expect(strip).not.toContain("this slot was empty before");
+    expect(r.out).not.toContain("treat GONE as approximate");
+    expect(r.out).not.toContain("did not decode in the before snapshot");
+  });
+});
+
 // --- placeholder champion rows ----------------------------------------------
 
 // An empty-Name Champs row is a placeholder and every roster read in the suite drops it, but its slot
