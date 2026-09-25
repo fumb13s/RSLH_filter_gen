@@ -27,7 +27,7 @@ import { realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, FACTION_NAMES, ITEM_RARITIES, lookupName,
   statDisplayName } from "@rslh/core";
-import { readChampRows } from "./champs.mjs";
+import { isRealChamp, readAllChampRows } from "./champs.mjs";
 import { readArtifacts } from "./decode.mjs";
 import { SLOT_COLUMNS, collisionCounts, fingerprint } from "./gear-common.mjs";
 
@@ -36,7 +36,14 @@ import { SLOT_COLUMNS, collisionCounts, fingerprint } from "./gear-common.mjs";
 // pointers on the reference snapshot, every one on a piece that is actually sitting in the vault.
 // A diff keyed on it would invent 36 moves before anyone touched the account.
 //
-// An item absent from the returned map is unequipped. There is no third state.
+// An item absent from the returned map is unequipped. There is no third state — which is why this is
+// handed EVERY Champs row, placeholders included, and not the roster readChampRows returns. A
+// placeholder (empty-Name) row is nothing the owner can open in the game, but a piece in its slot
+// columns is still not in the vault, and one dropped from this map is indistinguishable from a piece
+// that genuinely is: the report sends the owner hunting the vault for something that is on something,
+// which is what SC-001/SC-003 exist to prevent. label() handles the cost of including them — a location
+// with no name prints "unknown champion #N", which is true and actionable where "(unequipped)" is
+// neither. Names come from the filtered roster, so a blank one is never printed.
 export function locationsFrom(champRows) {
   const loc = new Map();
   for (const row of champRows) {
@@ -438,10 +445,14 @@ function printGone(gone, beforeLoc, names, beforeCounts) {
   console.log("");
 }
 
+// One read, split two ways: locations off every row (see locationsFrom), names off the roster only.
 function loadSnapshot(path) {
   const { items, corrupt, total } = readArtifacts(path);
-  const champRows = readChampRows(path);
-  return { items, corrupt, total, champRows, loc: locationsFrom(champRows) };
+  const allRows = readAllChampRows(path);
+  return {
+    items, corrupt, total, allRows, champRows: allRows.filter(isRealChamp),
+    loc: locationsFrom(allRows),
+  };
 }
 
 // A snapshot that cannot be read is reported as a failure naming the file, never as an empty report

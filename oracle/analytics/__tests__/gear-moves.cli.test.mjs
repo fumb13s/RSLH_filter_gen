@@ -128,7 +128,8 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 // The line a piece occupies in the report, so an assertion can name what it is looking at rather
 // than an offset. Substring match on the description, which is what the reader matches by eye too.
-const lineWith = (text) => report.out.split("\n").find((l) => l.includes(text));
+// Defaults to the shared fixture's report; the throwaway pairs below pass their own.
+const lineWith = (text, out = report.out) => out.split("\n").find((l) => l.includes(text));
 
 // One section's text. Slicing on a champion name instead would land in whichever section mentions it
 // first: the moved list indents its locations six spaces, so a naive search for "  Kael" finds a
@@ -391,6 +392,30 @@ test("a row that decodes only in the after snapshot is called out as a gap in th
     expect(r.out).toContain("MOVED ITEMS (0)");
     // ...and GONE is not disparaged on its way past, because nothing is wrong with it.
     expect(r.out).not.toContain("treat GONE as approximate");
+  });
+});
+
+// --- placeholder champion rows ----------------------------------------------
+
+// An empty-Name Champs row is a placeholder and every roster read in the suite drops it, but its slot
+// columns can still hold a piece — and a piece missing from the LOCATION map is indistinguishable from
+// one that is genuinely in the vault. Filtering these rows out would report piece 21 as unequipped
+// before and send the owner to the vault for something that was on something (SC-001/SC-003).
+//
+// The name is the only thing the filter is right about: it is blank, so it is never printed. The
+// location falls through to label()'s unknown-champion branch, which is true and actionable.
+test("a piece held by a placeholder champion row is not reported as unequipped", () => {
+  withPair({
+    before: { items: [at(21)], champs: [{ ID: 5, Name: "", Weapon: 21 },
+      { ID: 2, Name: "Kael" }] },
+    after: { items: [at(21)], champs: [{ ID: 5, Name: "" },
+      { ID: 2, Name: "Kael", Weapon: 21 }] },
+  }, (r) => {
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("unknown champion #5 -> Kael");
+    expect(r.out).not.toContain("(unequipped) -> Kael");
+    // ...and the strip list tells the owner where to put it back, rather than calling it a vault piece.
+    expect(lineWith("Weapon  return", r.out)).toContain("to unknown champion #5");
   });
 });
 

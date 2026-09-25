@@ -19,7 +19,7 @@ import { action, ambiguity, byHolder, byOwner, champNames, corruptFlips, describ
   sortedGroups } from "../gear-moves.mjs";
 import { collisionCounts, fingerprint } from "../gear-common.mjs";
 import { readArtifacts } from "../decode.mjs";
-import { readChampRows } from "../champs.mjs";
+import { readAllChampRows, readChampRows } from "../champs.mjs";
 
 // A Champs row as readChampRows returns it. Slot columns default to 0 (the schema's "empty"), so a
 // test names only the slots it cares about.
@@ -625,6 +625,11 @@ test("neither reader creates a file when the snapshot path does not exist", () =
   expect(existsSync(missing)).toBe(false);
 
   expect(() => readArtifacts(missing)).toThrow();
+  expect(existsSync(missing)).toBe(false);
+
+  // Both champion readers, since the tool calls the unfiltered one and the rest of the suite calls the
+  // roster one, and they share a single open.
+  expect(() => readAllChampRows(missing)).toThrow();
   expect(existsSync(missing)).toBe(false);
 
   expect(() => readChampRows(missing)).toThrow();
