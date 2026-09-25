@@ -14,8 +14,9 @@
 //
 // This list is an iteration order over columns and NOTHING ELSE. Its position is not the slot id:
 // Weapon is slot 5, Helmet 1, Shield 6, Glouves 3, Chest 2, Shoes 4, and only Ring/Amulett/Banner
-// line up. Indexing 1..9 as slot ids mislabels six of the nine, so an item's slot is always read
-// from `item.slot`, never from the column that referenced it.
+// line up. Indexing 1..9 as slot ids mislabels six of the nine, so an item's slot is read from
+// `item.slot` and never from the column that referenced it — and where there is no item to ask, from
+// COLUMN_SLOT below and never from a position.
 export const SLOT_COLUMNS = ["Weapon", "Helmet", "Shield", "Glouves", "Chest", "Shoes", "Ring",
   "Amulett", "Banner"];
 
@@ -80,9 +81,11 @@ export function fingerprint(it) {
 //
 // The counting lives beside the key because the scope rule is the other half of the same contract, and
 // it had forked exactly the way the key had: restore.mjs counted its gone rows against the after
-// snapshot, where a gone item's appearance is by definition absent, so the lookup missed on every one
-// of them — all 47 in the reference window. Both tools default a missing count to 1, so the miss does
-// not show up as a broken line; it shows up as a silent claim that the piece was unique.
+// snapshot, where a gone item's own row is by definition absent. The lookup then misses on every one of
+// them — 47 gone items in gear-moves.mjs's reference window, of which restore.mjs reports those that
+// were worn — or, where a twin outlived the piece, undercounts to exactly the "unique" answer. Both
+// tools default a missing count to 1, so neither shows up as a broken line. They show up as a silent
+// claim that the piece had no lookalike.
 export function collisionCounts(items) {
   const counts = new Map();
   for (const it of items) {
