@@ -1,4 +1,5 @@
 import { N, DBSTAT_TO_OURSTAT, decodeValue, SUB, ASC, readArtifactRows } from "../lib/decode.mjs";
+import { gestalItems, isGestalPath, readGestalSnapshot } from "./gestal.mjs";
 
 // Re-export so tests/consumers can grab the primitive from this one module.
 export { decodeValue, N } from "../lib/decode.mjs";
@@ -56,7 +57,13 @@ const COLS = ["ID", "type", "rank", "rarity", "lvl", "mid", "mfl", "mlvlid", "as
   "ASCLEVEL", "cID", ASC.id, ASC.fl, ASC.base,
   ...SUB.flatMap((s) => [s.id, s.fl, s.lvl, s.base, s.gv, s.myth])].join(",");
 
+// Either kind of snapshot: a Gestal capture (.json.gz, see gestal.mjs) decodes to the same Items. Its
+// documents need no sentinel filtering, so `corrupt` is always empty there.
 export function readArtifacts(dbPath) {
+  if (isGestalPath(dbPath)) {
+    const items = gestalItems(readGestalSnapshot(dbPath));
+    return { items, corrupt: [], total: items.length };
+  }
   // BigInt-safe shared read (see readArtifactRows); isCorrupt() drops garbage rows just below.
   const rows = readArtifactRows(dbPath, COLS);
   const items = [], corrupt = [];

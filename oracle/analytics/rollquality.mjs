@@ -8,10 +8,10 @@
 // convention; the DB stores upgrades 0-based). We then correlate the q-score against the
 // good-roll COUNT and FRACTION to see how the rating tracks rolls-in-good-substats.
 
-import { readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { readArtifacts } from "./decode.mjs";
 import { quality } from "./score.mjs";
+import { resolveSnapshot, snapshotDate } from "./snapshots.mjs";
 
 // --- Good-substat definition (slot-aware) ----------------------------------
 // [statId, isFlat] in OUR stat ids (1 HP, 2 ATK, 3 DEF, 4 SPD, 5 C.RATE, 6 C.DMG, 7 RES, 8 ACC).
@@ -172,22 +172,8 @@ export function rollQualityRows(items) {
 }
 
 // --- Runner ----------------------------------------------------------------
-const here = (p) => fileURLToPath(new URL(p, import.meta.url));
-
-function resolveDb() {
-  if (process.argv[2]) return process.argv[2];
-  const dir = here("../resources");
-  const snaps = readdirSync(dir).filter((f) => /-RSLHelper\.db$/.test(f)).sort();
-  if (!snaps.length) { console.error(`no resources/*-RSLHelper.db snapshot found in ${dir}; run refresh.sh`); process.exit(1); }
-  return `${dir}/${snaps[snaps.length - 1]}`;
-}
-function snapshotDate(p) {
-  const m = (p.split(/[\\/]/).pop() || "").match(/(\d{4}-\d{2}-\d{2})/);
-  return m ? m[1] : statSync(p).mtime.toISOString().slice(0, 10);
-}
-
 function main() {
-  const dbPath = resolveDb();
+  const dbPath = resolveSnapshot(process.argv[2]);
   const date = snapshotDate(dbPath);
   const { items, total, corrupt } = readArtifacts(dbPath);
   const rows = rollQualityRows(items);

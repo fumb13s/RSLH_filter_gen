@@ -6,36 +6,22 @@
 // +12's current q is depressed by being unleveled, so low potential = "not worth finishing, delete",
 // while high potential is an upgrade candidate, not junk.
 //   node oracle/analytics/worst-artifacts.mjs [limit=100] [minLevel=12] [snapshot.db]
-//   (numeric args -> limit then minLevel; a non-numeric arg -> db path)
-import { readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
+//   (numeric args -> limit then minLevel; a non-numeric arg -> snapshot path, .db or .json.gz)
 import { readArtifacts } from "./decode.mjs";
+import { readAllChampRows } from "./champs.mjs";
+import { resolveSnapshot } from "./snapshots.mjs";
 import { quality } from "./score.mjs";
 import { keepPremium } from "./triage.mjs";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, statDisplayName, lookupName } from "@rslh/core";
-
-const here = (p) => fileURLToPath(new URL(p, import.meta.url));
-function resolveDb(arg) {
-  if (arg) return arg;
-  const dir = here("../resources");
-  const snaps = readdirSync(dir).filter((f) => /-RSLHelper\.db$/.test(f)).sort();
-  if (!snaps.length) { console.error("no snapshot found; run refresh.sh"); process.exit(1); }
-  return `${dir}/${snaps[snaps.length - 1]}`;
-}
 
 const argv = process.argv.slice(2);
 const nums = argv.filter((a) => /^\d+$/.test(a)).map(Number);
 const LIMIT = nums[0] ?? 100;
 const MIN_LEVEL = nums[1] ?? 12;
-const dbPath = resolveDb(argv.find((a) => !/^\d+$/.test(a)));
+const dbPath = resolveSnapshot(argv.find((a) => !/^\d+$/.test(a)));
 
-// equipped-champ map: Artifacts.cID -> Champs.ID -> Name
-const db = new DatabaseSync(dbPath);
-const cst = db.prepare("SELECT ID, Name FROM Champs");
-cst.setReadBigInts(true);
-const champName = new Map(cst.all().map((r) => [Number(r.ID), r.Name]));
-db.close();
+// equipped-champ map: the item's wearer id -> Champs.ID -> Name
+const champName = new Map(readAllChampRows(dbPath).map((r) => [Number(r.ID), r.Name]));
 
 const { items } = readArtifacts(dbPath);
 const SCARCE = new Set([2, 3]); // Chest, Gloves — hardest slots to replace

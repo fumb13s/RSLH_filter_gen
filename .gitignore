@@ -12,5 +12,10 @@ dist/
 *.jsonl.z
 index.jsonl
 index.jsonl.tmp
+# Gestal snapshots (refresh-gestal.mjs) are the whole account's gear and roster. The default target,
+# oracle/resources/, is already deny-all, but `--out PATH` can write anywhere — so deny by extension
+# too, as for the battle logs above. The .tmp is what the capture renames from.
+*.json.gz
+*.json.gz.tmp
 .hivemind
 .claude

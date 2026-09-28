@@ -7,10 +7,12 @@
 //     minRarity   numeric 1-6 (5 = Legendary+, 6 = Mythical only); matches Rarity >= this.
 //     name        a non-numeric arg without a slash or .db -> case-insensitive Name filter; also
 //                 switches to per-copy detail (and shows a champ even when it has no spare).
-//     snapshot.db an arg ending in .db or containing a slash -> which snapshot (default: newest).
-import { readdirSync, realpathSync } from "node:fs";
+//     snapshot.db an arg ending in .db or .json.gz, or containing a slash -> which snapshot (default:
+//                 newest of either kind). A Gestal snapshot has no Br, so no ✦ blessing marker shows.
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
+import { readAllChampRows } from "./champs.mjs";
+import { isSnapshotArg, resolveSnapshot } from "./snapshots.mjs";
 
 // Gear columns on Champs — one per equip slot (6 artifacts + 3 accessories). Non-zero = something equipped.
 export const GEAR_SLOTS = ["Weapon", "Helmet", "Shield", "Glouves", "Chest", "Shoes", "Ring", "Amulett", "Banner"];
@@ -63,26 +65,15 @@ const rTag = (r) => RARITY[r] || `r${r}`;
 const copyLine = (row) => `#${row.ID}  ${row.Rang}★ +${row.Lvl}  ${gearCount(row)}/9 gear`
   + `${row.EmpLvl ? ` emp${row.EmpLvl}` : ""}${row.Br ? " ✦blessed" : ""}`;
 
-function resolveDb(arg) {
-  if (arg) return arg;
-  const dir = fileURLToPath(new URL("../resources", import.meta.url));
-  const snaps = readdirSync(dir).filter((f) => /-RSLHelper\.db$/.test(f)).sort();
-  if (!snaps.length) { console.error("no snapshot found; run refresh.sh"); process.exit(1); }
-  return `${dir}/${snaps[snaps.length - 1]}`;
-}
-
 function main() {
   const argv = process.argv.slice(2);
   const minRarity = argv.filter((a) => /^\d+$/.test(a)).map(Number)[0] ?? 5;
   const rest = argv.filter((a) => !/^\d+$/.test(a));
-  const dbArg = rest.find((a) => a.endsWith(".db") || a.includes("/") || a.includes("\\"));
+  const dbArg = rest.find(isSnapshotArg);
   const nameFilter = rest.find((a) => a !== dbArg) ?? null;
-  const dbPath = resolveDb(dbArg);
+  const dbPath = resolveSnapshot(dbArg);
 
-  const db = new DatabaseSync(dbPath);
-  const cols = ["ID", "Name", "Rarity", "Rang", "Lvl", "EmpLvl", "Br", "BaseHeroID", ...GEAR_SLOTS].join(", ");
-  const rows = db.prepare(`SELECT ${cols} FROM Champs WHERE Rarity >= ?`).all(minRarity);
-  db.close();
+  const rows = readAllChampRows(dbPath).filter((r) => Number(r.Rarity) >= minRarity);
 
   const nf = nameFilter ? nameFilter.toLowerCase() : null;
   const pool = nf ? rows.filter((r) => r.Name.toLowerCase().includes(nf)) : rows;

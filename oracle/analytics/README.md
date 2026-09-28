@@ -1,17 +1,38 @@
 # Gear Vault Analytics
 
-Decodes a `../resources/*-RSLHelper.db` snapshot and rates the gear in it — vault-wide
-(`analyze.mjs`) or one champion's worn gear at a time (`champion-gear.mjs`).
+Decodes a vault snapshot — `../resources/*-RSLHelper.db` from RSL Helper, or `*-Gestal.json.gz` from
+Gestal Desktop — and rates the gear in it — vault-wide (`analyze.mjs`) or one champion's worn gear at
+a time (`champion-gear.mjs`).
 Design + rationale: `DESIGN.md`. Advisory only: `analyze.mjs` writes its reports to `out/`, and
 `champion-gear.mjs` and `speed.mjs` only print. None of them writes to a snapshot or to the game's
 own database, and nothing is ever deleted.
+
+## Snapshots
+
+Every tool reads either kind. Given no snapshot argument, a tool takes the newest dated one in
+`../resources/` — on a same-date tie, the Gestal one, whose record of who wears what is current.
+
+- **RSL Helper (Windows):** `./oracle/analytics/refresh.sh` copies the live `*_RSLHelper.db` to
+  `resources/<date>-RSLHelper.db`.
+- **Gestal Desktop (macOS, where RSL Helper does not run):** `node oracle/analytics/refresh-gestal.mjs`
+  freezes Gestal's gear, roster and stat documents into `resources/<date>-Gestal.json.gz`, dated by
+  Gestal's last read of the game. Gestal only refreshes them while attached to a running Raid, so
+  start Raid with Gestal attached and give it a minute; the script warns when the data is more than 15
+  minutes old. `--out PATH` writes a named baseline instead (for example `<date>-pre-driver.json.gz`
+  for `restore.mjs`), and `--account KEY` picks another account. A Gestal snapshot carries no champion
+  speed, so `speed.mjs` needs `--constant N` on one and `speed.mjs verify` refuses it. Design:
+  `docs/plans/2026-09-28-gestal-snapshot-design.md`.
+- **Both at once:** `node --experimental-sqlite oracle/analytics/cross-check.mjs <snapshot.db>
+  <snapshot.json.gz>` compares the two decodes record by record. Differences that happened between
+  the two snapshots (levelling, glyphs, ascension, reworks, champion progress) are counted; anything
+  else is printed and exits 1.
 
 ## Run
 
 1. Build core: `npx tsc -b packages/core`
 2. Vault-wide triage report:
-   `node --experimental-sqlite oracle/analytics/analyze.mjs [path-to.db]`
-   (defaults to the newest `../resources/*-RSLHelper.db`; writes `out/<date>-report.{json,md}`)
+   `node --experimental-sqlite oracle/analytics/analyze.mjs [snapshot]`
+   (defaults to the newest snapshot of either kind; writes `out/<date>-report.{json,md}`)
 3. One champion's worn gear:
    `node --experimental-sqlite oracle/analytics/champion-gear.mjs [name|ID] [snapshot.db]`
 
@@ -59,8 +80,9 @@ own database, and nothing is ever deleted.
    where it was, and where it is now.
 
    **Both arguments are required and neither is inferred.** The "newest snapshot" default the other
-   tools use is deliberately absent here: a kept baseline is named outside the `*-RSLHelper.db`
-   pattern that default globs for — that is exactly what stops a routine refresh overwriting it —
+   tools use is deliberately absent here: a kept baseline is named outside the `*-RSLHelper.db` and
+   `*-Gestal.json.gz` patterns that default looks for — that is exactly what stops a routine refresh
+   overwriting it —
    so a default would reliably pick the wrong file and produce a plausible, wrong report.
 
    Two positional arguments and no options — unlike `restore.mjs`, there is no `-o`; the report goes

@@ -1,6 +1,7 @@
-import { writeFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { readArtifacts } from "./decode.mjs";
+import { resolveSnapshot, snapshotDate } from "./snapshots.mjs";
 import { census } from "./census.mjs";
 import { triage } from "./triage.mjs";
 import { CUTS, SUPPLY } from "./weights.mjs";
@@ -9,21 +10,9 @@ import { rollStats, rollQualityMarkdown } from "./rollquality.mjs";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 
-// Snapshot to analyze: explicit arg, else the newest date-prefixed snapshot in resources/.
-function resolveDb() {
-  if (process.argv[2]) return process.argv[2];
-  const dir = here("../resources");
-  const snaps = readdirSync(dir).filter((f) => /-RSLHelper\.db$/.test(f)).sort();
-  if (!snaps.length) { console.error(`no resources/*-RSLHelper.db snapshot found in ${dir}; run refresh.sh`); process.exit(1); }
-  return `${dir}/${snaps[snaps.length - 1]}`;
-}
-// The account-snapshot date drives the report (NOT today's date): the YYYY-MM-DD filename prefix,
-// falling back to the file's last-write day.
-function snapshotDate(p) {
-  const m = (p.split(/[\\/]/).pop() || "").match(/(\d{4}-\d{2}-\d{2})/);
-  return m ? m[1] : statSync(p).mtime.toISOString().slice(0, 10);
-}
-const dbPath = resolveDb();
+// Snapshot to analyze: explicit arg, else the newest date-prefixed snapshot in resources/ (either
+// kind). The account-snapshot date drives the report, NOT today's date.
+const dbPath = resolveSnapshot(process.argv[2]);
 const date = snapshotDate(dbPath);
 
 const { items, corrupt, total } = readArtifacts(dbPath);
