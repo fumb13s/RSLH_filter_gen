@@ -37,6 +37,13 @@ test("an empty folder has no newest snapshot", () => {
   expect(newestSnapshot(folder())).toBeNull();
 });
 
+// The plain .sort() the tools used before this module compared by code unit; locale order would pick
+// the other file here ("R" sorts before "a" by code unit, after it in most locales).
+test("same-date, same-kind ties break by code unit, as the tools always did", () => {
+  const d = folder("2026-09-28-RSLHelper.db", "2026-09-28-alt-RSLHelper.db");
+  expect(newestSnapshot(d)).toBe(join(d, "2026-09-28-alt-RSLHelper.db"));
+});
+
 test("a dated snapshot outranks an undated one", () => {
   const d = folder("zz-RSLHelper.db", "2026-06-05-RSLHelper.db");
   expect(newestSnapshot(d)).toBe(join(d, "2026-06-05-RSLHelper.db"));

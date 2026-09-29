@@ -243,30 +243,32 @@ function gearOf(items, champId) {
 // champion ascension), so read it as the SIZE of that gap. It is not a patch detector: already wide
 // and multi-modal, it would move less on a changed set value than on the noise it carries.
 function runVerify(items, rows, corpus) {
-  // Every constant here is measured against the champion's current speed; without it there is nothing
-  // to verify, and a measurement against null would print a distribution of NaN.
-  if (rows.some((r) => r.SPD == null)) {
-    console.error("verify needs each champion's current speed, which this snapshot does not carry"
-      + " (a Gestal snapshot) — run it on an RSL Helper snapshot.");
-    process.exit(1);
-  }
   const ceilings = glyphCeilings(items);
   const speedOf = speedOfWith(0, ceilings);
   const buckets = new Map();
-  let covered = 0, missing = 0;
+  let covered = 0, missing = 0, noSpeed = 0;
   for (const champ of rows) {
     const gear = gearOf(items, champ.ID);
     if (!gear.length) continue;
+    // A constant is measured against the champion's current speed. A row without one — every row of a
+    // Gestal snapshot, or a NULL in RSL Helper's nullable column — has nothing to measure, and letting
+    // it through would add a NaN bucket to the distribution.
+    if (champ.SPD == null) { noSpeed++; continue; }
     const base = lookupBase(corpus, champ.Name);
     if (base === null) { missing++; continue; }
     covered++;
     const c = measureConstant(champ.SPD, base, gear, speedOf);
     buckets.set(c, (buckets.get(c) ?? 0) + 1);
   }
+  if (covered === 0 && missing === 0 && noSpeed > 0) {
+    console.error("verify needs each champion's current speed, which this snapshot does not carry"
+      + " (a Gestal snapshot) — run it on an RSL Helper snapshot.");
+    process.exit(1);
+  }
   const sorted = [...buckets].sort((a, b) => a[0] - b[0]);
   const zero = buckets.get(0) ?? 0;
   console.log(`# Speed model verify — ${covered} geared champions in the corpus`
-    + ` (${missing} not in it)`);
+    + ` (${missing} not in it${noSpeed ? `, ${noSpeed} with no current speed` : ""})`);
   // A corpus that matches nothing is a wrong --corpus, not a model result, and dividing by it would
   // report "NaN%" as if it were one.
   if (covered === 0) {

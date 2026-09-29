@@ -67,6 +67,9 @@ const md = [];
 const P = (...lines) => md.push(...lines);
 
 P(`# Gear Vault Analytics — ${date}`, ``);
+// Two snapshot kinds can share a date — and this report's out/<date>-report.* name — so say which one
+// this is.
+P(`Snapshot: \`${dbPath.split(/[\\/]/).pop()}\``, ``);
 P(`**${total} rows** (${corrupt.length} corrupt skipped) · equipped ${cen.equipped} · fully-ascended ${cen.ascended} · glyphed ${cen.glyphed} · accessories ${cen.accessories} (setless ${cen.setless})`, ``);
 
 P(`## Recommendation summary`, ``);

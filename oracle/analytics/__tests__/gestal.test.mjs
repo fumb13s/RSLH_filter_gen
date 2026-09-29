@@ -13,13 +13,17 @@ import { gunzipSync } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, test } from "vitest";
 import { FORMAT, FORMAT_VERSION, GESTAL_SLOT, GESTAL_STAT, checkSnapshot, gestalChampRows, gestalItem,
-  gestalItems, isGestalPath } from "../gestal.mjs";
-import { STALE_MINUTES, captureSnapshot, dataAsOf, dataRoot, formatAge, freshnessWarnings, localDate,
-  parseRefreshArgs, resolveAccount, writeSnapshot } from "../refresh-gestal.mjs";
+  gestalItems, isGestalPath, unlistedWearers } from "../gestal.mjs";
+import { STALE_MINUTES, captureSnapshot, dataAsOf, dataRoot, destination, formatAge, freshnessWarnings,
+  localDate, parseRefreshArgs, resolveAccount, scrub, writeSnapshot } from "../refresh-gestal.mjs";
 import { readArtifacts } from "../decode.mjs";
-import { parseArgs, readAllChampRows } from "../champs.mjs";
+import { isRealChamp, parseArgs, readAllChampRows } from "../champs.mjs";
+import { ASC, SUB } from "../../lib/decode.mjs";
 
 const SCRIPT = fileURLToPath(new URL("../refresh-gestal.mjs", import.meta.url));
+const SPEED = fileURLToPath(new URL("../speed.mjs", import.meta.url));
+// node:sqlite needs the flag on Node 22 and refuses it on builds that no longer know it.
+const FLAGS = Number(process.versions.node.split(".")[0]) < 23 ? ["--experimental-sqlite"] : [];
 
 // --- fixtures -----------------------------------------------------------------
 
@@ -55,22 +59,20 @@ function snapshotOf({ artifacts = [piece()], champions = [champion()], lastExtra
 }
 
 // A Gestal data folder laid out as the app writes it, with one account.
-function gestalRoot({ artifacts = [piece()], champions = [champion()], active = "abc123",
+function gestalRoot({ artifacts = [piece()], champions = [champion()], key = "abc123", active = key,
   artifactsVersion = 2, lastExtraction = { attemptedAt: "2026-09-28T12:04:00Z", succeeded: true,
     errorMessage: null, elapsedMilliseconds: 1000, gameVersion: "11.75.0" } } = {}) {
   const root = mkdtempSync(join(tmpdir(), "gestal-root-"));
-  const acct = join(root, "accounts", "abc123");
+  const acct = join(root, "accounts", key);
   mkdirSync(join(acct, "diagnostics"), { recursive: true });
   mkdirSync(join(root, "accounts", "local"), { recursive: true });
-  const put = (rel, body) => writeFileSync(join(root, rel), JSON.stringify(body));
-  put("active.json", doc(1, { activeAccountKey: active }));
-  put("accounts/abc123/artifacts.json",
-    doc(artifactsVersion, { extractedAt: "2026-09-28T12:00:00Z", gameVersion: "11.75.0", artifacts }));
-  put("accounts/abc123/champions.json",
-    doc(2, { extractedAt: "2026-09-28T12:00:30Z", gameVersion: "11.75.0", champions }));
-  put("accounts/abc123/great-hall-state.json", doc(1, { extractedAt: "2026-09-25T10:00:00Z", affinities: [] }));
-  put("accounts/abc123/metadata.json", doc(2, { displayName: "Player One", raidPlayerId: "123456789" }));
-  if (lastExtraction) put("accounts/abc123/diagnostics/last-extraction.json", doc(1, lastExtraction));
+  const put = (rel, body) => writeFileSync(join(acct, rel), JSON.stringify(body));
+  writeFileSync(join(root, "active.json"), JSON.stringify(doc(1, { activeAccountKey: active })));
+  put("artifacts.json", doc(artifactsVersion, { extractedAt: "2026-09-28T12:00:00Z", gameVersion: "11.75.0", artifacts }));
+  put("champions.json", doc(2, { extractedAt: "2026-09-28T12:00:30Z", gameVersion: "11.75.0", champions }));
+  put("great-hall-state.json", doc(1, { extractedAt: "2026-09-25T10:00:00Z", affinities: [] }));
+  put("metadata.json", doc(2, { displayName: "Player One", raidPlayerId: "123456789" }));
+  if (lastExtraction) put("diagnostics/last-extraction.json", doc(1, lastExtraction));
   return { root, acct, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
 
@@ -197,6 +199,27 @@ describe("gestalChampRows", () => {
     const snap = snapshotOf({ artifacts: [piece({ id: 1, equippedOnHeroId: 100 }), piece({ id: 2, equippedOnHeroId: 100 })] });
     expect(() => gestalChampRows(snap)).toThrow(/two Shoes pieces/);
   });
+
+  // Gestal reads gear and roster on separate polls, so a champion geared in between is in one document
+  // and not yet the other. Dropping it would put its gear "in the vault" for the diff tools.
+  test("a wearer the roster does not list gets an unnamed placeholder row holding its gear", () => {
+    const snap = snapshotOf({ artifacts: [piece({ id: 7, equippedOnHeroId: 300 })], champions: [champion()] });
+    const rows = gestalChampRows(snap);
+    expect(rows.map((r) => r.ID)).toEqual([100, 300]);
+    expect(rows[1]).toMatchObject({ ID: 300, Name: "", Shoes: 7, SPD: null });
+    expect(rows.filter(isRealChamp).map((r) => r.ID)).toEqual([100]);   // readChampRows leaves it out
+    expect(unlistedWearers(snap)).toEqual([300]);
+  });
+});
+
+// Triage breaks score ties by input order, so the SQLite path's ORDER BY ID has to be matched.
+test("pieces and champion rows come back in id order, whatever order Gestal wrote them in", () => {
+  const snap = snapshotOf({
+    artifacts: [piece({ id: 30 }), piece({ id: 10 }), piece({ id: 20 })],
+    champions: [champion({ heroId: 200 }), champion({ heroId: 100 })],
+  });
+  expect(gestalItems(snap).map((it) => it.id)).toEqual([10, 20, 30]);
+  expect(gestalChampRows(snap).map((r) => r.ID)).toEqual([100, 200]);
 });
 
 // --- the snapshot file ----------------------------------------------------------
@@ -258,6 +281,13 @@ describe("capture", () => {
     expect(() => parseRefreshArgs(["stray"])).toThrow(/unexpected argument "stray"/);
   });
 
+  // Any other name would be unreadable to every tool AND outside what .gitignore denies.
+  test("parseRefreshArgs refuses an --out that does not end in .json.gz", () => {
+    for (const name of ["baseline", "pre-driver.gz", "snap.json", "x.json.gz.bak"]) {
+      expect(() => parseRefreshArgs(["--out", name])).toThrow(/--out must end in \.json\.gz/);
+    }
+  });
+
   test("dataRoot honours GESTAL_DATA_ROOT, else the macOS default", () => {
     expect(dataRoot({ GESTAL_DATA_ROOT: "/x" }, "/home/u")).toBe("/x");
     expect(dataRoot({}, "/Users/u")).toBe("/Users/u/Library/Application Support/Gestal");
@@ -304,17 +334,66 @@ describe("capture", () => {
   });
 
   // A document's extractedAt is when it last CHANGED; the last extraction is when Gestal last looked.
-  test("the account data is dated by the last successful extraction, else by the gear dump", () => {
+  test("the account data is dated by the last successful extraction, else by the newest document", () => {
     const ok = snapshotOf({ lastExtraction: { attemptedAt: "2026-09-28T12:04:00Z", succeeded: true } });
     expect(dataAsOf(ok)).toEqual({ at: "2026-09-28T12:04:00Z", source: "last extraction" });
+    // The roster (12:00:30) is newer than the gear (12:00:00): the data is known to hold until then.
     const failed = snapshotOf({ lastExtraction: { attemptedAt: "2026-09-28T12:04:00Z", succeeded: false } });
-    expect(dataAsOf(failed)).toEqual({ at: "2026-09-28T12:00:00Z", source: "gear dump" });
-    expect(dataAsOf(snapshotOf())).toEqual({ at: "2026-09-28T12:00:00Z", source: "gear dump" });
+    expect(dataAsOf(failed)).toEqual({ at: "2026-09-28T12:00:30Z", source: "newest document" });
+    expect(dataAsOf(snapshotOf())).toEqual({ at: "2026-09-28T12:00:30Z", source: "newest document" });
+  });
+
+  test("a capture with no usable timestamp cannot be dated, rather than being named NaN", () => {
+    const snap = snapshotOf();
+    snap.documents.artifacts.payload.extractedAt = undefined;
+    snap.documents.champions.payload.extractedAt = "garbage";
+    expect(() => dataAsOf(snap)).toThrow(/cannot date this capture/);
   });
 
   test("localDate is the local calendar day of a timestamp", () => {
-    // Midday UTC is the same calendar day in every inhabited time zone.
-    expect(localDate("2026-09-28T12:00:00Z")).toBe("2026-09-28");
+    // Built from local components, so the expectation holds in every time zone — including UTC+13/+14,
+    // where midday UTC is already the next day.
+    expect(localDate(new Date(2026, 8, 28, 12).toISOString())).toBe("2026-09-28");
+    expect(localDate(new Date(2026, 8, 28, 0, 5).toISOString())).toBe("2026-09-28");
+  });
+
+  // A failed last read dates the capture by its documents, which can be days old when nothing changed.
+  // Overwriting a genuine capture of that day would put newer data under an old label for good.
+  test("destination keeps an existing snapshot when the capture could only be dated by its documents", () => {
+    const dir = tmp();
+    const failed = snapshotOf({ lastExtraction: { attemptedAt: "2026-09-29T09:00:00Z", succeeded: false } });
+    const ok = snapshotOf({ lastExtraction: { attemptedAt: "2026-09-28T12:04:00Z", succeeded: true } });
+    const date = localDate("2026-09-28T12:00:30Z");
+    const exists = () => true, absent = () => false;
+    expect(destination(failed, null, dir, exists).refusal).toMatch(/Not overwriting it/);
+    expect(destination(failed, null, dir, absent)).toMatchObject({ refusal: null, date,
+      dest: join(dir, `${date}-Gestal.json.gz`) });
+    expect(destination(failed, join(dir, "b.json.gz"), dir, exists).refusal).toBeNull();   // --out: asked for
+    expect(destination(ok, null, dir, exists).refusal).toBeNull();                          // a normal re-capture
+  });
+
+  test("scrub replaces identifiers in strings, keys included, and never touches numbers", () => {
+    const count = { n: 0 };
+    const out = scrub({ msg: "C:/x/0123456789abcdef/y", n: 1234567890, ["0123456789abcdef"]: [5, "ok"] },
+      ["0123456789abcdef", "1234567890"], count);
+    expect(out).toEqual({ msg: "C:/x/<redacted>/y", n: 1234567890, "<redacted>": [5, "ok"] });
+    expect(count.n).toBe(2);
+  });
+
+  // The known way an identifier could slip into a capture: a path in last-extraction's errorMessage.
+  test("captureSnapshot scrubs the account key and player id, but not the display name", () => {
+    const key = "fedcba9876543210";
+    const g = gestalRoot({ key, champions: [champion({ name: "Player One" })],
+      lastExtraction: { attemptedAt: "2026-09-28T12:04:00Z", succeeded: false,
+        errorMessage: `could not open /Gestal/accounts/${key}/x for 123456789` } });
+    cleanups.push(g.cleanup);
+    const { snapshot, redacted } = captureSnapshot(g.acct, { version: null });
+    const text = JSON.stringify(snapshot);
+    expect(text).not.toContain(key);
+    expect(text).not.toContain("123456789");
+    expect(redacted).toBe(2);   // both identifiers, found in the one message
+    // Free text that can equal real data — here a champion's name — is left alone on purpose.
+    expect(snapshot.documents.champions.payload.champions[0].name).toBe("Player One");
   });
 
   test("freshnessWarnings flags a stale read and a failed one", () => {
@@ -368,5 +447,62 @@ describe("refresh-gestal.mjs", () => {
     expect(res.status).toBe(1);
     expect(res.stderr).toMatch(/Gestal data folder not found/);
     expect(() => readFileSync(out)).toThrow();
+  });
+
+  test("refuses an --out name the tools could not read and git would not ignore", () => {
+    const g = gestalRoot();
+    cleanups.push(g.cleanup);
+    const out = join(tmp(), "baseline");
+    const res = run(["--out", out], g.root);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toMatch(/--out must end in \.json\.gz/);
+    expect(() => readFileSync(out)).toThrow();
+  });
+});
+
+// --- speed.mjs on a snapshot without current speed --------------------------------
+
+describe("speed.mjs verify", () => {
+  const verify = (snapshot, corpus) => spawnSync(process.execPath,
+    [...FLAGS, "--no-warnings", SPEED, "verify", snapshot, "--corpus", corpus], { encoding: "utf8" });
+  const corpusFile = () => {
+    const path = join(tmp(), "corpus.json");
+    writeFileSync(path, JSON.stringify({ Elhain: 107, Kael: 109 }));
+    return path;
+  };
+
+  test("refuses a Gestal snapshot, which carries no current speed at all", () => {
+    const path = join(tmp(), "2026-09-28-Gestal.json.gz");
+    writeSnapshot(path, snapshotOf({ artifacts: [piece({ equippedOnHeroId: 100 })] }));
+    const res = verify(path, corpusFile());
+    expect(res.status).toBe(1);
+    expect(res.stderr).toMatch(/does not carry/);
+  });
+
+  // RSL Helper's SPD column is nullable: one NULL must not cost the whole snapshot its verify.
+  test("skips a champion with no current speed and measures the rest", () => {
+    const path = join(tmp(), "fixture.db");
+    const db = new DatabaseSync(path);
+    const art = ["ID", "type", "rank", "rarity", "lvl", "mid", "mfl", "mlvlid", "aset", "accset", "ASCLEVEL",
+      "cID", ASC.id, ASC.fl, ASC.base, ...SUB.flatMap((s) => [s.id, s.fl, s.lvl, s.base, s.gv, s.myth])];
+    const champ = ["ID", "Role", "Rarity", "Rang", "Lvl", "Fraction", "SPD", "EmpLvl", "Weapon", "Helmet",
+      "Shield", "Glouves", "Chest", "Shoes", "Ring", "Amulett", "Banner"];
+    db.exec(`CREATE TABLE Artifacts (${art.map((c) => `${c} INTEGER`).join(",")})`);
+    db.exec(`CREATE TABLE Champs (Name TEXT, ${champ.map((c) => `${c} INTEGER`).join(",")})`);
+    const insA = db.prepare(`INSERT INTO Artifacts (${art.join(",")}) VALUES (${art.map(() => "?").join(",")})`);
+    // One flat-HP weapon each, worn by champions 1 and 2; values are stat x 2**32 as the game stores them.
+    for (const [id, wearer] of [[11, 1], [12, 2]]) {
+      const row = { ID: id, type: 5, rank: 6, rarity: 6, lvl: 16, mid: 1, mfl: 1, mlvlid: 4080 * 2 ** 32, cID: wearer };
+      insA.run(...art.map((c) => row[c] ?? 0));
+    }
+    const insC = db.prepare(`INSERT INTO Champs (Name, ${champ.join(",")}) VALUES (${["?", ...champ].map(() => "?").join(",")})`);
+    const cells = (o) => champ.map((c) => (c in o ? o[c] : 0));   // `in`, so an explicit null stays NULL
+    insC.run("Elhain", ...cells({ ID: 1, SPD: 107, Weapon: 11 }));
+    insC.run("Kael", ...cells({ ID: 2, SPD: null, Weapon: 12 }));
+    db.close();
+    const res = verify(path, corpusFile());
+    expect(res.status, res.stderr).toBe(0);
+    expect(res.stdout).toMatch(/1 geared champions in the corpus \(0 not in it, 1 with no current speed\)/);
+    expect(res.stdout).not.toMatch(/NaN/);
   });
 });

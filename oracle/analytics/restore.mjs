@@ -8,7 +8,8 @@
 //     before.db   the pre-session snapshot (default: the newest *-pre-driver.db or .json.gz)
 //     after.db    the post-session snapshot (default: the newest *-post-driver.db or .json.gz)
 //     -o          output path (default: findings/<after's date>-driver-restore.md)
-//   Either may be a Gestal capture: refresh-gestal.mjs --out resources/<date>-pre-driver.json.gz. A
+//   Either may be a Gestal capture: from the repo root,
+//   `node oracle/analytics/refresh-gestal.mjs --out oracle/resources/<date>-pre-driver.json.gz`. A
 //   Gestal snapshot carries no champion speed, so the SPD line is left out wherever one side lacks it.
 //
 // Two views of the same moves, because the restore is done by hand in the game and the round trips

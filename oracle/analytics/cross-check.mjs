@@ -7,12 +7,18 @@
 // The two snapshots are rarely from the same moment, so a difference is only a finding when nothing
 // that happened in between explains it. Explained differences are counted by cause — leveled, reworked
 // (Gestal flags it), glyphs and ascension changed, champion progressed, name spelled differently.
-// Anything else is UNEXPLAINED, printed in full, and makes the exit code 1. Advisory and read-only.
+// Anything else is UNEXPLAINED, printed in full, and makes the exit code 1.
+//
+// Wearers get two checks, because restore.mjs and gear-moves.mjs locate every piece through them: inside
+// the Gestal snapshot, the champion rows' slot columns must agree exactly with every piece's own wearer
+// (a disagreement also exits 1); across the two sources, where gear legitimately moves, the share of worn
+// pieces still on the same champion is only reported. Advisory and read-only.
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { readArtifacts } from "./decode.mjs";
 import { readAllChampRows } from "./champs.mjs";
 import { isGestalPath, readGestalSnapshot } from "./gestal.mjs";
+import { COLUMN_SLOT, SLOT_COLUMNS } from "./gear-common.mjs";
 
 const IDENTITY = ["slot", "set", "rank", "rarity"];
 const sameStat = (a, b) => a.statId === b.statId && a.isFlat === b.isFlat;
@@ -57,6 +63,39 @@ export function compareChamp(r, g) {
   return null;
 }
 
+// Who wears what, as the slot columns say — what restore.mjs and gear-moves.mjs locate pieces by.
+export function locations(rows) {
+  const loc = new Map();
+  for (const r of rows) {
+    for (const col of SLOT_COLUMNS) if (r[col]) loc.set(r[col], r.ID);
+  }
+  return loc;
+}
+
+// Inside ONE snapshot the two views of a wearer must agree exactly: every worn piece sits in its
+// wearer's slot column for its slot, and every slot column names a piece that says it is worn there.
+// Returns the disagreements; for a Gestal snapshot any at all is an adapter bug.
+export function wearerDisagreements(items, rows) {
+  const bad = [];
+  const rowById = new Map(rows.map((r) => [r.ID, r]));
+  const itemById = new Map(items.map((it) => [it.id, it]));
+  const colOf = Object.fromEntries(Object.entries(COLUMN_SLOT).map(([col, slot]) => [slot, col]));
+  for (const it of items) {
+    if (!it.equippedChampId) continue;
+    const col = colOf[it.slot];
+    if (rowById.get(it.equippedChampId)?.[col] !== it.id) {
+      bad.push(`${it.id}: worn by ${it.equippedChampId}, but not in that champion's ${col} column`);
+    }
+  }
+  for (const r of rows) {
+    for (const col of SLOT_COLUMNS) {
+      const id = r[col];
+      if (id && itemById.get(id)?.equippedChampId !== r.ID) bad.push(`${id}: in ${r.ID}'s ${col} column, but not worn by it`);
+    }
+  }
+  return bad;
+}
+
 export function crossCheck(dbPath, gzPath) {
   const reworked = new Set(readGestalSnapshot(gzPath).documents.artifacts.payload.artifacts
     .filter((a) => a.isReworked).map((a) => a.id));
@@ -79,7 +118,17 @@ export function crossCheck(dbPath, gzPath) {
   const gcById = new Map(gc.map((x) => [x.ID, x]));
   const champs = tally(rc.filter((x) => gcById.has(x.ID)).map((x) => [x.ID, x, gcById.get(x.ID)]),
     (a, b) => compareChamp(a, b));
-  return { pieces, champs, counts: { r: r.length, g: g.length, rc: rc.length, gc: gc.length } };
+  // Across the two sources wearers legitimately differ — gear moves between snapshots — so agreement is
+  // reported rather than judged. A broken wearer mapping shows up as almost nothing agreeing.
+  const rLoc = locations(rc), gLoc = locations(gc);
+  let wornInBoth = 0, sameWearer = 0;
+  for (const [id, champ] of gLoc) {
+    if (!rLoc.has(id)) continue;
+    wornInBoth++;
+    if (rLoc.get(id) === champ) sameWearer++;
+  }
+  const wearers = { disagreements: wearerDisagreements(g, gc), wornInBoth, sameWearer };
+  return { pieces, champs, wearers, counts: { r: r.length, g: g.length, rc: rc.length, gc: gc.length } };
 }
 
 function report(label, t) {
@@ -105,7 +154,12 @@ function main() {
   console.log(`pieces ${counts.r} vs ${counts.g}; champions ${counts.rc} vs ${counts.gc}\n`);
   report("pieces", res.pieces);
   report("champions", res.champs);
-  if (res.pieces.unexplained.length || res.champs.unexplained.length) process.exit(1);
+  const w = res.wearers;
+  console.log(`wearers: ${w.sameWearer} of ${w.wornInBoth} pieces worn in both snapshots are on the same`
+    + " champion (the rest moved in between)");
+  console.log(`  ${String(w.disagreements.length).padStart(6)}  Gestal slot columns disagreeing with its own wearers`);
+  for (const line of w.disagreements.slice(0, 20)) console.log(`          ${line}`);
+  if (res.pieces.unexplained.length || res.champs.unexplained.length || w.disagreements.length) process.exit(1);
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) main();

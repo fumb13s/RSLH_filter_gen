@@ -2,10 +2,12 @@
 // into exactly the Item objects (decode.mjs) and champion rows (champs.mjs) the RSLHelper.db readers
 // produce, so every analytics tool runs on either source unchanged.
 //
-// Every mapping below was verified against real data on 2026-09-28 — 7,707 unchanged pieces and 1,314
-// champions decoded from a Gestal dump and from an RSLHelper.db snapshot agreed field for field. The
-// evidence, and what the mapping cannot provide, are in docs/plans/2026-09-28-gestal-snapshot-design.md;
-// cross-check.mjs repeats the comparison whenever both sources exist.
+// Every mapping below was verified against real data on 2026-09-28: of the pieces and champions in both
+// a Gestal capture and an RSLHelper.db snapshot, 7,509 pieces and 1,156 champions decoded identically and
+// every other difference was a real change in between (leveling, glyphs, ascension, reworks, champion
+// progress). The evidence, and what the mapping cannot provide, are in
+// docs/plans/2026-09-28-gestal-snapshot-design.md; cross-check.mjs repeats the comparison whenever both
+// sources exist.
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { COLUMN_SLOT, SLOT_COLUMNS } from "./gear-common.mjs";
@@ -96,13 +98,24 @@ export function gestalItem(a) {
   };
 }
 
+// In id order, as the SQLite path returns them (lib/decode.mjs reads ORDER BY ID). Gestal's own order is
+// not id order — on the 2026-09-28 capture 2,189 neighbours were out of it — and it is not idle: triage
+// sorts on integer scores with no id tiebreak, so which of several equal-score pieces gets deleted,
+// focused or trimmed follows input order. Sorting here keeps both sources, and every re-capture, alike.
 export function gestalItems(snapshot) {
-  return snapshot.documents.artifacts.payload.artifacts.map(gestalItem);
+  return snapshot.documents.artifacts.payload.artifacts.map(gestalItem).sort((a, b) => a.id - b.id);
 }
 
-// Champion rows shaped like champs.mjs's readAllChampRows rows. The nine slot columns come from each
-// piece's CURRENT wearer — Gestal has no per-champion slot list — which is also what the SQLite path's
-// slot columns mean. Two pieces claiming one champion's slot would be a broken dump, so it throws.
+// Champion rows shaped like champs.mjs's readAllChampRows rows, in ID order. The nine slot columns come
+// from each piece's CURRENT wearer — Gestal has no per-champion slot list — which is also what the
+// SQLite path's slot columns mean. Two pieces claiming one champion's slot would be a broken dump, so
+// it throws.
+//
+// A piece can name a wearer the roster does not list: the gear and roster documents are read on
+// separate polls (53 s apart on 2026-09-28), so a champion acquired and geared in between is in one and
+// not yet the other. Dropping it would put its gear "in the vault" for restore.mjs and gear-moves.mjs,
+// which locate pieces by slot column. It gets the same unnamed placeholder row RSL Helper uses for such
+// holders instead: readChampRows leaves it out, readAllChampRows keeps it as a location.
 //
 // SPD (geared speed as RSL Helper computes it) and Br (meaning unconfirmed) have no Gestal source and
 // read null; see the design doc's Gaps.
@@ -118,15 +131,26 @@ export function gestalChampRows(snapshot, items = gestalItems(snapshot)) {
     }
     slots[col] = it.id;
   }
-  return snapshot.documents.champions.payload.champions.map((c) => {
-    const slots = worn.get(c.heroId) ?? {};
-    return {
-      ID: c.heroId, Name: c.name, Role: c.roleId, Rarity: c.rarityId, Rang: c.grade, Lvl: c.level,
-      Fraction: c.factionId, SPD: null, EmpLvl: c.empowerLevel,
-      ...Object.fromEntries(SLOT_COLUMNS.map((col) => [col, slots[col] ?? 0])),
-      HeroID: c.typeId, BaseHeroID: c.baseTypeId, BId: c.blessingId ?? 0, Br: null,
-    };
-  });
+  const slotColumns = (id) => Object.fromEntries(SLOT_COLUMNS.map((col) => [col, worn.get(id)?.[col] ?? 0]));
+  const roster = snapshot.documents.champions.payload.champions;
+  const rows = roster.map((c) => ({
+    ID: c.heroId, Name: c.name, Role: c.roleId, Rarity: c.rarityId, Rang: c.grade, Lvl: c.level,
+    Fraction: c.factionId, SPD: null, EmpLvl: c.empowerLevel, ...slotColumns(c.heroId),
+    HeroID: c.typeId, BaseHeroID: c.baseTypeId, BId: c.blessingId ?? 0, Br: null,
+  }));
+  const listed = new Set(roster.map((c) => c.heroId));
+  for (const id of worn.keys()) {
+    if (listed.has(id)) continue;
+    rows.push({ ID: id, Name: "", Role: 0, Rarity: 0, Rang: 0, Lvl: 0, Fraction: 0, SPD: null, EmpLvl: 0,
+      ...slotColumns(id), HeroID: null, BaseHeroID: null, BId: 0, Br: null });
+  }
+  return rows.sort((a, b) => a.ID - b.ID);
+}
+
+// Wearer ids no roster row lists (see gestalChampRows) — for the capture to report.
+export function unlistedWearers(snapshot, items = gestalItems(snapshot)) {
+  const listed = new Set(snapshot.documents.champions.payload.champions.map((c) => c.heroId));
+  return [...new Set(items.map((it) => it.equippedChampId).filter((id) => id && !listed.has(id)))];
 }
 
 // Throws unless `doc` is a Gestal document this adapter has been verified against.

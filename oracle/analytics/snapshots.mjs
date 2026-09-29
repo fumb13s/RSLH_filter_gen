@@ -31,13 +31,16 @@ export function snapshotDate(p) {
 }
 
 // Newest default-named snapshot in `dir` across both kinds, or null. Ordered by the date prefix, then
-// by kind, then by name, so the choice never depends on directory listing order.
+// by kind, then by name, so the choice never depends on directory listing order. Names compare by code
+// unit, as the plain .sort() every tool used before did — localeCompare would reorder punctuation and
+// case, and pick a different file between two of the same date and kind.
+const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 export function newestSnapshot(dir = RESOURCES) {
   const ranked = readdirSync(dir)
     .map((f) => ({ f, kind: KINDS.find((k) => k.re.test(f)) }))
     .filter((x) => x.kind)
     .map(({ f, kind }) => ({ f, date: (f.match(/^(\d{4}-\d{2}-\d{2})/) ?? [])[1] ?? "", rank: kind.rank }))
-    .sort((a, b) => a.date.localeCompare(b.date) || a.rank - b.rank || a.f.localeCompare(b.f));
+    .sort((a, b) => byCodeUnit(a.date, b.date) || a.rank - b.rank || byCodeUnit(a.f, b.f));
   return ranked.length ? join(dir, ranked[ranked.length - 1].f) : null;
 }
 

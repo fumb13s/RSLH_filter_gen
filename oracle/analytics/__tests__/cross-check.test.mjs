@@ -4,7 +4,7 @@
 // reason that happened between the two snapshots, or differ unexplained — the last being the only
 // finding, since it would mean one of the decoders is wrong.
 import { expect, test } from "vitest";
-import { compareChamp, comparePiece } from "../cross-check.mjs";
+import { compareChamp, comparePiece, locations, wearerDisagreements } from "../cross-check.mjs";
 
 const item = (o = {}) => ({
   id: 1, slot: 4, set: 4, rank: 6, rarity: 4, level: 16, faction: 0, isAccessory: false,
@@ -53,4 +53,30 @@ test("a champion's role, rarity, faction and base type never change; progress an
 // An RSL Helper row read from a minimal Champs table has no BaseHeroID; that must not read as a change.
 test("a column one side lacks is not compared", () => {
   expect(compareChamp(champ({ BaseHeroID: null, HeroID: null, BId: null }), champ())).toBeNull();
+});
+
+// --- wearers ------------------------------------------------------------------
+
+const noSlots = { Weapon: 0, Helmet: 0, Shield: 0, Glouves: 0, Chest: 0, Shoes: 0, Ring: 0, Amulett: 0, Banner: 0 };
+
+test("locations reads who wears what from the slot columns", () => {
+  const rows = [champ({ ...noSlots, ID: 100, Shoes: 1, Ring: 9 }), champ({ ...noSlots, ID: 200 })];
+  expect([...locations(rows)]).toEqual([[1, 100], [9, 100]]);
+});
+
+test("a wearer the slot columns agree with is no disagreement", () => {
+  const items = [item({ id: 1, slot: 4, equippedChampId: 100 }), item({ id: 2, slot: 4 })];
+  expect(wearerDisagreements(items, [champ({ ...noSlots, ID: 100, Shoes: 1 })])).toEqual([]);
+});
+
+// The failure the review named: a type mismatch between wearer ids and champion ids would empty every
+// slot column silently, and restore.mjs would then report all gear as sitting in the vault.
+test("a worn piece missing from its wearer's slot column is a disagreement, and so is the reverse", () => {
+  const worn = [item({ id: 1, slot: 4, equippedChampId: 100 })];
+  expect(wearerDisagreements(worn, [champ({ ...noSlots, ID: 100 })]))
+    .toEqual([expect.stringMatching(/1: worn by 100, but not in that champion's Shoes column/)]);
+  expect(wearerDisagreements(worn, [champ({ ...noSlots, ID: "100", Shoes: 1 })])).toHaveLength(2);
+  const loose = [item({ id: 1, slot: 4 })];
+  expect(wearerDisagreements(loose, [champ({ ...noSlots, ID: 100, Shoes: 1 })]))
+    .toEqual([expect.stringMatching(/1: in 100's Shoes column, but not worn by it/)]);
 });

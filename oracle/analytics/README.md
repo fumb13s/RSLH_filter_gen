@@ -18,14 +18,18 @@ Every tool reads either kind. Given no snapshot argument, a tool takes the newes
   freezes Gestal's gear, roster and stat documents into `resources/<date>-Gestal.json.gz`, dated by
   Gestal's last read of the game. Gestal only refreshes them while attached to a running Raid, so
   start Raid with Gestal attached and give it a minute; the script warns when the data is more than 15
-  minutes old. `--out PATH` writes a named baseline instead (for example `<date>-pre-driver.json.gz`
-  for `restore.mjs`), and `--account KEY` picks another account. A Gestal snapshot carries no champion
-  speed, so `speed.mjs` needs `--constant N` on one and `speed.mjs verify` refuses it. Design:
-  `docs/plans/2026-09-28-gestal-snapshot-design.md`.
+  minutes old. `--out PATH` writes a named baseline instead (for example
+  `oracle/resources/<date>-pre-driver.json.gz` for `restore.mjs`; it must end in `.json.gz`), and
+  `--account KEY` picks another account. If Gestal's last read of the game failed, the capture is dated
+  by its documents and will not overwrite an existing snapshot of that date. A Gestal snapshot carries
+  no champion speed, so `speed.mjs` needs `--constant N` on one and `speed.mjs verify` refuses it.
+  Design: `docs/plans/2026-09-28-gestal-snapshot-design.md`.
 - **Both at once:** `node --experimental-sqlite oracle/analytics/cross-check.mjs <snapshot.db>
   <snapshot.json.gz>` compares the two decodes record by record. Differences that happened between
   the two snapshots (levelling, glyphs, ascension, reworks, champion progress) are counted; anything
-  else is printed and exits 1.
+  else is printed and exits 1. Wearers are checked too: inside the Gestal snapshot the slot columns
+  must agree with every piece's wearer (exit 1 otherwise), and across the two the share of worn pieces
+  still on the same champion is reported.
 
 ## Run
 

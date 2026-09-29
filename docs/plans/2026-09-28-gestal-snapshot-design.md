@@ -106,6 +106,12 @@ agree for all of them. 133 were progressed since June (stars, level, empower, as
 `typeId` — or blessing), and 25 names are spelled differently: Gestal cuts some short and uses shorter
 variants ("Xena" for "Xena: Warrior Princess"). None is unexplained.
 
+**Wearers.** Re-run on a 2026-09-29 capture, after review pointed out the comparison above never looked
+at who wears what — which `restore.mjs` and `gear-moves.mjs` locate every piece by. Inside the Gestal
+snapshot the champion rows' slot columns agree with every piece's own wearer, with 0 disagreements.
+Across the two sources, 3,707 of the 3,880 pieces worn in both sit on the same champion; the rest moved
+in the four months between. A broken wearer mapping would show almost none agreeing.
+
 | `Champs` column | Gestal `champions.json` |
 |---|---|
 | `ID` | `heroId` |
@@ -135,10 +141,17 @@ Faction ids are the game's own in both documents (Barbarians = 13) — the space
 - **Documents verbatim.** Each is embedded exactly as Gestal wrote it, so a later adapter can re-read
   an old snapshot.
 - **Date** = the local date of the last successful extraction — the account-data date, the same
-  convention as the `.db` snapshots. If the last extraction failed, the gear dump's `extractedAt` dates
-  it instead. A second capture on the same date overwrites the first.
-- **`--out PATH`** writes elsewhere, for named baselines. `restore.mjs`'s defaults
-  (`*-pre-driver`, `*-post-driver`) accept either extension.
+  convention as the `.db` snapshots. A second capture on that date overwrites the first, as a
+  re-run of `refresh.sh` does.
+- **When the last extraction failed**, the newest of the gear and roster documents' `extractedAt` dates
+  the capture instead: the latest moment the data is known to hold. That can be days old when nothing
+  changed since, and overwriting a genuine capture of that day would put newer data under an old label
+  for good — so such a capture refuses to replace an existing file of its date (an explicit `--out` is
+  honoured). A capture with no usable timestamp at all refuses outright rather than naming a file
+  `NaN-NaN-NaN`.
+- **`--out PATH`** writes elsewhere, for named baselines, and must end in `.json.gz`: the readers
+  recognise a Gestal snapshot by that extension, and it is what `.gitignore` denies. `restore.mjs`'s
+  defaults (`*-pre-driver`, `*-post-driver`) accept either extension.
 - **Size:** about 9.3 MB of JSON, **about 470 KB gzipped** — smaller than a `.db` snapshot, so it syncs
   through the notes repo just as easily.
 
@@ -146,7 +159,7 @@ Faction ids are the game's own in both documents (Barbarians = 13) — the space
 
 | Unit | Responsibility |
 |---|---|
-| `oracle/analytics/gestal.mjs` | Reading and validating a snapshot file; the id maps; `gestalItems(snapshot)` and `gestalChampRows(snapshot)`, producing exactly the shapes of `decodeRow` and of `readAllChampRows`'s rows. Any Gestal id outside the maps throws, and so does a champion wearing two pieces in one slot. |
+| `oracle/analytics/gestal.mjs` | Reading and validating a snapshot file; the id maps; `gestalItems(snapshot)` and `gestalChampRows(snapshot)`, producing exactly the shapes of `decodeRow` and of `readAllChampRows`'s rows, in id order. Any Gestal id outside the maps throws, and so does a champion wearing two pieces in one slot. |
 | `oracle/analytics/refresh-gestal.mjs` | The capture CLI. |
 | `oracle/analytics/snapshots.mjs` | What counts as a snapshot argument, its date, and the newest snapshot in a folder across both kinds. |
 | `decode.mjs`, `champs.mjs` | `readArtifacts` and `readAllChampRows` dispatch on the path: `.json.gz` goes to the Gestal reader, anything else to SQLite. |
@@ -155,6 +168,19 @@ Faction ids are the game's own in both documents (Barbarians = 13) — the space
 The adapter sits in `oracle/analytics/` rather than beside `oracle/lib/decode.mjs`: only analytics
 reads it, and it builds champion rows from `gear-common.mjs`'s slot-column table, which `lib/` should
 not import.
+
+Two adapter rules came out of review:
+
+- **Id order.** Pieces and champion rows come back sorted by id, as the SQLite path returns them
+  (`ORDER BY ID`). Gestal's own order is not id order — 2,189 neighbouring pieces were out of it on
+  2026-09-28 — and triage sorts on integer scores with no id tiebreak, so input order decided which of
+  several equal-score pieces was deleted or focused. Unsorted, the same account gave different reports
+  from the two sources.
+- **Wearers missing from the roster.** Gear and roster are separate polls, so a champion geared in
+  between can be worn in one document and absent from the other. Such a wearer gets the unnamed
+  placeholder row RSL Helper uses for holders without a name: `readChampRows` leaves it out, and
+  `readAllChampRows` keeps it as a location, so its gear does not read as sitting in the vault. The
+  capture reports how many there were.
 
 The three tools that query SQLite themselves — `restore.mjs`, `worst-artifacts.mjs` and
 `spare-copies.mjs` — switch to `readAllChampRows`. It gains the columns they read (`HeroID`,
@@ -175,26 +201,34 @@ snapshot-argument check (`parseArgs`, `parseSpeedArgs`, `spare-copies.mjs`) acce
    the new one first. The three stat documents are kept verbatim whatever their version, since nothing
    reads them yet and refusing over them would block the gear. A document Gestal has not written is
    left out, and the capture says which.
-4. Run the adapter over the result before writing, so a snapshot the readers cannot decode is never
-   written.
-5. Write to a temporary file, then rename it into place.
-6. Print the destination, the piece and champion counts, and the age of the last successful extraction.
-   When that is more than 15 minutes old, or the last extraction failed, warn: Gestal is not reading the
-   game right now — start Raid with Gestal attached and give it a minute. Then stop; as with
-   `refresh.sh`, analysis is run separately.
+4. Scrub the account key and player id from string values (see *Privacy*), then run the adapter over
+   the result before writing, so a snapshot the readers cannot decode is never written.
+5. Date it (see *The snapshot file*) and pick the destination; refuse if that would overwrite a capture
+   it cannot safely replace.
+6. Write to a temporary file, then rename it into place.
+7. Print the destination, the piece and champion counts, and the age of the data. When that is more
+   than 15 minutes old, or the last extraction failed, warn: Gestal is not reading the game right now —
+   start Raid with Gestal attached and give it a minute. Also report wearers missing from the roster
+   and any scrubbed identifiers. Then stop; as with `refresh.sh`, analysis is run separately.
 
 ## Snapshot discovery
 
 Tools that default to "the newest snapshot" consider both `*-RSLHelper.db` and `*-Gestal.json.gz` in
 `oracle/resources/` and pick the newest date prefix. On a same-date tie they take the Gestal file,
-because its wearer data is current (see *Gaps*). Reports already name the file they read.
+because its wearer data is current (see *Gaps*); two files of the same date and kind break by code-unit
+order, as the plain `.sort()` every tool used before did. The printing tools name the file they read in
+their first line, and `analyze.mjs`'s report now does too — which matters because reports are keyed by
+date alone: analysing both kinds for one date writes the same `out/<date>-report.*`, the later run
+replacing the earlier.
 
 ## Gaps
 
 - **No current speed.** `Champs.SPD` is the champion's geared speed as RSL Helper computed it. Gestal
   stores base stats and a per-source bonus breakdown (sets, masteries, blessing, relics, empower,
   faction guardian) instead, so Gestal rows carry `SPD: null`. `speed.mjs` then needs `--constant`, and
-  says so, rather than measuring it; its `verify` mode refuses; `restore.mjs` leaves out its speed line.
+  says so, rather than measuring it. Its `verify` mode skips any champion without a current speed —
+  RSL Helper's column is nullable too — and refuses only when no geared champion has one, as on every
+  Gestal snapshot. `restore.mjs` leaves out its speed line.
   Deriving speed from the breakdown is a follow-up, and would also make `speed.mjs`'s external
   base-speed corpus unnecessary.
 - **Wearers differ from RSL Helper's, in Gestal's favour.** `equippedOnHeroId` is the current wearer,
@@ -210,9 +244,16 @@ because its wearer data is current (see *Gaps*). Reports already name the file t
 
 Snapshots are personal account data. They live in `oracle/resources/`, which is already deny-all in its
 `.gitignore`, and because `--out` can point anywhere, the root `.gitignore` also denies `*.json.gz` (and
-the capture's `.tmp`) everywhere — the same belt-and-braces the battle-log archive uses. The capture leaves out `metadata.json` (Raid player id and display name), and the account
-key appears nowhere in the file. Test fixtures are synthetic and hand-built. Prose, tests and commits
-cite counts, never account keys or instance ids.
+the capture's `.tmp`) everywhere — the same belt-and-braces the battle-log archive uses. `--out` must
+end in `.json.gz`, so that denial cannot be sidestepped by a file name.
+
+The capture leaves out `metadata.json` (Raid player id and display name). The other documents are kept
+verbatim, with one exception: the account key and the Raid player id are scrubbed from every string
+value, to `<redacted>`. The known way one could slip in is a path in `last-extraction.json`'s
+`errorMessage`. Numbers are never touched, since a stat or id can contain a player id's digits, and the
+display name is deliberately not scrubbed: it is free text that can equal a champion's name or an
+ordinary word, so scrubbing it would corrupt real data. Test fixtures are synthetic and hand-built.
+Prose, tests and commits cite counts, never account keys or instance ids.
 
 ## Testing
 
@@ -222,17 +263,25 @@ Vitest in `oracle/analytics/__tests__/` — `gestal.test.mjs`, `snapshots.test.m
 - **Adapter:** both id maps pinned entry by entry; hand-built pieces covering flat and % stats,
   SPD/ACC/RES, both crits, a damage-type substat, glyphs, `decodeValue`'s rounding, an ascended piece
   and a setless faction accessory, decoded to exact `Item`s; champion rows including the slot
-  columns. An unknown stat or slot id throws, as do two pieces in one champion's slot.
+  columns; pieces and rows back in id order however Gestal wrote them; a wearer missing from the
+  roster turned into a placeholder row. An unknown stat or slot id throws, as do two pieces in one
+  champion's slot.
 - **Capture:** against a temporary data root — the account comes from `active.json` or `--account`;
-  `metadata.json` stays out of the file, and its player id and name appear nowhere in it; the date
-  comes from the last extraction, else the gear dump; a missing root, the guest slot, an unknown
-  `schemaVersion` and an undecodable dump each fail with a message; stale and failed reads warn. The
-  CLI is run end to end: `--out`, the summary line, the warning, and a failed run writing nothing.
+  `metadata.json` stays out of the file; the account key and player id are scrubbed from a message
+  that carries them, while a champion sharing the display name keeps it; the date comes from the last
+  extraction, else the newest document, and an undatable capture refuses; a document-dated capture
+  will not overwrite an existing file; `--out` must end in `.json.gz`; a missing root, the guest slot,
+  an unknown `schemaVersion` and an undecodable dump each fail with a message; stale and failed reads
+  warn. The date test holds in every time zone, UTC+14 included. The CLI is run end to end: `--out`,
+  the summary line, the warning, a refused file name, and a failed run writing nothing.
 - **Dispatch and discovery:** `readArtifacts` and `readAllChampRows` on a snapshot file; the optional
   `Champs` columns on SQLite; `.json.gz` recognised as a snapshot argument; newest-snapshot selection
-  across both kinds, including the tie rule and baselines never being the default.
+  across both kinds, including the tie rules and baselines never being the default.
+- **`speed.mjs verify`, end to end:** refused on a Gestal snapshot; on SQLite, a champion with a NULL
+  speed is skipped and the rest measured.
 - **Cross-check:** its classifier — identity differences unexplained, progress explained, changed
-  stats explained only by a recorded rework.
+  stats explained only by a recorded rework — and the wearer checks, including the type mismatch that
+  would otherwise empty every slot column silently.
 - The existing suite keeps passing; the SQLite path is untouched.
 - **Cross-check (manual, on personal data):** `cross-check.mjs <rslh.db> <gestal.json.gz>` repeats the
   verification above. Run it whenever both sources exist.
