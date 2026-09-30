@@ -11,7 +11,7 @@ import { getSettings } from "./settings.js";
 // Types
 // ---------------------------------------------------------------------------
 
-interface SetTier {
+export interface SetTier {
   name: string;
   rolls: number;    // 4-9, or -1 for "Sell"
   color: string;    // CSS color for chips/header
@@ -46,6 +46,13 @@ export interface QuickGenState {
   customProfiles?: CustomProfile[];
   strict?: boolean;
 }
+
+// Stored shapes — what .fqbl files and share links hold. Tier colours are derived from the
+// defaults, so they are never written; see stripBlockColors / restoreBlockColors.
+
+export type StoredSetTier = Omit<SetTier, "color">;
+export type StoredQuickBlock = Omit<QuickBlock, "tiers"> & { tiers: StoredSetTier[] };
+export type StoredQuickGenState = Omit<QuickGenState, "blocks"> & { blocks: StoredQuickBlock[] };
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -111,7 +118,7 @@ export function defaultQuickState(): QuickGenState {
 }
 
 /** Strip tier colors for serialization (colors are not user-editable). */
-export function stripBlockColors(state: QuickGenState): QuickGenState {
+export function stripBlockColors(state: QuickGenState): StoredQuickGenState {
   return {
     blocks: state.blocks.map((b) => ({
       ...b,
@@ -128,12 +135,12 @@ export function stripBlockColors(state: QuickGenState): QuickGenState {
 }
 
 /** Restore tier colors from defaults after deserialization. */
-export function restoreBlockColors(state: QuickGenState): QuickGenState {
+export function restoreBlockColors(state: StoredQuickGenState): QuickGenState {
   const defaultColors = getDefaultTiers().map((t) => t.color);
   return {
     blocks: state.blocks.map((b) => ({
       ...b,
-      tiers: b.tiers.map((t, i) => ({ ...t, color: t.color ?? defaultColors[i] ?? "#e5e7eb" })),
+      tiers: b.tiers.map((t, i) => ({ ...t, color: defaultColors[i] ?? "#e5e7eb" })),
     })),
     rareAccessories: state.rareAccessories,
     oreReroll: state.oreReroll,

@@ -8,7 +8,8 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@rslh/core": "*"
+    "@rslh/core": "*",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "marked": "^17.0.2",
