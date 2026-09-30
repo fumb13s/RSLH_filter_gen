@@ -215,13 +215,11 @@ describe("share: round-trip", () => {
 
   it("handles multi-block state", async () => {
     const block = defaultBlock();
-    // strip colors for clean comparison
-    const stripped = stripBlockColors({ blocks: [block] }).blocks[0];
     const state: QuickGenState = {
       blocks: [
-        { ...stripped, name: "Block A" },
-        { ...stripped, name: "Block B" },
-        { ...stripped, name: "Block C" },
+        { ...block, name: "Block A" },
+        { ...block, name: "Block B" },
+        { ...block, name: "Block C" },
       ],
     };
     const decoded = await decodeState(await encodeState(state));

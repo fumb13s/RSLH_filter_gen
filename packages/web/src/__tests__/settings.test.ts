@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { getSettings, saveSettings, DEFAULT_SETTINGS, settingsFromNewerVersion } from "../settings.js";
+import { getSettings, loadSettings, saveSettings, DEFAULT_SETTINGS } from "../settings.js";
 
 // Minimal localStorage stub for Node
 const store: Record<string, string> = {};
@@ -122,8 +122,27 @@ describe("settings versioning", () => {
   it("uses defaults for settings from a newer version", () => {
     store["rslh-settings"] = JSON.stringify({ version: 2, settings: { maxTabs: 3 } });
 
-    expect(getSettings()).toEqual(DEFAULT_SETTINGS);
-    expect(settingsFromNewerVersion()).toBe(true);
+    expect(loadSettings()).toEqual({ settings: DEFAULT_SETTINGS, newer: true });
+  });
+
+  // One call, one read: the modal needs the settings and the newer flag together, and used to
+  // parse storage once for each.
+  it("reads storage once for both the settings and the newer flag", () => {
+    store["rslh-settings"] = JSON.stringify({ version: 1, settings: { maxTabs: 5 } });
+    let reads = 0;
+    Object.defineProperty(globalThis, "localStorage", {
+      value: {
+        ...localStorageStub,
+        getItem: (key: string) => {
+          reads++;
+          return localStorageStub.getItem(key);
+        },
+      },
+      writable: true,
+    });
+
+    expect(loadSettings()).toEqual({ settings: { ...DEFAULT_SETTINGS, maxTabs: 5 }, newer: false });
+    expect(reads).toBe(1);
   });
 
   it("never overwrites settings from a newer version", () => {
@@ -139,8 +158,7 @@ describe("settings versioning", () => {
     for (const version of ["x", 0, -1, 1.5, null]) {
       store["rslh-settings"] = JSON.stringify({ version, settings: { maxTabs: 3 } });
 
-      expect(getSettings()).toEqual(DEFAULT_SETTINGS);
-      expect(settingsFromNewerVersion()).toBe(false);
+      expect(loadSettings()).toEqual({ settings: DEFAULT_SETTINGS, newer: false });
     }
   });
 
@@ -156,13 +174,13 @@ describe("settings versioning", () => {
   });
 
   it("reports no newer version for current or missing settings", () => {
-    expect(settingsFromNewerVersion()).toBe(false);
+    expect(loadSettings().newer).toBe(false);
 
     saveSettings(DEFAULT_SETTINGS);
-    expect(settingsFromNewerVersion()).toBe(false);
+    expect(loadSettings().newer).toBe(false);
 
     store["rslh-settings"] = JSON.stringify({ generatorDefaultRolls: 8 });
-    expect(settingsFromNewerVersion()).toBe(false);
+    expect(loadSettings().newer).toBe(false);
   });
 
   it("round-trips every field set to a non-default value", () => {

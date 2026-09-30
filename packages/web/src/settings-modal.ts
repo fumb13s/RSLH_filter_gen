@@ -1,7 +1,7 @@
 /**
  * Settings modal — renders the settings form and auto-saves on change.
  */
-import { getSettings, saveSettings, settingsFromNewerVersion } from "./settings.js";
+import { loadSettings, saveSettings } from "./settings.js";
 import type { TabType } from "./settings.js";
 
 export interface SettingsModal {
@@ -33,8 +33,7 @@ export function initSettingsModal(onOpen?: () => void): SettingsModal {
   });
 
   function renderForm(): void {
-    const settings = getSettings();
-    const locked = settingsFromNewerVersion();
+    const { settings, newer: locked } = loadSettings();
     body.innerHTML = "";
 
     if (locked) {

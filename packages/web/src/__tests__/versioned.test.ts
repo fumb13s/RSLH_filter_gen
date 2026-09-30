@@ -166,6 +166,19 @@ describe("loadVersioned: invalid", () => {
     expect(() => loadVersioned(TOY, undefined)).not.toThrow();
     expect(() => loadVersioned(TOY, { version: 1, payload: { n: Symbol("x") } })).not.toThrow();
   });
+
+  // The upgrade loop runs from the document's version up to the current one, so a format whose
+  // `unversioned` sits above its own current version would skip it and hand back the stored value
+  // unparsed. Neither real format is configured that way; this pins that the loader refuses rather
+  // than trusting the config.
+  it("refuses a format whose unversioned version is above its current one", () => {
+    const MISCONFIGURED: VersionedFormat<Toy> = { ...TOY, unversioned: 4 };
+
+    expect(loadVersioned(MISCONFIGURED, { anything: true })).toEqual({
+      kind: "invalid",
+      issue: "unsupported format configuration",
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

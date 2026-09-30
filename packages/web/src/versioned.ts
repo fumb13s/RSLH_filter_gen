@@ -103,7 +103,14 @@ export function loadVersioned<T>(format: VersionedFormat<T>, stored: unknown): L
     return { kind: "invalid", issue: 'missing "version"' };
   }
 
-  // 5. Parse and upgrade, re-parsing after every step so a faulty step fails the load
+  // 5. A version above the current one would skip the loop below and return the stored value
+  // unparsed. The envelope path reports `newer` before it gets here, so this only catches a format
+  // declaring `unversioned` above its own current version — a config mistake, not stored data. The
+  // check is here so "never returns unchecked data" holds in this function rather than by
+  // convention elsewhere.
+  if (version > supported) return { kind: "invalid", issue: "unsupported format configuration" };
+
+  // 6. Parse and upgrade, re-parsing after every step so a faulty step fails the load
   let value: unknown = data;
   for (let v = version; v <= supported; v++) {
     const schema = v === supported ? format.current : format.past[v - 1].schema;

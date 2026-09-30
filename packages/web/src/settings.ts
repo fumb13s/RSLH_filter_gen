@@ -7,7 +7,7 @@
  * is written until the player changes a setting.
  */
 import { z } from "zod";
-import { loadVersioned, wrap, currentVersion } from "./versioned.js";
+import { loadVersioned, wrap } from "./versioned.js";
 import type { VersionedFormat } from "./versioned.js";
 
 export type TabType = "viewer" | "generator" | "quick";
@@ -102,26 +102,29 @@ function readStored(): unknown {
   }
 }
 
-export function getSettings(): UserSettings {
+/**
+ * Reads storage once and reports both the settings to use and whether what is stored came from a
+ * newer version of the app. Callers that need both ask for both here: `loadVersioned` owns the rule
+ * for which of those a stored document is, so nothing outside it decides "newer" a second time.
+ */
+export function loadSettings(): { settings: UserSettings; newer: boolean } {
   const stored = readStored();
-  if (stored === undefined || typeof stored !== "object" || stored === null) return defaultSettings();
+  if (stored === undefined || typeof stored !== "object" || stored === null) {
+    return { settings: defaultSettings(), newer: false };
+  }
 
   const result = loadVersioned(SETTINGS_FORMAT, stored);
-  return result.kind === "ok" ? result.value : defaultSettings();
+  if (result.kind === "ok") return { settings: result.value, newer: false };
+  return { settings: defaultSettings(), newer: result.kind === "newer" };
 }
 
-/** True when storage holds an envelope whose version is above the one this page writes. */
-export function settingsFromNewerVersion(): boolean {
-  const stored = readStored();
-  if (stored === null || typeof stored !== "object") return false;
-
-  const version = (stored as Record<string, unknown>).version;
-  return typeof version === "number" && Number.isInteger(version) && version > currentVersion(SETTINGS_FORMAT);
+export function getSettings(): UserSettings {
+  return loadSettings().settings;
 }
 
 export function saveSettings(settings: UserSettings): void {
   // Never overwrite settings a newer version of the app wrote.
-  if (settingsFromNewerVersion()) return;
+  if (loadSettings().newer) return;
 
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(wrap(SETTINGS_FORMAT, settings)));
