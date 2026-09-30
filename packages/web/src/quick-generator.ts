@@ -117,6 +117,22 @@ export function defaultQuickState(): QuickGenState {
   return { blocks: [defaultBlock()], rareAccessories: defaultRareAccessoryBlock(), oreReroll: defaultOreRerollBlock() };
 }
 
+// ---------------------------------------------------------------------------
+// Input guards — the UI must never write a value the stored formats reject
+// ---------------------------------------------------------------------------
+
+/** The dropped set id, or null when the drop carried anything else (e.g. text from another page). */
+export function parseDroppedSetId(text: string | undefined): number | null {
+  if (!text) return null;
+  const id = Number(text);
+  return id in ARTIFACT_SET_NAMES ? id : null;
+}
+
+/** A tier's rolls as stored: a whole number from 1 to 9. Callers never pass NaN. */
+export function normalizeRolls(value: number): number {
+  return Math.max(1, Math.min(9, Math.round(value)));
+}
+
 /** Strip tier colors for serialization (colors are not user-editable). */
 export function stripBlockColors(state: QuickGenState): StoredQuickGenState {
   return {
@@ -705,11 +721,11 @@ function renderBlockTiers(
     rollsInput.addEventListener("input", () => {
       const raw = Number(rollsInput.value);
       if (!raw || raw < 1 || raw > 9) return;
-      block.tiers[ti].rolls = raw;
+      block.tiers[ti].rolls = normalizeRolls(raw);
     });
     // Clamp on blur
     rollsInput.addEventListener("blur", () => {
-      const v = Math.max(1, Math.min(9, Number(rollsInput.value) || tier.rolls));
+      const v = normalizeRolls(Number(rollsInput.value) || tier.rolls);
       rollsInput.value = String(v);
       block.tiers[ti].rolls = v;
     });
@@ -720,8 +736,7 @@ function renderBlockTiers(
     // Scroll to cycle value
     rollsInput.addEventListener("wheel", (e) => {
       e.preventDefault();
-      const cur = Number(rollsInput.value);
-      const next = Math.max(1, Math.min(9, cur + (e.deltaY < 0 ? 1 : -1)));
+      const next = normalizeRolls(Number(rollsInput.value) + (e.deltaY < 0 ? 1 : -1));
       rollsInput.value = String(next);
       block.tiers[ti].rolls = next;
     });
@@ -788,9 +803,8 @@ function renderBlockTiers(
     col.addEventListener("drop", (e) => {
       e.preventDefault();
       col.classList.remove("drag-over");
-      const setId = e.dataTransfer?.getData("text/plain");
-      if (!setId) return;
-      const id = Number(setId);
+      const id = parseDroppedSetId(e.dataTransfer?.getData("text/plain"));
+      if (id === null) return; // text dragged from somewhere else
       if (block.assignments[id] === ti) return; // already in this tier
       block.assignments[id] = ti;
       onChange(state);
@@ -1059,9 +1073,8 @@ function renderOreReroll(
     col.addEventListener("drop", (e) => {
       e.preventDefault();
       col.classList.remove("drag-over");
-      const setId = e.dataTransfer?.getData("text/plain");
-      if (!setId) return;
-      const id = Number(setId);
+      const id = parseDroppedSetId(e.dataTransfer?.getData("text/plain"));
+      if (id === null) return; // text dragged from somewhere else
       if (block.assignments[id] === ci) return;
       block.assignments[id] = ci;
       onChange(state);

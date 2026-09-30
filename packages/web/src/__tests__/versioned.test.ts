@@ -168,6 +168,99 @@ describe("loadVersioned: invalid", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// What the upgrade chain guarantees a maintainer
+// ---------------------------------------------------------------------------
+
+describe("renumbered ids", () => {
+  // A format whose faction ids are renumbered between v1 and v2: old 13 becomes new 40.
+  // This is the shape the planned FACTION_NAMES renumbering will take.
+  const OLD_IDS = [11, 12, 13];
+  const NEW_IDS = [11, 12, 40];
+  const RENUMBERED: Record<number, number> = { 13: 40 };
+
+  interface Faction {
+    faction: number;
+  }
+
+  const oldSchema = z.object({ faction: z.number().int() });
+  const newSchema = z
+    .object({ faction: z.number().int() })
+    .refine((d) => NEW_IDS.includes(d.faction), "unknown faction id");
+
+  const FACTIONS: VersionedFormat<Faction> = {
+    past: [
+      {
+        schema: oldSchema,
+        up: (d) => {
+          const data = d as z.output<typeof oldSchema>;
+          return { faction: RENUMBERED[data.faction] ?? data.faction };
+        },
+      },
+    ],
+    current: newSchema,
+    dataKey: "data",
+  };
+
+  it("accepts an id that is valid only in the old numbering, and maps it", () => {
+    expect(OLD_IDS).toContain(13);
+    expect(NEW_IDS).not.toContain(13);
+
+    expect(loadVersioned(FACTIONS, { version: 1, data: { faction: 13 } })).toEqual({
+      kind: "ok",
+      value: { faction: 40 },
+    });
+  });
+
+  it("rejects the same id when it reaches the current version unmapped", () => {
+    expect(loadVersioned(FACTIONS, { version: 2, data: { faction: 13 } }).kind).toBe("invalid");
+  });
+
+  it("leaves ids the renumbering does not touch alone", () => {
+    expect(loadVersioned(FACTIONS, { version: 1, data: { faction: 11 } })).toEqual({
+      kind: "ok",
+      value: { faction: 11 },
+    });
+  });
+});
+
+describe("a faulty upgrade step", () => {
+  it("fails the load instead of producing data of the wrong shape", () => {
+    const BROKEN: VersionedFormat<Toy> = {
+      ...TOY,
+      past: [
+        { schema: toyV1, up: () => ({ n: "not a number" }) },
+        TOY.past[1],
+      ],
+    };
+
+    const result = loadVersioned(BROKEN, { version: 1, payload: { n: 7 } });
+
+    expect(result.kind).toBe("invalid");
+    expect(result.kind === "invalid" && result.issue.startsWith("n: ")).toBe(true);
+  });
+
+  it("reports the thrown message when a step throws", () => {
+    const THROWS: VersionedFormat<Toy> = {
+      ...TOY,
+      past: [
+        {
+          schema: toyV1,
+          up: () => {
+            throw new Error("step blew up");
+          },
+        },
+        TOY.past[1],
+      ],
+    };
+
+    expect(loadVersioned(THROWS, { version: 1, payload: { n: 7 } })).toEqual({
+      kind: "invalid",
+      issue: "step blew up",
+    });
+  });
+});
+
 describe("loadFailureMessage", () => {
   it("names both versions and advises a reload for a newer document", () => {
     expect(loadFailureMessage(".fqbl", { kind: "newer", found: 5, supported: 4 })).toBe(

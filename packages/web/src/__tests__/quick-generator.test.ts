@@ -13,6 +13,8 @@ import {
   rareAccessoriesToGroups,
   stripBlockColors,
   restoreBlockColors,
+  parseDroppedSetId,
+  normalizeRolls,
 } from "../quick-generator.js";
 import type { OreRerollBlock, RareAccessoryBlock } from "../quick-generator.js";
 import { SUBSTAT_PRESETS } from "../generator.js";
@@ -575,6 +577,44 @@ describe("rare accessory two-step pipeline", () => {
     expect(rules.length).toBeGreaterThan(0);
     expect(() => generateFilter(rules)).not.toThrow();
     assertRuleInvariants(rules);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseDroppedSetId / normalizeRolls
+// ---------------------------------------------------------------------------
+
+describe("parseDroppedSetId", () => {
+  it("returns the id for a known set", () => {
+    for (const id of Object.keys(ARTIFACT_SET_NAMES).map(Number)) {
+      expect(parseDroppedSetId(String(id))).toBe(id);
+    }
+  });
+
+  it("returns null for text that is not a known set id", () => {
+    expect(parseDroppedSetId("NaN")).toBeNull();
+    expect(parseDroppedSetId("abc")).toBeNull();
+    expect(parseDroppedSetId("")).toBeNull();
+    expect(parseDroppedSetId(undefined)).toBeNull();
+    expect(parseDroppedSetId("99999")).toBeNull();
+    expect(parseDroppedSetId("1.5")).toBeNull();
+  });
+});
+
+describe("normalizeRolls", () => {
+  it("rounds a decimal", () => {
+    expect(normalizeRolls(6.5)).toBe(7);
+    expect(normalizeRolls(6.4)).toBe(6);
+  });
+
+  it("clamps to 1..9", () => {
+    expect(normalizeRolls(12)).toBe(9);
+    expect(normalizeRolls(-3)).toBe(1);
+    expect(normalizeRolls(0)).toBe(1);
+  });
+
+  it("leaves a whole number in range alone", () => {
+    for (let i = 1; i <= 9; i++) expect(normalizeRolls(i)).toBe(i);
   });
 });
 
