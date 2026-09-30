@@ -49,7 +49,13 @@ function fromBase64Url(str: string): Uint8Array {
   const padded = str.replace(/-/g, "+").replace(/_/g, "/");
   const pad = (4 - (padded.length % 4)) % 4;
   const b64 = padded + "=".repeat(pad);
-  const binary = atob(b64);
+  // atob throws a DOMException on input the alphabet gate lets through, e.g. "A".
+  let binary: string;
+  try {
+    binary = atob(b64);
+  } catch {
+    fail();
+  }
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
@@ -138,9 +144,14 @@ export async function decodeState(encoded: string): Promise<QuickGenState> {
   const decompressed = await decompress(binary);
   if (decompressed.length > MAX_DECOMPRESSED_SIZE) fail();
 
-  // Parse JSON
+  // Parse JSON — a malformed payload throws a SyntaxError
   const text = new TextDecoder().decode(decompressed);
-  const data: unknown = JSON.parse(text);
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    fail();
+  }
 
   // Migrate, then validate against the current version
   const result = loadVersioned(QUICK_STATE_LINK_FORMAT, data);

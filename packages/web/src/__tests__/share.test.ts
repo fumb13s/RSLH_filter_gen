@@ -717,6 +717,50 @@ describe("share: versioned envelope", () => {
 const NEWER_TEXT = "This link was made with a newer version of the app. Reload the page to open it.";
 const GENERIC_TEXT = "This shared link couldn't be opened. It may be incomplete or damaged.";
 
+describe("share: envelope rejection", () => {
+  it("rejects an envelope with an extra key", async () => {
+    const encoded = await encodeRaw({
+      version: 4,
+      state: stripBlockColors(defaultQuickState()),
+      extra: 1,
+    });
+    await expect(decodeState(encoded)).rejects.toThrow("Invalid shared state");
+  });
+
+  it("rejects a __proto__ key inside a block's assignments", async () => {
+    const json =
+      '{"version":4,"state":{"blocks":[{"tiers":[{"name":"T1","rolls":5},{"name":"T2","rolls":7},' +
+      '{"name":"T3","rolls":8},{"name":"T4","rolls":9}],"assignments":{"__proto__":0},' +
+      '"selectedProfiles":[]}]}}';
+    await expect(decodeState(await encodeRawString(json))).rejects.toThrow("Invalid shared state");
+  });
+
+  it("rejects a __proto__ key inside oreReroll assignments", async () => {
+    const json =
+      '{"version":4,"state":{"blocks":[{"tiers":[{"name":"T1","rolls":5},{"name":"T2","rolls":7},' +
+      '{"name":"T3","rolls":8},{"name":"T4","rolls":9}],"assignments":{},"selectedProfiles":[]}],' +
+      '"oreReroll":{"assignments":{"__proto__":0}}}}';
+    await expect(decodeState(await encodeRawString(json))).rejects.toThrow("Invalid shared state");
+  });
+
+  it("rejects a __proto__ key inside rareAccessories selections", async () => {
+    const json =
+      '{"version":4,"state":{"blocks":[{"tiers":[{"name":"T1","rolls":5},{"name":"T2","rolls":7},' +
+      '{"name":"T3","rolls":8},{"name":"T4","rolls":9}],"assignments":{},"selectedProfiles":[]}],' +
+      '"rareAccessories":{"selections":{"__proto__":[1]}}}}';
+    await expect(decodeState(await encodeRawString(json))).rejects.toThrow("Invalid shared state");
+  });
+
+  it("rejects a payload that is not JSON", async () => {
+    await expect(decodeState(await encodeRawString("not json{{{"))).rejects.toThrow("Invalid shared state");
+  });
+
+  it("rejects base64 that atob refuses", async () => {
+    // "A" passes the alphabet gate but is not a decodable base64 string.
+    await expect(decodeState("A")).rejects.toThrow("Invalid shared state");
+  });
+});
+
 describe("share: newer version", () => {
   it("rejects a link from a newer version with NewerVersionError", async () => {
     const encoded = await encodeRaw({ version: 5, state: stripBlockColors(defaultQuickState()) });
