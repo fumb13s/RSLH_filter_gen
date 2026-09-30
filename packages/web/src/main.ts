@@ -6,10 +6,13 @@ import { renderGenerator, clearGenerator, defaultGroup } from "./generator.js";
 import type { SettingGroup } from "./generator.js";
 import { generateRulesFromGroups } from "./generate-rules.js";
 import { renderQuickGenerator, clearQuickGenerator, defaultQuickState, quickStateToGroups, oreRerollToGroups, rareAccessoriesToGroups, stripBlockColors, restoreBlockColors } from "./quick-generator.js";
-import type { QuickGenState, QuickBlock } from "./quick-generator.js";
+import type { QuickGenState } from "./quick-generator.js";
 import { getSettings } from "./settings.js";
 import type { TabType } from "./settings.js";
 import { encodeState, decodeState } from "./share.js";
+import { wrap, loadFileText } from "./versioned.js";
+import { QUICK_STATE_FILE_FORMAT } from "./quick-state-format.js";
+import { FMBL_FORMAT } from "./fmbl-format.js";
 import { renderEditableRules, clearEditor, closeAllDropdowns } from "./editor.js";
 import { initSettingsModal } from "./settings-modal.js";
 import { marked } from "marked";
@@ -19,22 +22,6 @@ import "./style.css";
 // ---------------------------------------------------------------------------
 // Tab types and state
 // ---------------------------------------------------------------------------
-
-interface FmblFile {
-  version: number;
-  groups: SettingGroup[];
-}
-
-interface FqblFile {
-  version: number;
-  state: QuickGenState;
-}
-
-/** V1 format stored flat tiers/assignments/selectedProfiles at state level */
-interface FqblFileV1 {
-  version: 1;
-  state: QuickBlock;
-}
 
 interface TabEntry {
   id: string;
@@ -563,8 +550,7 @@ document.getElementById("gen-save-btn")!.addEventListener("click", () => {
   const tab = getActiveTab();
   if (!tab || tab.type !== "generator") return;
 
-  const data: FmblFile = { version: 1, groups: tab.groups };
-  const json = JSON.stringify(data, null, 2);
+  const json = JSON.stringify(wrap(FMBL_FORMAT, tab.groups), null, 2);
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -582,19 +568,16 @@ document.getElementById("gen-load-btn")!.addEventListener("click", () => {
 
 function loadFmblIntoTab(file: File, tab: TabEntry): void {
   file.text().then((text) => {
-    try {
-      const data = JSON.parse(text) as FmblFile;
-      if (data.version !== 1 || !Array.isArray(data.groups)) {
-        throw new Error("Invalid .fmbl file format");
-      }
-      tab.groups = data.groups;
-      tab.fileName = file.name;
-      renderTabBar();
-      showGeneratorContent(tab);
-    } catch (err) {
-      tabBarError.textContent = `Failed to load .fmbl: ${err instanceof Error ? err.message : err}`;
+    const result = loadFileText(FMBL_FORMAT, ".fmbl", text);
+    if (result.kind === "error") {
+      tabBarError.textContent = result.message;
       tabBarError.hidden = false;
+      return;
     }
+    tab.groups = result.value;
+    tab.fileName = file.name;
+    renderTabBar();
+    showGeneratorContent(tab);
   });
 }
 
@@ -731,8 +714,7 @@ document.getElementById("quick-save-btn")!.addEventListener("click", () => {
   const tab = getActiveTab();
   if (!tab || tab.type !== "quick" || !tab.quickState) return;
 
-  const data: FqblFile = { version: FQBL_CURRENT_VERSION, state: stripBlockColors(tab.quickState) };
-  const json = JSON.stringify(data, null, 2);
+  const json = JSON.stringify(wrap(QUICK_STATE_FILE_FORMAT, stripBlockColors(tab.quickState)), null, 2);
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -741,41 +723,6 @@ document.getElementById("quick-save-btn")!.addEventListener("click", () => {
   a.click();
   URL.revokeObjectURL(url);
 });
-
-// .fqbl migration pipeline — each step migrates one version up
-const FQBL_CURRENT_VERSION = 4;
-
-function migrateFqbl(data: { version: number; state: unknown }): FqblFile {
-  if (!data || typeof data.version !== "number" || !data.state) {
-    throw new Error("Invalid .fqbl file format");
-  }
-
-  // V1 → V2: flat state → blocks array
-  if (data.version === 1) {
-    const v1 = data as FqblFileV1;
-    if (typeof v1.state.assignments !== "object") {
-      throw new Error("Invalid .fqbl v1 format");
-    }
-    data = { version: 2, state: { blocks: [v1.state] } };
-  }
-
-  // V2 → V3: strip tier colors (already present, just bump version)
-  if (data.version === 2) {
-    data = { version: 3, state: data.state };
-  }
-
-  // V3 → V4: customProfiles support (optional fields, just bump version)
-  if (data.version === 3) {
-    data = { version: 4, state: data.state };
-  }
-
-  // V4 (current): restore colors from defaults
-  if (data.version === FQBL_CURRENT_VERSION) {
-    return { version: FQBL_CURRENT_VERSION, state: restoreBlockColors(data.state as QuickGenState) };
-  }
-
-  throw new Error(`Unsupported .fqbl version: ${data.version}`);
-}
 
 // Load .fqbl
 const fqblInput = document.getElementById("fqbl-input") as HTMLInputElement;
@@ -786,17 +733,16 @@ document.getElementById("quick-load-btn")!.addEventListener("click", () => {
 
 function loadFqblIntoTab(file: File, tab: TabEntry): void {
   file.text().then((text) => {
-    try {
-      const data = JSON.parse(text);
-      const migrated = migrateFqbl(data);
-      tab.quickState = migrated.state;
-      tab.fileName = file.name;
-      renderTabBar();
-      showQuickContent(tab);
-    } catch (err) {
-      tabBarError.textContent = `Failed to load .fqbl: ${err instanceof Error ? err.message : err}`;
+    const result = loadFileText(QUICK_STATE_FILE_FORMAT, ".fqbl", text);
+    if (result.kind === "error") {
+      tabBarError.textContent = result.message;
       tabBarError.hidden = false;
+      return;
     }
+    tab.quickState = restoreBlockColors(result.value);
+    tab.fileName = file.name;
+    renderTabBar();
+    showQuickContent(tab);
   });
 }
 

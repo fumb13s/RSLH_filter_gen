@@ -624,6 +624,87 @@ describe("share: rejection", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Versioned envelope
+// ---------------------------------------------------------------------------
+
+/** Inverse of compressToBase64Url — share.ts exports neither fromBase64Url nor decompress. */
+async function decodeRaw(encoded: string): Promise<unknown> {
+  const padded = encoded.replace(/-/g, "+").replace(/_/g, "/");
+  const b64 = padded + "=".repeat((4 - (padded.length % 4)) % 4);
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+  const ds = new DecompressionStream("deflate-raw");
+  const writer = ds.writable.getWriter();
+  void writer.write(bytes);
+  void writer.close();
+
+  const chunks: Uint8Array[] = [];
+  const reader = ds.readable.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+
+  const total = chunks.reduce((sum, c) => sum + c.length, 0);
+  const joined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return JSON.parse(new TextDecoder().decode(joined));
+}
+
+const V1_FLAT_BLOCK = {
+  tiers: [
+    { name: "T1", rolls: 5, color: "#22c55e" },
+    { name: "T2", rolls: 7, color: "#3b82f6" },
+    { name: "T3", rolls: 8, color: "#f59e0b" },
+    { name: "T4", rolls: 9, color: "#ef4444" },
+  ],
+  assignments: { 1: 3 },
+  selectedProfiles: [0],
+};
+
+describe("share: versioned envelope", () => {
+  it("encodes state inside a version 4 envelope", async () => {
+    const state = defaultQuickState();
+    const payload = await decodeRaw(await encodeState(state));
+
+    expect(payload).toEqual({ version: 4, state: stripBlockColors(state) });
+  });
+
+  it("decodes a bare, pre-versioning state", async () => {
+    const encoded = await encodeRaw(stripBlockColors(defaultQuickState()));
+    const decoded = await decodeState(encoded);
+
+    expect(decoded).toEqual(restoreBlockColors(stripBlockColors(defaultQuickState())));
+  });
+
+  it("migrates a version 1 link before validating it", async () => {
+    const encoded = await encodeRaw({ version: 1, state: V1_FLAT_BLOCK });
+    const decoded = await decodeState(encoded);
+
+    expect(decoded.blocks).toHaveLength(1);
+    expect(decoded.blocks[0].assignments).toEqual({ 1: 3 });
+    expect(decoded.blocks[0].selectedProfiles).toEqual([0]);
+    // Colours come back from the defaults, not from the stored v1 values
+    expect(decoded.blocks[0].tiers[0].color).toBe("#22c55e");
+  });
+
+  it("round-trips a state written as an envelope", async () => {
+    const state = defaultQuickState();
+    state.blocks[0].selectedProfiles = [0, 1];
+    const decoded = await decodeState(await encodeState(state));
+
+    expect(decoded).toEqual(restoreBlockColors(stripBlockColors(state)));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Property-based round-trip test
 // ---------------------------------------------------------------------------
 
