@@ -1770,6 +1770,17 @@ details summary {
   margin: -0.25rem 0 0.5rem;
 }
 
+/* Shown when the stored settings come from a newer version of the app. */
+.settings-note {
+  font-size: 0.8125rem;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
 .settings-reset-btn {
   cursor: pointer;
   width: 100%;

@@ -9,7 +9,7 @@ import { renderQuickGenerator, clearQuickGenerator, defaultQuickState, quickStat
 import type { QuickGenState } from "./quick-generator.js";
 import { getSettings } from "./settings.js";
 import type { TabType } from "./settings.js";
-import { encodeState, decodeState } from "./share.js";
+import { encodeState, resolveSharedLink } from "./share.js";
 import { wrap, loadFileText } from "./versioned.js";
 import { QUICK_STATE_FILE_FORMAT } from "./quick-state-format.js";
 import { FMBL_FORMAT } from "./fmbl-format.js";
@@ -1081,26 +1081,25 @@ document.addEventListener("click", (e) => {
 document.documentElement.style.setProperty("--max-tab-label-width", settings.maxTabLabelWidthPercent + "%");
 
 // Load shared state from URL hash, or fall back to default tab
-async function loadSharedState(): Promise<QuickGenState | null> {
-  const hash = location.hash;
-  if (!hash.startsWith("#q=")) return null;
-  try {
-    return await decodeState(hash.slice(3));
-  } catch (e) {
-    console.warn("Failed to load shared state:", e);
-    return null;
-  }
-}
-
 (async () => {
-  const shared = await loadSharedState();
-  if (shared) {
+  const shared = await resolveSharedLink(location.hash);
+
+  if (shared && "state" in shared) {
     addTab("quick");
     const tab = getActiveTab()!;
-    tab.quickState = shared;
+    tab.quickState = shared.state;
     showQuickContent(tab);
     history.replaceState(null, "", location.pathname);
-  } else {
-    addTab(settings.defaultTabType);
+    return;
+  }
+
+  addTab(settings.defaultTabType);
+
+  if (shared) {
+    console.warn("Failed to load shared state:", shared.cause);
+    // addTab hides the error bar, so the message has to come after it. The #q= hash stays in the
+    // address bar, so reloading the page can open the link once the app has updated.
+    tabBarError.textContent = shared.error;
+    tabBarError.hidden = false;
   }
 })();

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { getSettings, saveSettings, DEFAULT_SETTINGS } from "../settings.js";
+import { getSettings, saveSettings, DEFAULT_SETTINGS, settingsFromNewerVersion } from "../settings.js";
 
 // Minimal localStorage stub for Node
 const store: Record<string, string> = {};
@@ -117,6 +117,52 @@ describe("settings versioning", () => {
   it("returns defaults when the stored value is not an object", () => {
     store["rslh-settings"] = JSON.stringify("nope");
     expect(getSettings()).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it("uses defaults for settings from a newer version", () => {
+    store["rslh-settings"] = JSON.stringify({ version: 2, settings: { maxTabs: 3 } });
+
+    expect(getSettings()).toEqual(DEFAULT_SETTINGS);
+    expect(settingsFromNewerVersion()).toBe(true);
+  });
+
+  it("never overwrites settings from a newer version", () => {
+    const stored = JSON.stringify({ version: 2, settings: { maxTabs: 3 } });
+    store["rslh-settings"] = stored;
+
+    saveSettings({ ...DEFAULT_SETTINGS, maxTabs: 7 });
+
+    expect(store["rslh-settings"]).toBe(stored);
+  });
+
+  it("treats a version marker that is not a positive integer as corrupt, not newer", () => {
+    for (const version of ["x", 0, -1, 1.5, null]) {
+      store["rslh-settings"] = JSON.stringify({ version, settings: { maxTabs: 3 } });
+
+      expect(getSettings()).toEqual(DEFAULT_SETTINGS);
+      expect(settingsFromNewerVersion()).toBe(false);
+    }
+  });
+
+  it("lets the next save replace a corrupt version marker", () => {
+    store["rslh-settings"] = JSON.stringify({ version: "x", settings: { maxTabs: 3 } });
+
+    saveSettings({ ...DEFAULT_SETTINGS, maxTabs: 7 });
+
+    expect(JSON.parse(store["rslh-settings"])).toEqual({
+      version: 1,
+      settings: { ...DEFAULT_SETTINGS, maxTabs: 7 },
+    });
+  });
+
+  it("reports no newer version for current or missing settings", () => {
+    expect(settingsFromNewerVersion()).toBe(false);
+
+    saveSettings(DEFAULT_SETTINGS);
+    expect(settingsFromNewerVersion()).toBe(false);
+
+    store["rslh-settings"] = JSON.stringify({ generatorDefaultRolls: 8 });
+    expect(settingsFromNewerVersion()).toBe(false);
   });
 
   it("round-trips every field set to a non-default value", () => {

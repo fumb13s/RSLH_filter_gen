@@ -27,6 +27,14 @@ function fail(): never {
   throw new Error("Invalid shared state");
 }
 
+/** A link written by a newer version of the app. It is never loaded, not even partly. */
+export class NewerVersionError extends Error {
+  constructor(readonly found: number, readonly supported: number) {
+    super(`Shared link from a newer version (v${found}; this page reads up to v${supported})`);
+    this.name = "NewerVersionError";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Base64url helpers
 // ---------------------------------------------------------------------------
@@ -136,8 +144,34 @@ export async function decodeState(encoded: string): Promise<QuickGenState> {
 
   // Migrate, then validate against the current version
   const result = loadVersioned(QUICK_STATE_LINK_FORMAT, data);
+  if (result.kind === "newer") throw new NewerVersionError(result.found, result.supported);
   if (result.kind !== "ok") fail();
 
   // Restore deterministic colors
   return restoreBlockColors(result.value);
+}
+
+export function sharedLinkErrorMessage(err: unknown): string {
+  return err instanceof NewerVersionError
+    ? "This link was made with a newer version of the app. Reload the page to open it."
+    : "This shared link couldn't be opened. It may be incomplete or damaged.";
+}
+
+/**
+ * Resolves a share link from a URL hash. Never rejects, so the startup decision can be tested
+ * outside `main.ts`, which runs DOM code on import.
+ *
+ * Returns `null` when the hash is not a share link, `{ state }` when it opens, and
+ * `{ error, cause }` when it does not.
+ */
+export async function resolveSharedLink(
+  hash: string,
+): Promise<{ state: QuickGenState } | { error: string; cause: unknown } | null> {
+  if (!hash.startsWith("#q=")) return null;
+
+  try {
+    return { state: await decodeState(hash.slice(3)) };
+  } catch (err) {
+    return { error: sharedLinkErrorMessage(err), cause: err };
+  }
 }

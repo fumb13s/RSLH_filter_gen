@@ -3,7 +3,13 @@ import { test as fcTest } from "@fast-check/vitest";
 import fc from "fast-check";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { encodeState, decodeState } from "../share.js";
+import {
+  encodeState,
+  decodeState,
+  NewerVersionError,
+  sharedLinkErrorMessage,
+  resolveSharedLink,
+} from "../share.js";
 import {
   defaultQuickState,
   stripBlockColors,
@@ -701,6 +707,78 @@ describe("share: versioned envelope", () => {
     const decoded = await decodeState(await encodeState(state));
 
     expect(decoded).toEqual(restoreBlockColors(stripBlockColors(state)));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Newer versions and the startup decision
+// ---------------------------------------------------------------------------
+
+const NEWER_TEXT = "This link was made with a newer version of the app. Reload the page to open it.";
+const GENERIC_TEXT = "This shared link couldn't be opened. It may be incomplete or damaged.";
+
+describe("share: newer version", () => {
+  it("rejects a link from a newer version with NewerVersionError", async () => {
+    const encoded = await encodeRaw({ version: 5, state: stripBlockColors(defaultQuickState()) });
+
+    await expect(decodeState(encoded)).rejects.toThrow(NewerVersionError);
+  });
+
+  it("carries the found and supported versions on the error", async () => {
+    const encoded = await encodeRaw({ version: 7, state: stripBlockColors(defaultQuickState()) });
+
+    await expect(decodeState(encoded)).rejects.toMatchObject({ found: 7, supported: 4 });
+  });
+});
+
+describe("sharedLinkErrorMessage", () => {
+  it("advises a reload for a newer version", () => {
+    expect(sharedLinkErrorMessage(new NewerVersionError(5, 4))).toBe(NEWER_TEXT);
+  });
+
+  it("reports a damaged link for anything else", () => {
+    expect(sharedLinkErrorMessage(new Error("Invalid shared state"))).toBe(GENERIC_TEXT);
+    expect(sharedLinkErrorMessage("nope")).toBe(GENERIC_TEXT);
+    expect(sharedLinkErrorMessage(undefined)).toBe(GENERIC_TEXT);
+  });
+});
+
+describe("resolveSharedLink", () => {
+  it("returns null for a hash that is not a share link", async () => {
+    expect(await resolveSharedLink("")).toBeNull();
+    expect(await resolveSharedLink("#other")).toBeNull();
+    expect(await resolveSharedLink("#q")).toBeNull();
+  });
+
+  it("returns the state for a valid link", async () => {
+    const state = defaultQuickState();
+    const result = await resolveSharedLink(`#q=${await encodeState(state)}`);
+
+    expect(result).toEqual({ state: restoreBlockColors(stripBlockColors(state)) });
+  });
+
+  it("returns the newer-version message for a newer link", async () => {
+    const encoded = await encodeRaw({ version: 5, state: stripBlockColors(defaultQuickState()) });
+    const result = await resolveSharedLink(`#q=${encoded}`);
+
+    expect(result).toMatchObject({ error: NEWER_TEXT });
+  });
+
+  it("returns the generic message for a damaged link", async () => {
+    expect(await resolveSharedLink("#q=A")).toMatchObject({ error: GENERIC_TEXT });
+  });
+
+  it("carries the cause alongside the message", async () => {
+    const result = await resolveSharedLink("#q=A");
+
+    expect(result).not.toBeNull();
+    expect(result && "cause" in result && result.cause).toBeDefined();
+  });
+
+  it("never rejects", async () => {
+    for (const hash of ["#q=A", "#q=", "#q=!!!!", `#q=${"A".repeat(5000)}`, "#q=abc"]) {
+      await expect(resolveSharedLink(hash)).resolves.toBeDefined();
+    }
   });
 });
 
