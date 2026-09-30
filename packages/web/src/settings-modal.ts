@@ -1,7 +1,7 @@
 /**
  * Settings modal — renders the settings form and auto-saves on change.
  */
-import { getSettings, saveSettings } from "./settings.js";
+import { loadSettings, saveSettings } from "./settings.js";
 import type { TabType } from "./settings.js";
 
 export interface SettingsModal {
@@ -33,8 +33,16 @@ export function initSettingsModal(onOpen?: () => void): SettingsModal {
   });
 
   function renderForm(): void {
-    const settings = getSettings();
+    const { settings, newer: locked } = loadSettings();
     body.innerHTML = "";
+
+    if (locked) {
+      const note = document.createElement("div");
+      note.className = "settings-note";
+      note.textContent =
+        "Your settings were saved by a newer version of the app. Reload the page to see or change them.";
+      body.appendChild(note);
+    }
 
     // --- General ---
     const generalFs = fieldset("General");
@@ -137,6 +145,14 @@ export function initSettingsModal(onOpen?: () => void): SettingsModal {
       renderForm();
     });
     body.appendChild(resetBtn);
+
+    // Settings from a newer version are shown as read-only: this page cannot know what they mean,
+    // and must never write over them.
+    if (locked) {
+      for (const control of body.querySelectorAll("input, select, button")) {
+        (control as HTMLInputElement | HTMLSelectElement | HTMLButtonElement).disabled = true;
+      }
+    }
   }
 
   return { open, close };
@@ -179,7 +195,8 @@ function numberInput(
   input.max = String(max);
   input.value = String(value);
   input.addEventListener("change", () => {
-    const v = Math.max(min, Math.min(max, Number(input.value) || value));
+    // Round before clamping, so a typed decimal is never stored — the settings schema rejects one.
+    const v = Math.max(min, Math.min(max, Math.round(Number(input.value)) || value));
     input.value = String(v);
     onChange(v);
   });

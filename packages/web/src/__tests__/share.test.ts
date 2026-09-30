@@ -3,7 +3,13 @@ import { test as fcTest } from "@fast-check/vitest";
 import fc from "fast-check";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { encodeState, decodeState } from "../share.js";
+import {
+  encodeState,
+  decodeState,
+  NewerVersionError,
+  sharedLinkErrorMessage,
+  resolveSharedLink,
+} from "../share.js";
 import {
   defaultQuickState,
   stripBlockColors,
@@ -209,13 +215,11 @@ describe("share: round-trip", () => {
 
   it("handles multi-block state", async () => {
     const block = defaultBlock();
-    // strip colors for clean comparison
-    const stripped = stripBlockColors({ blocks: [block] }).blocks[0];
     const state: QuickGenState = {
       blocks: [
-        { ...stripped, name: "Block A" },
-        { ...stripped, name: "Block B" },
-        { ...stripped, name: "Block C" },
+        { ...block, name: "Block A" },
+        { ...block, name: "Block B" },
+        { ...block, name: "Block C" },
       ],
     };
     const decoded = await decodeState(await encodeState(state));
@@ -620,6 +624,203 @@ describe("share: rejection", () => {
       }],
     });
     await expect(decodeState(encoded)).rejects.toThrow("Invalid shared state");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Versioned envelope
+// ---------------------------------------------------------------------------
+
+/** Inverse of compressToBase64Url — share.ts exports neither fromBase64Url nor decompress. */
+async function decodeRaw(encoded: string): Promise<unknown> {
+  const padded = encoded.replace(/-/g, "+").replace(/_/g, "/");
+  const b64 = padded + "=".repeat((4 - (padded.length % 4)) % 4);
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+  const ds = new DecompressionStream("deflate-raw");
+  const writer = ds.writable.getWriter();
+  void writer.write(bytes);
+  void writer.close();
+
+  const chunks: Uint8Array[] = [];
+  const reader = ds.readable.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+
+  const total = chunks.reduce((sum, c) => sum + c.length, 0);
+  const joined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return JSON.parse(new TextDecoder().decode(joined));
+}
+
+const V1_FLAT_BLOCK = {
+  tiers: [
+    { name: "T1", rolls: 5, color: "#22c55e" },
+    { name: "T2", rolls: 7, color: "#3b82f6" },
+    { name: "T3", rolls: 8, color: "#f59e0b" },
+    { name: "T4", rolls: 9, color: "#ef4444" },
+  ],
+  assignments: { 1: 3 },
+  selectedProfiles: [0],
+};
+
+describe("share: versioned envelope", () => {
+  it("encodes state inside a version 4 envelope", async () => {
+    const state = defaultQuickState();
+    const payload = await decodeRaw(await encodeState(state));
+
+    expect(payload).toEqual({ version: 4, state: stripBlockColors(state) });
+  });
+
+  it("decodes a bare, pre-versioning state", async () => {
+    const encoded = await encodeRaw(stripBlockColors(defaultQuickState()));
+    const decoded = await decodeState(encoded);
+
+    expect(decoded).toEqual(restoreBlockColors(stripBlockColors(defaultQuickState())));
+  });
+
+  it("migrates a version 1 link before validating it", async () => {
+    const encoded = await encodeRaw({ version: 1, state: V1_FLAT_BLOCK });
+    const decoded = await decodeState(encoded);
+
+    expect(decoded.blocks).toHaveLength(1);
+    expect(decoded.blocks[0].assignments).toEqual({ 1: 3 });
+    expect(decoded.blocks[0].selectedProfiles).toEqual([0]);
+    // Colours come back from the defaults, not from the stored v1 values
+    expect(decoded.blocks[0].tiers[0].color).toBe("#22c55e");
+  });
+
+  it("round-trips a state written as an envelope", async () => {
+    const state = defaultQuickState();
+    state.blocks[0].selectedProfiles = [0, 1];
+    const decoded = await decodeState(await encodeState(state));
+
+    expect(decoded).toEqual(restoreBlockColors(stripBlockColors(state)));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Newer versions and the startup decision
+// ---------------------------------------------------------------------------
+
+const NEWER_TEXT = "This link was made with a newer version of the app. Reload the page to open it.";
+const GENERIC_TEXT = "This shared link couldn't be opened. It may be incomplete or damaged.";
+
+describe("share: envelope rejection", () => {
+  it("rejects an envelope with an extra key", async () => {
+    const encoded = await encodeRaw({
+      version: 4,
+      state: stripBlockColors(defaultQuickState()),
+      extra: 1,
+    });
+    await expect(decodeState(encoded)).rejects.toThrow("Invalid shared state");
+  });
+
+  it("rejects a __proto__ key inside a block's assignments", async () => {
+    const json =
+      '{"version":4,"state":{"blocks":[{"tiers":[{"name":"T1","rolls":5},{"name":"T2","rolls":7},' +
+      '{"name":"T3","rolls":8},{"name":"T4","rolls":9}],"assignments":{"__proto__":0},' +
+      '"selectedProfiles":[]}]}}';
+    await expect(decodeState(await encodeRawString(json))).rejects.toThrow("Invalid shared state");
+  });
+
+  it("rejects a __proto__ key inside oreReroll assignments", async () => {
+    const json =
+      '{"version":4,"state":{"blocks":[{"tiers":[{"name":"T1","rolls":5},{"name":"T2","rolls":7},' +
+      '{"name":"T3","rolls":8},{"name":"T4","rolls":9}],"assignments":{},"selectedProfiles":[]}],' +
+      '"oreReroll":{"assignments":{"__proto__":0}}}}';
+    await expect(decodeState(await encodeRawString(json))).rejects.toThrow("Invalid shared state");
+  });
+
+  it("rejects a __proto__ key inside rareAccessories selections", async () => {
+    const json =
+      '{"version":4,"state":{"blocks":[{"tiers":[{"name":"T1","rolls":5},{"name":"T2","rolls":7},' +
+      '{"name":"T3","rolls":8},{"name":"T4","rolls":9}],"assignments":{},"selectedProfiles":[]}],' +
+      '"rareAccessories":{"selections":{"__proto__":[1]}}}}';
+    await expect(decodeState(await encodeRawString(json))).rejects.toThrow("Invalid shared state");
+  });
+
+  it("rejects a payload that is not JSON", async () => {
+    await expect(decodeState(await encodeRawString("not json{{{"))).rejects.toThrow("Invalid shared state");
+  });
+
+  it("rejects base64 that atob refuses", async () => {
+    // "A" passes the alphabet gate but is not a decodable base64 string.
+    await expect(decodeState("A")).rejects.toThrow("Invalid shared state");
+  });
+});
+
+describe("share: newer version", () => {
+  it("rejects a link from a newer version with NewerVersionError", async () => {
+    const encoded = await encodeRaw({ version: 5, state: stripBlockColors(defaultQuickState()) });
+
+    await expect(decodeState(encoded)).rejects.toThrow(NewerVersionError);
+  });
+
+  it("carries the found and supported versions on the error", async () => {
+    const encoded = await encodeRaw({ version: 7, state: stripBlockColors(defaultQuickState()) });
+
+    await expect(decodeState(encoded)).rejects.toMatchObject({ found: 7, supported: 4 });
+  });
+});
+
+describe("sharedLinkErrorMessage", () => {
+  it("advises a reload for a newer version", () => {
+    expect(sharedLinkErrorMessage(new NewerVersionError(5, 4))).toBe(NEWER_TEXT);
+  });
+
+  it("reports a damaged link for anything else", () => {
+    expect(sharedLinkErrorMessage(new Error("Invalid shared state"))).toBe(GENERIC_TEXT);
+    expect(sharedLinkErrorMessage("nope")).toBe(GENERIC_TEXT);
+    expect(sharedLinkErrorMessage(undefined)).toBe(GENERIC_TEXT);
+  });
+});
+
+describe("resolveSharedLink", () => {
+  it("returns null for a hash that is not a share link", async () => {
+    expect(await resolveSharedLink("")).toBeNull();
+    expect(await resolveSharedLink("#other")).toBeNull();
+    expect(await resolveSharedLink("#q")).toBeNull();
+  });
+
+  it("returns the state for a valid link", async () => {
+    const state = defaultQuickState();
+    const result = await resolveSharedLink(`#q=${await encodeState(state)}`);
+
+    expect(result).toEqual({ state: restoreBlockColors(stripBlockColors(state)) });
+  });
+
+  it("returns the newer-version message for a newer link", async () => {
+    const encoded = await encodeRaw({ version: 5, state: stripBlockColors(defaultQuickState()) });
+    const result = await resolveSharedLink(`#q=${encoded}`);
+
+    expect(result).toMatchObject({ error: NEWER_TEXT });
+  });
+
+  it("returns the generic message for a damaged link", async () => {
+    expect(await resolveSharedLink("#q=A")).toMatchObject({ error: GENERIC_TEXT });
+  });
+
+  it("carries the cause alongside the message", async () => {
+    const result = await resolveSharedLink("#q=A");
+
+    expect(result).not.toBeNull();
+    expect(result && "cause" in result && result.cause).toBeDefined();
+  });
+
+  it("never rejects", async () => {
+    for (const hash of ["#q=A", "#q=", "#q=!!!!", `#q=${"A".repeat(5000)}`, "#q=abc"]) {
+      await expect(resolveSharedLink(hash)).resolves.toBeDefined();
+    }
   });
 });
 

@@ -7,6 +7,14 @@ Each entry carries a severity tag indicating its semver impact: `[major]`, `[min
 
 ## [Unreleased]
 
+### Added
+
+- [minor] Version every format the app stores — `.fqbl` files, share links, `.fmbl` files and settings — behind one loader that migrates old data before checking it against today's set, faction and substat tables. Data from a newer app version is refused with a message advising a reload, and newer settings are never overwritten; damaged files and links are refused with the reason instead of failing silently (#36)
+
+### Fixed
+
+- [patch] Stop the Quick Generator writing values it would then refuse to open: a tier's rolls input stored a typed decimal as-is, and dropping text from another page onto a tier or ore-reroll column added a `NaN` key to the assignments (#36)
+
 ## [0.1.1] - 2026-09-25
 
 ### Fixed

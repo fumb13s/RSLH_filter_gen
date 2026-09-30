@@ -3,40 +3,37 @@
  *
  * Encodes QuickGenState as: deflate-raw compressed JSON → base64url string.
  * The encoded string is placed in the URL hash fragment: #q=<encoded>
+ *
+ * The payload is a versioned document (`{ version, state }`). Links written before versioning
+ * existed carry the bare state and count as version 4; see `quick-state-format.ts`. Structural
+ * validation, size limits and string sanitising all live in the link variant of that format.
  */
-import { ARTIFACT_SET_NAMES, ACCESSORY_SET_IDS, FACTION_NAMES } from "@rslh/core";
-import { SUBSTAT_PRESETS, GOOD_SUBSTATS } from "./generator.js";
+import { loadVersioned, wrap } from "./versioned.js";
+import { QUICK_STATE_LINK_FORMAT } from "./quick-state-format.js";
 import { stripBlockColors, restoreBlockColors } from "./quick-generator.js";
-import type { QuickGenState, QuickBlock, RareAccessoryBlock, OreRerollBlock, CustomProfile } from "./quick-generator.js";
+import type { QuickGenState } from "./quick-generator.js";
 
 // ---------------------------------------------------------------------------
-// Limits
+// Transport gates
 // ---------------------------------------------------------------------------
 
 const MAX_ENCODED_LENGTH = 4096;
 const MAX_BINARY_SIZE = 8192;
 const MAX_DECOMPRESSED_SIZE = 16384;
-const MAX_BLOCKS = 10;
-const MAX_TIERS = 4;
-const MAX_ORE_COLUMN = 2;
-const MAX_NAME_LENGTH = 100;
-const MAX_TIER_NAME_LENGTH = 50;
-const MAX_SELECTIONS_PER_SET = 16;
-const MAX_CUSTOM_PROFILES = 4;
-const MAX_CUSTOM_PROFILE_STATS = 11;
-const MAX_CUSTOM_LABEL_LENGTH = 50;
-
-// ---------------------------------------------------------------------------
-// Domain lookups
-// ---------------------------------------------------------------------------
-
-const VALID_SET_IDS = new Set(Object.keys(ARTIFACT_SET_NAMES).map(Number));
-const VALID_ACCESSORY_SET_IDS = new Set(ACCESSORY_SET_IDS);
-const VALID_FACTION_IDS = new Set(Object.keys(FACTION_NAMES).map(Number));
-const MAX_PROFILE_INDEX = SUBSTAT_PRESETS.length - 1;
-const VALID_SUBSTAT_PAIRS = new Set(GOOD_SUBSTATS.map(([s, f]) => `${s}:${f}`));
 
 const BASE64URL_RE = /^[A-Za-z0-9_-]+$/;
+
+function fail(): never {
+  throw new Error("Invalid shared state");
+}
+
+/** A link written by a newer version of the app. It is never loaded, not even partly. */
+export class NewerVersionError extends Error {
+  constructor(readonly found: number, readonly supported: number) {
+    super(`Shared link from a newer version (v${found}; this page reads up to v${supported})`);
+    this.name = "NewerVersionError";
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Base64url helpers
@@ -52,7 +49,13 @@ function fromBase64Url(str: string): Uint8Array {
   const padded = str.replace(/-/g, "+").replace(/_/g, "/");
   const pad = (4 - (padded.length % 4)) % 4;
   const b64 = padded + "=".repeat(pad);
-  const binary = atob(b64);
+  // atob throws a DOMException on input the alphabet gate lets through, e.g. "A".
+  let binary: string;
+  try {
+    binary = atob(b64);
+  } catch {
+    fail();
+  }
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
@@ -116,224 +119,12 @@ async function decompress(data: Uint8Array): Promise<Uint8Array> {
 }
 
 // ---------------------------------------------------------------------------
-// Validation helpers
-// ---------------------------------------------------------------------------
-
-function fail(): never {
-  throw new Error("Invalid shared state");
-}
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === "object" && !Array.isArray(v);
-}
-
-function assertOnlyKeys(obj: Record<string, unknown>, allowed: Set<string>): void {
-  for (const key of Object.keys(obj)) {
-    if (key === "__proto__" || !allowed.has(key)) fail();
-  }
-}
-
-function isInteger(v: unknown): v is number {
-  return typeof v === "number" && Number.isInteger(v);
-}
-
-function sanitizeString(s: unknown, maxLen: number): string {
-  if (typeof s !== "string") fail();
-  if (s.length > maxLen) fail();
-  return s.replace(/[<>&"']/g, "");
-}
-
-// ---------------------------------------------------------------------------
-// Structural validation
-// ---------------------------------------------------------------------------
-
-function validateTier(t: unknown): { name: string; rolls: number; sellRolls?: number } {
-  if (!isPlainObject(t)) fail();
-  const allowed = new Set(["name", "rolls", "sellRolls"]);
-  assertOnlyKeys(t, allowed);
-
-  const name = sanitizeString(t.name, MAX_TIER_NAME_LENGTH);
-  if (!isInteger(t.rolls) || t.rolls < -1 || t.rolls > 9) fail();
-  const rolls = t.rolls;
-
-  if (t.sellRolls !== undefined) {
-    if (!isInteger(t.sellRolls) || t.sellRolls < 1 || t.sellRolls > 9) fail();
-    return { name, rolls, sellRolls: t.sellRolls };
-  }
-
-  return { name, rolls };
-}
-
-function validateBlock(b: unknown, customProfileCount: number): QuickBlock {
-  if (!isPlainObject(b)) fail();
-  const allowed = new Set(["name", "tiers", "assignments", "selectedProfiles", "selectedCustom"]);
-  assertOnlyKeys(b, allowed);
-
-  const result: QuickBlock = {} as QuickBlock;
-
-  // name (optional)
-  if (b.name !== undefined) {
-    result.name = sanitizeString(b.name, MAX_NAME_LENGTH);
-  }
-
-  // tiers — exactly 4
-  if (!Array.isArray(b.tiers) || b.tiers.length !== MAX_TIERS) fail();
-  result.tiers = b.tiers.map(validateTier) as QuickBlock["tiers"];
-
-  // assignments — set ID → tier index
-  if (!isPlainObject(b.assignments)) fail();
-  const assignments: Record<number, number> = {};
-  for (const [key, val] of Object.entries(b.assignments)) {
-    if (key === "__proto__") fail();
-    const id = Number(key);
-    if (!VALID_SET_IDS.has(id)) fail();
-    if (!isInteger(val) || val < 0 || val > 3) fail();
-    assignments[id] = val;
-  }
-  result.assignments = assignments;
-
-  // selectedProfiles — indices into SUBSTAT_PRESETS
-  if (!Array.isArray(b.selectedProfiles)) fail();
-  if (b.selectedProfiles.length > SUBSTAT_PRESETS.length) fail();
-  const seen = new Set<number>();
-  const profiles: number[] = [];
-  for (const p of b.selectedProfiles) {
-    if (!isInteger(p) || p < 0 || p > MAX_PROFILE_INDEX) fail();
-    if (seen.has(p)) fail();
-    seen.add(p);
-    profiles.push(p);
-  }
-  result.selectedProfiles = profiles;
-
-  // selectedCustom — indices into customProfiles (optional)
-  if (b.selectedCustom !== undefined) {
-    if (!Array.isArray(b.selectedCustom)) fail();
-    if (b.selectedCustom.length > MAX_CUSTOM_PROFILES) fail();
-    const seenCustom = new Set<number>();
-    const customs: number[] = [];
-    for (const c of b.selectedCustom) {
-      if (!isInteger(c) || c < 0 || c >= customProfileCount) fail();
-      if (seenCustom.has(c)) fail();
-      seenCustom.add(c);
-      customs.push(c);
-    }
-    result.selectedCustom = customs;
-  }
-
-  return result;
-}
-
-function validateRareAccessories(v: unknown): RareAccessoryBlock {
-  if (!isPlainObject(v)) fail();
-  assertOnlyKeys(v, new Set(["selections"]));
-
-  if (!isPlainObject(v.selections)) fail();
-  const selections: Record<number, number[]> = {};
-
-  for (const [key, val] of Object.entries(v.selections)) {
-    if (key === "__proto__") fail();
-    const id = Number(key);
-    if (!VALID_ACCESSORY_SET_IDS.has(id)) fail();
-    if (!Array.isArray(val) || val.length > MAX_SELECTIONS_PER_SET) fail();
-    const factions: number[] = [];
-    for (const f of val) {
-      if (!isInteger(f) || !VALID_FACTION_IDS.has(f)) fail();
-      factions.push(f);
-    }
-    selections[id] = factions;
-  }
-
-  return { selections };
-}
-
-function validateOreReroll(v: unknown): OreRerollBlock {
-  if (!isPlainObject(v)) fail();
-  assertOnlyKeys(v, new Set(["assignments"]));
-
-  if (!isPlainObject(v.assignments)) fail();
-  const assignments: Record<number, number> = {};
-
-  for (const [key, val] of Object.entries(v.assignments)) {
-    if (key === "__proto__") fail();
-    const id = Number(key);
-    if (!VALID_SET_IDS.has(id)) fail();
-    if (!isInteger(val) || val < 0 || val > MAX_ORE_COLUMN) fail();
-    assignments[id] = val;
-  }
-
-  return { assignments };
-}
-
-function validateCustomProfile(v: unknown): CustomProfile {
-  if (!isPlainObject(v)) fail();
-  assertOnlyKeys(v, new Set(["label", "stats"]));
-
-  const label = sanitizeString(v.label, MAX_CUSTOM_LABEL_LENGTH);
-  if (label.length === 0) fail();
-
-  if (!Array.isArray(v.stats)) fail();
-  if (v.stats.length === 0 || v.stats.length > MAX_CUSTOM_PROFILE_STATS) fail();
-
-  const seen = new Set<string>();
-  const stats: [number, boolean][] = [];
-  for (const entry of v.stats) {
-    if (!Array.isArray(entry) || entry.length !== 2) fail();
-    const [statId, isFlat] = entry;
-    if (!isInteger(statId) || typeof isFlat !== "boolean") fail();
-    const key = `${statId}:${isFlat}`;
-    if (!VALID_SUBSTAT_PAIRS.has(key)) fail();
-    if (seen.has(key)) fail();
-    seen.add(key);
-    stats.push([statId, isFlat]);
-  }
-
-  return { label, stats };
-}
-
-function validateQuickGenState(data: unknown): QuickGenState {
-  if (!isPlainObject(data)) fail();
-  assertOnlyKeys(data, new Set(["blocks", "rareAccessories", "oreReroll", "customProfiles", "strict"]));
-
-  // Validate customProfiles first (blocks reference them)
-  let customProfileCount = 0;
-  const result: QuickGenState = {} as QuickGenState;
-
-  if (data.customProfiles !== undefined) {
-    if (!Array.isArray(data.customProfiles)) fail();
-    if (data.customProfiles.length > MAX_CUSTOM_PROFILES) fail();
-    result.customProfiles = data.customProfiles.map(validateCustomProfile);
-    customProfileCount = result.customProfiles.length;
-  }
-
-  if (!Array.isArray(data.blocks)) fail();
-  if (data.blocks.length < 1 || data.blocks.length > MAX_BLOCKS) fail();
-
-  result.blocks = data.blocks.map((b: unknown) => validateBlock(b, customProfileCount));
-
-  if (data.rareAccessories !== undefined) {
-    result.rareAccessories = validateRareAccessories(data.rareAccessories);
-  }
-
-  if (data.oreReroll !== undefined) {
-    result.oreReroll = validateOreReroll(data.oreReroll);
-  }
-
-  if (data.strict !== undefined) {
-    if (typeof data.strict !== "boolean") fail();
-    result.strict = data.strict;
-  }
-
-  return result;
-}
-
-// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 export async function encodeState(state: QuickGenState): Promise<string> {
-  const stripped = stripBlockColors(state);
-  const json = JSON.stringify(stripped);
-  const bytes = new TextEncoder().encode(json);
+  const document = wrap(QUICK_STATE_LINK_FORMAT, stripBlockColors(state));
+  const bytes = new TextEncoder().encode(JSON.stringify(document));
   const compressed = await compress(bytes);
   return toBase64Url(compressed);
 }
@@ -353,13 +144,45 @@ export async function decodeState(encoded: string): Promise<QuickGenState> {
   const decompressed = await decompress(binary);
   if (decompressed.length > MAX_DECOMPRESSED_SIZE) fail();
 
-  // Parse JSON
+  // Parse JSON — a malformed payload throws a SyntaxError
   const text = new TextDecoder().decode(decompressed);
-  const data: unknown = JSON.parse(text);
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    fail();
+  }
 
-  // Structural validation
-  const validated = validateQuickGenState(data);
+  // Migrate, then validate against the current version
+  const result = loadVersioned(QUICK_STATE_LINK_FORMAT, data);
+  if (result.kind === "newer") throw new NewerVersionError(result.found, result.supported);
+  if (result.kind !== "ok") fail();
 
   // Restore deterministic colors
-  return restoreBlockColors(validated);
+  return restoreBlockColors(result.value);
+}
+
+export function sharedLinkErrorMessage(err: unknown): string {
+  return err instanceof NewerVersionError
+    ? "This link was made with a newer version of the app. Reload the page to open it."
+    : "This shared link couldn't be opened. It may be incomplete or damaged.";
+}
+
+/**
+ * Resolves a share link from a URL hash. Never rejects, so the startup decision can be tested
+ * outside `main.ts`, which runs DOM code on import.
+ *
+ * Returns `null` when the hash is not a share link, `{ state }` when it opens, and
+ * `{ error, cause }` when it does not.
+ */
+export async function resolveSharedLink(
+  hash: string,
+): Promise<{ state: QuickGenState } | { error: string; cause: unknown } | null> {
+  if (!hash.startsWith("#q=")) return null;
+
+  try {
+    return { state: await decodeState(hash.slice(3)) };
+  } catch (err) {
+    return { error: sharedLinkErrorMessage(err), cause: err };
+  }
 }
