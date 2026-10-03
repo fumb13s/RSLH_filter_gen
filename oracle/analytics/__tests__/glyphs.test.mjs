@@ -1,6 +1,7 @@
 // oracle/analytics/__tests__/glyphs.test.mjs
 import { test, expect } from "vitest";
-import { GLYPH_CAPS, GLYPH_GRADES, GLYPH_LABELS, itemGrade, liftItem } from "../glyphs.mjs";
+import { GLYPH_CAPS, GLYPH_GRADES, GLYPH_LABELS, itemGrade, liftItem, liftVault }
+  from "../glyphs.mjs";
 
 // The Item shape both snapshot readers produce (gestal.mjs's gestalItem and decode.mjs's
 // decodeRow), cut down to what this module reads. `rank` is the RAW 1-6 star level, which is what
@@ -198,4 +199,38 @@ test("an item below 5★ comes back as itself with no lifts", () => {
   const { item: lifted, lifts } = liftItem(it, "legendary");
   expect(lifted).toBe(it);
   expect(lifts).toEqual([]);
+});
+
+// --- liftVault ------------------------------------------------------------------------
+
+// ORDER IS LOAD-BEARING. build-solve breaks a tie between two equal pieces on the lower item id
+// by walking the pool, so a reordered pool can return a different build for the same vault — and
+// power.mjs locates each worn piece's lifted object in this array.
+test("liftVault returns every item in the input order", () => {
+  const vault = [item({ id: 3 }), item({ id: 1 }), item({ id: 2 })];
+  expect(liftVault(vault, "epic").items.map((it) => it.id)).toEqual([3, 1, 2]);
+});
+
+// Only the items that gained something, so `has(id)` is the test for "this piece needs a glyph"
+// and the map is as small as the answer is. A map holding every item would make the CLI's glyph
+// count the size of the vault rather than of the build.
+test("liftsById holds exactly the items that gained a glyph", () => {
+  const vault = [
+    item({ id: 1, substats: [sub(5, 20, 0, false)] }),             // crit only: nothing to lift
+    item({ id: 2, substats: [sub(4, 10, 0, true)] }),              // SPD 0 -> 10
+    item({ id: 3, rank: 4, substats: [sub(4, 10, 0, true)] }),     // below 5★: never lifted
+  ];
+  const { liftsById } = liftVault(vault, "epic");
+  expect([...liftsById.keys()]).toEqual([2]);
+  expect(liftsById.get(2)).toEqual([{ key: "SPD", from: 0, to: 10 }]);
+});
+
+// An unlifted item passes through by IDENTITY, which is what keeps power-solve's
+// identity-keyed per-item caches valid for the pieces the lift did not change.
+test("an unlifted item is the same object in the lifted vault", () => {
+  const untouched = item({ id: 1, substats: [sub(6, 60, 0, false)] });
+  const raised = item({ id: 2, substats: [sub(4, 10, 0, true)] });
+  const { items: lifted } = liftVault([untouched, raised], "epic");
+  expect(lifted[0]).toBe(untouched);
+  expect(lifted[1]).not.toBe(raised);
 });

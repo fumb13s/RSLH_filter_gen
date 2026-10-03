@@ -140,3 +140,19 @@ export function liftItem(item, grade) {
   if (lifts.length === 0) return { item, lifts: [] };
   return { item: { ...item, substats }, lifts };
 }
+
+// The whole vault lifted, in the INPUT ORDER, plus the lifts per item id. Order is load-bearing:
+// a caller locates a worn piece's lifted object by id in this array, and build-solve breaks a tie
+// on the lower id, so a reordered pool could return a different build for the same vault.
+//
+// `liftsById` holds only the items that gained something, so `has(id)` is the test for "this
+// piece needs a glyph" and the map is as small as the answer is.
+export function liftVault(items, grade) {
+  const liftsById = new Map();
+  const lifted = items.map((item) => {
+    const { item: one, lifts } = liftItem(item, grade);
+    if (lifts.length) liftsById.set(one.id, lifts);
+    return one;
+  });
+  return { items: lifted, liftsById };
+}
