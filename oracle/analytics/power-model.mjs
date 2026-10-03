@@ -1,3 +1,44 @@
+// Raid's champion Power, reverse-engineered on 2026-10-03 from about 50 in-game readings across
+// five champions, each paired with exact totals from the Gestal stat model. The game publishes no
+// formula, and the community's per-stat "weights" are wrong in both scale and shape.
+//
+//   sqrt(power) = b*(HP/15 + ATK + DEF) + r*RES + a*ACC + s*SPD + k*C.RATE*(100 + C.DMG) + c
+//
+// Stats are the game's Total Stats with every source included (base, gear, sets, masteries,
+// guardians, empowerment, blessing, relic, Great Hall, Classic Arena). C.RATE and C.DMG are in
+// percentage POINTS, not fractions.
+//
+// The evidence:
+//
+//   - Power is a SQUARE, not a weighted sum. Single-stat changes are predicted from the measured
+//     weights to within about 0.1% — a control removal to 0.07%, an SPD-range check to 0.03%.
+//     Removing two gear pieces is additive in sqrt(power) to within 0.15%, where in power it is 4%
+//     off. Across VERY different builds of one copy, 0.6-1.5% in power stays unexplained.
+//   - HP/15, ATK and DEF share ONE weight `b`, to within 1% on four champions.
+//   - Crit enters as the product k*C.RATE*(100 + C.DMG): on four champions the `k` from a pure
+//     C.RATE step and the `k` from a pure C.DMG step agree to about 1%.
+//   - The weights vary BY CHAMPION, which is why BUILT_IN is keyed per champion and ROLE_DEFAULTS
+//     is only a fallback. `b` and `r` split Defense from the other three roles; `a` and `k` vary
+//     per champion with no role pattern; `s` is about 0.006 for the Defense and HP champions
+//     measured and about 0.022 for the Attack and Support ones.
+//   - `c` is per COPY and never changes with gear — it holds non-stat investment. Choosing a
+//     blessing added about 4.65 sqrt(power) beyond the blessing's own stats. Set effects showed no
+//     hidden power at all.
+//
+// Open questions, recorded here and NOT resolved in this module:
+//
+//   - whether SPD's weight follows ROLE or SPD LEVEL; the measurements so far fit both, with a
+//     cut-off around 215.
+//   - the unexplained 0.6-1.5% residual in power between very different builds of the same copy,
+//     against about 0.1% for single-stat changes from one build.
+//   - what besides blessings makes up `c`.
+//   - the per-champion spread of `a` (2x) and `k` (1.5x).
+//
+// Pure arithmetic on stat totals, and it imports nothing: the stat model that produces `totals`,
+// the gear solver and the CLI that logs readings are all separate. The readings themselves are
+// personal account data and stay local — only these derived weights, which are game mechanics,
+// are committed.
+
 // The linear part — everything the formula explains from stat totals. `totals` is a plain object
 // keyed HP, ATK, DEF, SPD, "C.RATE", "C.DMG", RES, ACC, the same keys the stat model will export as
 // STATS; nothing here imports it, so a hand-built object serves as well as a measured one.
