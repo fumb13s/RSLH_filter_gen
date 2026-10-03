@@ -72,3 +72,43 @@ export const GLYPH_CAPS = {
   epic:      { HP: 950,  ATK: 50, DEF: 50, "HP%": 10, "ATK%": 10, "DEF%": 10, SPD: 10, RES: 20, ACC: 20 },
   legendary: { HP: 1150, ATK: 60, DEF: 60, "HP%": 12, "ATK%": 12, "DEF%": 12, SPD: 12, RES: 24, ACC: 24 },
 };
+
+// Item stat id -> the key its glyph is capped under, or null for a stat no glyph can touch.
+//
+// These are OUR item stat ids (STAT_NAMES order), and the mapping is champion-stats.mjs's itemKey
+// restricted to the glyphable ones: 1/2/3 take a flat or a percent key from `isFlat`, and 4, 7
+// and 8 are flat stats with one key each. itemKey is module-private there, so this is a SECOND
+// table that has to AGREE with it — if its mapping ever changes, this one changes with it.
+//
+// 5 (C.RATE), 6 (C.DMG) and 11-18 (the damage-type substats) fall through to null, which is THE
+// CRIT RULE in the header. Unlike itemKey, an id this table does not know is NOT refused: lifting
+// is advisory, so an unrecognised substat is simply left alone, while the stat model that has to
+// total it is the right place to refuse to guess.
+const SCALED_GLYPHABLE = { 1: "HP", 2: "ATK", 3: "DEF" };
+const FLAT_GLYPHABLE = { 4: "SPD", 7: "RES", 8: "ACC" };
+
+function glyphKey(stat) {
+  const scaled = SCALED_GLYPHABLE[stat.statId];
+  if (scaled) return stat.isFlat ? scaled : `${scaled}%`;
+  return FLAT_GLYPHABLE[stat.statId] ?? null;
+}
+
+// Which grade's caps apply to one item, or null for an item no glyph is assumed on. See THE RANK
+// RULE in the header.
+//
+// `>= 6` rather than `=== 6` so a rank above 6 would take the grade asked for rather than being
+// silently skipped; on today's 1-6 domain the two are the same answer.
+//
+// An unknown grade THROWS rather than defaulting, because every caller has a grade the CLI parser
+// already validated — so reaching here with a bad one is a bug, and answering anyway would lift a
+// whole vault by a table nobody chose. The message is module-prefixed because this audience is a
+// developer; parsePowerArgs has its own user-facing wording for the same mistake.
+export function itemGrade(item, grade) {
+  if (!GLYPH_GRADES.includes(grade)) {
+    throw new Error(`glyphs: unknown grade "${grade}"`
+      + ` — use one of ${GLYPH_GRADES.join(", ")}`);
+  }
+  if (item.rank >= 6) return grade;
+  if (item.rank === 5) return "5";
+  return null;
+}
