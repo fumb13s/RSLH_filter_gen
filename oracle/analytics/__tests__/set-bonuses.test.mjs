@@ -1,6 +1,6 @@
 // oracle/analytics/__tests__/set-bonuses.test.mjs
 import { test, expect } from "vitest";
-import { SET_BONUSES, NO_STAT_SETS, setCounts } from "../set-bonuses.mjs";
+import { SET_BONUSES, NO_STAT_SETS, setCounts, setBonusTerms } from "../set-bonuses.mjs";
 import { setCounts as setCountsFromSpeedModel } from "../speed-model.mjs";
 import { SETS } from "../sets.mjs";
 import { ARTIFACT_SET_NAMES } from "@rslh/core";
@@ -11,6 +11,8 @@ const ROWS = () => Object.entries(SET_BONUSES).map(([id, row]) => [Number(id), r
 // The eight stats the champion screen reflects. Nothing else belongs in the table: Gestal's
 // catalogue also carries "Ignore DEF" and "HP-scaled damage", which no stat line shows.
 const KEYS = ["HP%", "ATK%", "DEF%", "SPD%", "C.RATE", "C.DMG", "ACC", "RES"];
+
+const counts = (o) => new Map(Object.entries(o).map(([k, v]) => [Number(k), v]));
 
 // --- Pinned rows ------------------------------------------------------------------------------
 //
@@ -142,4 +144,34 @@ test("setCounts skips setless items", () => {
 // check can make.
 test("speed-model re-exports THIS setCounts rather than a second copy", () => {
   expect(setCountsFromSpeedModel).toBe(setCounts);
+});
+
+// --- setBonusTerms ----------------------------------------------------------------------------
+//
+// A LIST, not a sum, because the speed model floors each percentage term against base separately:
+// Σ floor(base * p) is not floor(base * Σ p). Summing here would quietly change the number
+// speed.mjs prints.
+
+test("a stacking set contributes one term per floor(count / pieces) completion", () => {
+  expect(setBonusTerms(counts({ 1: 6 }))).toEqual([
+    { setId: 1, key: "HP%", value: 15 },
+    { setId: 1, key: "HP%", value: 15 },
+    { setId: 1, key: "HP%", value: 15 },
+  ]);
+});
+
+test("a stacking set contributes nothing below its piece count", () => {
+  expect(setBonusTerms(counts({ 46: 3 }))).toEqual([]);
+  expect(setBonusTerms(counts({ 46: 4 }))).toEqual([{ setId: 46, key: "C.RATE", value: 10 }]);
+});
+
+test("a two-stat completion contributes one term per stat, each naming its set", () => {
+  expect(setBonusTerms(counts({ 41: 2 }))).toEqual([
+    { setId: 41, key: "ATK%", value: 15 },
+    { setId: 41, key: "C.RATE", value: 5 },
+  ]);
+});
+
+test("setBonusTerms ignores a set the table grants no stats for", () => {
+  expect(setBonusTerms(counts({ 1003: 3, 15: 6 }))).toEqual([]);
 });

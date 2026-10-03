@@ -102,3 +102,20 @@ export function setCounts(items) {
   }
   return counts;
 }
+
+// Every stat bonus a build earns, as a flat list — one entry per completed `stack` set and per
+// unlocked `tiered` tier, per stat. `counts` maps setId -> how many of the nine equipped items
+// carry that set. A set the table has no row for contributes nothing.
+export function setBonusTerms(counts) {
+  const terms = [];
+  for (const [setId, count] of counts) {
+    const row = SET_BONUSES[setId];
+    if (!row) continue;
+    if (row.kind === "stack") {
+      for (let n = Math.floor(count / row.pieces); n > 0; n--) {
+        for (const [key, value] of Object.entries(row.bonus)) terms.push({ setId, key, value });
+      }
+    }
+  }
+  return terms;
+}
