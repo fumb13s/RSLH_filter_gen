@@ -78,6 +78,13 @@ export function parsePowerArgs(argv) {
     positional.push(arg);
   }
   if (READS_SNAPSHOT.has(out.mode)) out.dbArg = positional.find(isSnapshotArg);
+  if (!READS_SNAPSHOT.has(out.mode)) {
+    const snap = positional.find(isSnapshotArg);
+    if (snap) {
+      throw new Error(`${out.mode} reads no snapshot, so it cannot take "${snap}"`
+        + ` — usage: ${USAGE[out.mode]}`);
+    }
+  }
   const rest = positional.filter((a) => a !== out.dbArg);
   if (rest.length > TAKES[out.mode]) {
     throw new Error(`too many arguments for ${out.mode} — usage: ${USAGE[out.mode]}`);

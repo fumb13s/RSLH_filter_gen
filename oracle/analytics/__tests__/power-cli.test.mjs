@@ -91,3 +91,41 @@ test("parsePowerArgs does not treat an option value as the selector", () => {
   expect(parsePowerArgs(["--top", "3", "Elhain"]).selector).toBe("Elhain");
   expect(parsePowerArgs(["--power", "412000"]).selector).toBe(null);
 });
+
+// --- parsePowerArgs: arguments a mode does not take ----------------------------
+
+test("parsePowerArgs rejects an unknown option instead of taking it as a positional", () => {
+  expect(() => parsePowerArgs(["Elhain", "--tpo", "3"])).toThrow(/unknown option --tpo/);
+  expect(() => parsePowerArgs(["--powr", "1"])).toThrow(/unknown option/);
+  expect(() => parsePowerArgs(["verify", "--top", "2", "--nope"])).toThrow(/unknown option --nope/);
+});
+
+// Each mode takes only the positionals its usage line shows. An extra one means the command was
+// understood differently than it was typed, and guessing which argument to drop is worse than
+// saying so.
+test("parsePowerArgs rejects an extra positional, naming the mode's usage line", () => {
+  expect(() => parsePowerArgs(["fit", "Elhain", "Kael"]))
+    .toThrow(/too many arguments for fit — usage: power\.mjs fit <name\|ID>/);
+  expect(() => parsePowerArgs(["log", "Elhain", "100", "200"]))
+    .toThrow(/too many arguments for log/);
+  expect(() => parsePowerArgs(["Elhain", "Kael"])).toThrow(/too many arguments for solve/);
+  expect(() => parsePowerArgs(["verify", "Elhain"])).toThrow(/too many arguments for verify/);
+});
+
+// fit reads no snapshot and log reads the LIVE folder, so a snapshot handed to either is a reader
+// who expects it to be used. Reading the live folder anyway (log), or nothing at all (fit), would
+// answer a different question — and `fit x/y.json.gz` would otherwise match the path against
+// reading NAMES and report "no logged readings match", which reads like an empty log rather than
+// like a mode that never opens a snapshot.
+test("parsePowerArgs rejects a snapshot given to a mode that reads none", () => {
+  expect(() => parsePowerArgs(["fit", "x/y.json.gz"]))
+    .toThrow(/fit reads no snapshot/);
+  expect(() => parsePowerArgs(["log", "Elhain", "100", "x/y.json.gz"]))
+    .toThrow(/log reads no snapshot/);
+  expect(() => parsePowerArgs(["fit", "Elhain", "a.db"])).toThrow(/fit reads no snapshot/);
+});
+
+// `solve` is the default mode and has no usage line to type, so the word is an ordinary selector.
+test("parsePowerArgs treats a mode word after the first positional as a selector", () => {
+  expect(parsePowerArgs(["solve"])).toMatchObject({ mode: "solve", selector: "solve" });
+});
