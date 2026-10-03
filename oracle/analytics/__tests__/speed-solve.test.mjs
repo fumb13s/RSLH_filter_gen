@@ -16,7 +16,7 @@ const pool = (specs) => specs.map((s, i) => item({ id: i + 1, ...s }));
 const plain = speedOfWith(0, new Map());
 
 // A pool whose best build needs FOUR sets at once: three 2-piece classics across the six artifact
-// slots plus 2-piece Swift Parry (35, the one tiered set that opens at two and rolls on accessories)
+// slots plus 2-piece Swift Parry (35, a tiered set that opens at two pieces and rolls on accessories)
 // across two accessory slots. Every slot also offers a setless item worth 5 speed, so committing a
 // slot to a set costs real flat speed and the fourth set has to earn its place.
 const fourSetPool = () => {

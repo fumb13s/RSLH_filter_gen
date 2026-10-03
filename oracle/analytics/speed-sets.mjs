@@ -6,39 +6,51 @@
 //     bonus, and they accumulate. Nine pieces of Supersonic is 10+10+12 = 32%, not four completions.
 //
 // Accessories count toward the piece total of any set that can roll on them (35, 36, 47, 48, 58-66);
-// the classic sets above are artifact-only, so they cap at 6 pieces.
+// the classic sets here are artifact-only, so they cap at 6 pieces.
 //
 // Every set absent from both tables grants 0% speed, including all accessory-only sets (1000-1004).
-// Values are game data, dictated rather than derived: relic speed is per-champion, invisible to the
-// DB, and the same magnitude as these bonuses, so fitting them from the vault cannot separate the
-// two. See the design doc's evidence appendix.
+//
+// Both tables are DERIVED from set-bonuses.mjs — they are its "SPD%" view — rather than dictated
+// here. That table is generated from Gestal's set catalogue and checked against the game's own
+// per-champion set bonuses, and checking it corrected the values this file used to carry by hand,
+// for six sets:
+//
+//   Deflection (36), Feral (61), Pinpoint (62), Rebirth (64) and Chronophage (65) open their first
+//     SPD tier at TWO pieces, not three. Supersonic (58) shares their 10/10/12 payouts and really
+//     does open at three — so the old shared `T(10, 10, 12)` shorthand hid four separate errors
+//     behind one that was right.
+//   Killstroke (49) grants +5% SPD per 2-piece completion, alongside its +20% C.DMG, and was
+//     missing from the table entirely.
+//
+// Deriving is what stops that recurring: one table to correct, not two. It does not make the values
+// checkable from a vault snapshot — relic speed is per-champion, invisible to the DB and the same
+// magnitude as these bonuses, so a fit over the vault still cannot separate the two. The check is
+// against the game's own numbers, in set-bonuses.mjs.
+import { SET_BONUSES } from "./set-bonuses.mjs";
 
-export const CLASSIC_SPEED_SETS = {
-  4:  { name: "Speed",        pieces: 2, pct: 12 },
-  34: { name: "Divine Speed", pieces: 2, pct: 12 },
-  53: { name: "Impulse",      pieces: 2, pct: 12 },
-  57: { name: "Righteous",    pieces: 2, pct: 10 },
-  38: { name: "Perception",   pieces: 2, pct: 5 },
-  50: { name: "Instinct",     pieces: 4, pct: 12 },
-};
+// The one stat key this module is a view of. Not to be confused with speed-model.mjs's `SPD`, which
+// is the STAT_NAMES id 4.
+const SPD_KEY = "SPD%";
 
-// Ascending [threshold, pct] pairs. Most tiered sets share 3/5/8; Swift Parry does not.
-const T = (a, b, c) => [[3, a], [5, b], [8, c]];
+const rows = Object.entries(SET_BONUSES);
 
-export const TIERED_SPEED_SETS = {
-  58: { name: "Supersonic",   tiers: T(10, 10, 12) },
-  62: { name: "Pinpoint",     tiers: T(10, 10, 12) },
-  36: { name: "Deflection",   tiers: T(10, 10, 12) },
-  65: { name: "Chronophage",  tiers: T(10, 10, 12) },
-  64: { name: "Rebirth",      tiers: T(10, 10, 12) },
-  66: { name: "Mercurial",    tiers: T(8, 12, 12) },
-  47: { name: "Protection",   tiers: T(12, 12, 8) },
-  35: { name: "Swift Parry",  tiers: [[2, 8], [4, 10], [8, 10]] },
-  61: { name: "Feral",        tiers: T(5, 5, 5) },
-  59: { name: "Merciless",    tiers: [[3, 5], [7, 5]] },
-  63: { name: "Stonecleaver", tiers: [[3, 5], [7, 5]] },
-  60: { name: "Slayer",       tiers: [[3, 5], [8, 5]] },
-};
+// The stacking sets that grant SPD. `pieces` and `pct` are all the speed model needs from a row.
+export const CLASSIC_SPEED_SETS = Object.fromEntries(
+  rows.filter(([, row]) => row.kind === "stack" && SPD_KEY in row.bonus)
+    .map(([id, row]) => [id, { name: row.name, pieces: row.pieces, pct: row.bonus[SPD_KEY] }]),
+);
+
+// The nine-slot sets with at least one SPD tier, carrying ONLY their SPD tiers. Dropping the other
+// stats' tiers is what makes firstThreshold and usefulCounts answer about SPEED: a Deflection tier
+// that grants ACC changes no speed, and must not become a piece count the solver plans around.
+export const TIERED_SPEED_SETS = Object.fromEntries(
+  rows.filter(([, row]) => row.kind === "tiered" && row.tiers.some(([, bonus]) => SPD_KEY in bonus))
+    .map(([id, row]) => [id, {
+      name: row.name,
+      tiers: row.tiers.filter(([, bonus]) => SPD_KEY in bonus)
+        .map(([threshold, bonus]) => [threshold, bonus[SPD_KEY]]),
+    }]),
+);
 
 export const SPEED_SET_IDS = [
   ...Object.keys(CLASSIC_SPEED_SETS), ...Object.keys(TIERED_SPEED_SETS),

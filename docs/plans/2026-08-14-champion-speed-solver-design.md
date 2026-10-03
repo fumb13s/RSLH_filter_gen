@@ -119,6 +119,20 @@ Nine-slot tiered (artifacts and accessories both count toward the piece total):
 | Merciless, Stonecleaver | 59, 63 | 3 / 7 | +5 / +5 | 10% |
 | Slayer | 60 | 3 / 8 | +5 / +5 | 10% |
 
+**Correction (2026-10-03).** Both tables above are now **derived** from
+`oracle/analytics/set-bonuses.mjs`, a full-stat set-bonus table generated from Gestal Desktop's set
+catalogue and verified against the game's own per-champion set bonuses — 532 of 532 geared champions
+on a 2026-09-29 capture. That check corrected six sets the values above get wrong:
+
+- **Deflection (36), Pinpoint (62), Rebirth (64) and Chronophage (65) are 2 / 5 / 8**, not 3 / 5 / 8.
+  Supersonic (58), which shares their row above and their +10 / +10 / +12 payouts, really is
+  3 / 5 / 8 — sharing the row is what hid four separate errors behind one correct value.
+- **Feral (61) is 2 / 5 / 8**, not 3 / 5 / 8.
+- **Killstroke (49)** is a classic 2-piece stacker worth **+5%** per completion, and was missing from
+  the classic table entirely.
+
+The tables above are left as written, as the record of what was believed at design time.
+
 Accessory-only sets (1000–1004) and every set not listed grant **0%**.
 
 Swift Parry's thresholds are 2/4/8, not the 3/5/8 its neighbours use. It gets its own test.

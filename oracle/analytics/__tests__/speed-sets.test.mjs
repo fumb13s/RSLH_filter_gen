@@ -30,8 +30,10 @@ test("tiered sets accumulate their thresholds instead of stacking", () => {
   expect(speedTerms(counts({ 58: 9 }))).toEqual([10, 10, 12]);
 });
 
-// Swift Parry's thresholds are 2/4/8, not the 3/5/8 every other tiered set uses.
-test("Swift Parry uses 2/4/8 thresholds, unlike its neighbours", () => {
+// Swift Parry's thresholds are 2/4/8. It shares the 2-piece opening with Deflection, Feral,
+// Pinpoint, Rebirth and Chronophage, but its SECOND tier lands at 4 where every one of theirs
+// lands at 5 — so it is still the only set on this shape.
+test("Swift Parry uses 2/4/8 thresholds", () => {
   expect(speedTerms(counts({ 35: 2 }))).toEqual([8]);
   expect(speedTerms(counts({ 35: 3 }))).toEqual([8]);
   expect(speedTerms(counts({ 35: 4 }))).toEqual([8, 10]);
@@ -95,8 +97,8 @@ test("speedSetName reads through both tables and returns null off them", () => {
   expect(speedSetName(48)).toBe(null);
 });
 
-test("SPEED_SET_IDS covers exactly the 18 sets in the two tables", () => {
-  expect(SPEED_SET_IDS).toHaveLength(18);
+test("SPEED_SET_IDS covers exactly the 19 sets in the two tables", () => {
+  expect(SPEED_SET_IDS).toHaveLength(19);
   expect(SPEED_SET_IDS).toContain(4);
   expect(SPEED_SET_IDS).toContain(35);
   expect(SPEED_SET_IDS).not.toContain(48);
@@ -104,11 +106,12 @@ test("SPEED_SET_IDS covers exactly the 18 sets in the two tables", () => {
 
 // --- Every row of both tables, pinned ---------------------------------------------------------
 //
-// The tests above cover eight of the eighteen rows; these cover all of them. This matters more here
-// than in an ordinary module because the values are dictated game data that cannot be re-derived
-// from the vault — relic speed masks them — so if a percentage rots, NO test anywhere downstream
-// can notice. The most exposed row is Protection's T(12, 12, 8), whose third tier is genuinely
-// lower than its first and so reads like a typo waiting to be "fixed".
+// The tests above cover eight of the nineteen rows; these cover all of them. The values are derived
+// from set-bonuses.mjs now rather than dictated here, which relocates the risk rather than removing
+// it: a wrong SPD% in that table, or a filter here that picks the wrong tiers out of it, reaches
+// speed.mjs unchallenged, because relic speed masks these magnitudes and nothing downstream can
+// re-derive them from the vault. The most exposed row is Protection's 12 / 12 / 8, whose third tier
+// is genuinely lower than its first and so reads like a typo waiting to be "fixed".
 //
 // Each profile is speedTerms at 1, 2, 3... pieces, written out LONGHAND rather than computed from
 // the table under test. That redundancy is the point: it is a second copy that has to be edited in
@@ -121,6 +124,7 @@ const CLASSIC_PROFILES = [
   [53, "Impulse",      [[], [12], [12], [12, 12], [12, 12], [12, 12, 12]]],
   [57, "Righteous",    [[], [10], [10], [10, 10], [10, 10], [10, 10, 10]]],
   [38, "Perception",   [[], [5],  [5],  [5, 5],   [5, 5],   [5, 5, 5]]],
+  [49, "Killstroke",   [[], [5],  [5],  [5, 5],   [5, 5],   [5, 5, 5]]],
   [50, "Instinct",     [[], [],   [],   [12],     [12],     [12]]],
 ];
 
@@ -129,24 +133,24 @@ const CLASSIC_PROFILES = [
 // not just the percentages.
 const TIERED_PROFILES = [
   [58, "Supersonic",   [[], [], [10], [10], [10, 10], [10, 10], [10, 10], [10, 10, 12], [10, 10, 12]]],
-  [62, "Pinpoint",     [[], [], [10], [10], [10, 10], [10, 10], [10, 10], [10, 10, 12], [10, 10, 12]]],
-  [36, "Deflection",   [[], [], [10], [10], [10, 10], [10, 10], [10, 10], [10, 10, 12], [10, 10, 12]]],
-  [65, "Chronophage",  [[], [], [10], [10], [10, 10], [10, 10], [10, 10], [10, 10, 12], [10, 10, 12]]],
-  [64, "Rebirth",      [[], [], [10], [10], [10, 10], [10, 10], [10, 10], [10, 10, 12], [10, 10, 12]]],
+  [62, "Pinpoint",     [[], [10], [10], [10], [10, 10], [10, 10], [10, 10], [10, 10, 12], [10, 10, 12]]],
+  [36, "Deflection",   [[], [10], [10], [10], [10, 10], [10, 10], [10, 10], [10, 10, 12], [10, 10, 12]]],
+  [65, "Chronophage",  [[], [10], [10], [10], [10, 10], [10, 10], [10, 10], [10, 10, 12], [10, 10, 12]]],
+  [64, "Rebirth",      [[], [10], [10], [10], [10, 10], [10, 10], [10, 10], [10, 10, 12], [10, 10, 12]]],
   [66, "Mercurial",    [[], [], [8],  [8],  [8, 12],  [8, 12],  [8, 12],  [8, 12, 12],  [8, 12, 12]]],
   [47, "Protection",   [[], [], [12], [12], [12, 12], [12, 12], [12, 12], [12, 12, 8],  [12, 12, 8]]],
   [35, "Swift Parry",  [[], [8], [8], [8, 10], [8, 10], [8, 10], [8, 10], [8, 10, 10],  [8, 10, 10]]],
-  [61, "Feral",        [[], [], [5],  [5],  [5, 5],   [5, 5],   [5, 5],   [5, 5, 5],    [5, 5, 5]]],
+  [61, "Feral",        [[], [5], [5], [5], [5, 5],   [5, 5],   [5, 5],   [5, 5, 5],    [5, 5, 5]]],
   [59, "Merciless",    [[], [], [5],  [5],  [5],      [5],      [5, 5],   [5, 5],       [5, 5]]],
   [63, "Stonecleaver", [[], [], [5],  [5],  [5],      [5],      [5, 5],   [5, 5],       [5, 5]]],
   [60, "Slayer",       [[], [], [5],  [5],  [5],      [5],      [5],      [5, 5],       [5, 5]]],
 ];
 
-test.each(CLASSIC_PROFILES)("classic set %i (%s) grants its dictated bonus at every count 1-6", (id, name, profile) => {
+test.each(CLASSIC_PROFILES)("classic set %i (%s) grants its derived bonus at every count 1-6", (id, name, profile) => {
   expect(profile.map((_, i) => speedTerms(counts({ [id]: i + 1 })))).toEqual(profile);
 });
 
-test.each(TIERED_PROFILES)("tiered set %i (%s) grants its dictated bonus at every count 1-9", (id, name, profile) => {
+test.each(TIERED_PROFILES)("tiered set %i (%s) grants its derived bonus at every count 1-9", (id, name, profile) => {
   expect(profile.map((_, i) => speedTerms(counts({ [id]: i + 1 })))).toEqual(profile);
 });
 
@@ -178,4 +182,15 @@ test("usefulCounts includes maxSlots itself when it lands exactly on a boundary"
   expect(usefulCounts(50, 8)).toEqual([4, 8]);
   expect(usefulCounts(58, 8)).toEqual([3, 5, 8]);
   expect(usefulCounts(35, 4)).toEqual([2, 4]);
+});
+
+// The solver's "at most four active sets" cap (enumeratePlans in speed-solve.mjs) is sound only
+// because no speed set opens below two pieces: four sets at two pieces is eight of the nine slots,
+// and a fifth would need ten. One-piece tiers DO exist in set-bonuses.mjs — Stone Skin's first tier
+// is a single piece — so the day a patch puts SPD% on a one-piece tier, that cap starts silently
+// discarding the best build. This makes it fail loudly instead.
+test("no speed set grants anything below two pieces, which the solver's four-set cap needs", () => {
+  for (const setId of SPEED_SET_IDS) {
+    expect(firstThreshold(setId), `set ${setId} (${speedSetName(setId)})`).toBeGreaterThanOrEqual(2);
+  }
 });

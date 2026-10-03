@@ -11,6 +11,11 @@
 // unexplained speed and 36% of set bonus that is a 22-speed error, and it biases the solver toward
 // set bonuses over flat speed — exactly the trade-off it exists to weigh.
 import { setEffect } from "./speed-sets.mjs";
+import { setCounts } from "./set-bonuses.mjs";
+
+// Re-exported so every existing consumer keeps reading setCounts from the speed model, while the
+// one definition lives next to the set table it counts sets for.
+export { setCounts } from "./set-bonuses.mjs";
 
 export const SPD = 4;   // STAT_NAMES id for SPD
 
@@ -57,16 +62,6 @@ export function clampFloor(item, glyphFloor, ceilings) {
 // One valuation function for a whole run, so the solver never has to carry the ceilings around.
 export const speedOfWith = (glyphFloor, ceilings) =>
   (item) => itemSpeed(item, clampFloor(item, glyphFloor, ceilings));
-
-// setId -> how many of these items carry it. Setless items (set 0) belong to no set and are skipped.
-export function setCounts(items) {
-  const counts = new Map();
-  for (const item of items) {
-    if (!item.set) continue;
-    counts.set(item.set, (counts.get(item.set) ?? 0) + 1);
-  }
-  return counts;
-}
 
 export function buildSpeed(base, constant, items, speedOf) {
   const flat = items.reduce((sum, item) => sum + speedOf(item), 0);

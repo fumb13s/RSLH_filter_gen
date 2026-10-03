@@ -39,9 +39,9 @@ function bruteForce(items, base, constant) {
 }
 
 // Sets chosen to span every mechanic the solver has to reason about: 0 is setless; 4 and 38 are
-// classic 2-piece stackers with different values; 50 is the classic 4-piece one; 35 is tiered on the
-// odd 2/4/8 thresholds; 58 and 47 are tiered on the usual 3/5/8 with payouts in different orders;
-// 59 is tiered but stops after two rungs.
+// classic 2-piece stackers with different values; 50 is the classic 4-piece one; 35 is tiered on
+// 2/4/8; 58 and 47 are tiered on 3/5/8 with payouts in different orders; 59 is tiered but stops
+// after two rungs.
 const SETS = [0, 4, 38, 50, 35, 58, 47, 59];
 
 // Four sets active at once is the `current.length === 4` cap in enumeratePlans, and reaching it needs
@@ -51,8 +51,11 @@ const SETS = [0, 4, 38, 50, 35, 58, 47, 59];
 // job.
 const CHEAP_SETS = [4, 38, 53, 35];
 
-// Every tier SHAPE: 3/5/8, 2/4/8, 3/7, and 3/5/8 with the payouts front-loaded.
-const TIERED_SETS = [58, 47, 35, 59, 66];
+// Every THRESHOLD shape the table has: 3/5/8 (58, 47 and 66, whose payouts differ in order), 2/4/8
+// (35), 3/7 (59), and 2/5/8 (62) — the shape five sets turned out to have once the table became
+// derived from set-bonuses.mjs. A shape missing from here is a tier rung the property never
+// exercises.
+const TIERED_SETS = [58, 47, 35, 59, 66, 62];
 
 // One list of items PER SLOT, rather than a flat array whose slots are drawn at random. An instance
 // can then put a set in all nine slots — which is what the 8-piece tier and the four-set cap need,
