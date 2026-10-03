@@ -112,3 +112,31 @@ export function itemGrade(item, grade) {
   if (item.rank === 5) return "5";
   return null;
 }
+
+// One item as it would be with a glyph of `grade` on every glyphable substat, plus the lifts that
+// took. The cap is a FLOOR: a substat already glyphed at or above it keeps what it has and is not
+// listed, so the lift is never a downgrade for a piece.
+//
+// The input is never mutated. An item with nothing to lift comes back AS ITSELF rather than as a
+// copy, and that identity matters: power-solve.mjs keys its per-item stat vectors by object
+// IDENTITY, so the fewer new objects a lift makes, the fewer places a caller can hand the solver
+// a piece its caches have never seen.
+export function liftItem(item, grade) {
+  const applicable = itemGrade(item, grade);
+  if (applicable === null) return { item, lifts: [] };
+  const caps = GLYPH_CAPS[applicable];
+  const lifts = [];
+  const substats = item.substats.map((s) => {
+    const key = glyphKey(s);
+    if (key === null) return s;
+    // `!(cap > s.glyph)` rather than a Math.max, because the same test decides both the new value
+    // and whether there is a lift to list. It also leaves the substat alone for a key this table
+    // somehow lacks, where a Math.max would write undefined into the glyph.
+    const cap = caps[key];
+    if (!(cap > s.glyph)) return s;
+    lifts.push({ key, from: s.glyph, to: cap });
+    return { ...s, glyph: cap };
+  });
+  if (lifts.length === 0) return { item, lifts: [] };
+  return { item: { ...item, substats }, lifts };
+}

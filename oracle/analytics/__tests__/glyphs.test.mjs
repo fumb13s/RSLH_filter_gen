@@ -1,6 +1,6 @@
 // oracle/analytics/__tests__/glyphs.test.mjs
 import { test, expect } from "vitest";
-import { GLYPH_CAPS, GLYPH_GRADES, GLYPH_LABELS, itemGrade } from "../glyphs.mjs";
+import { GLYPH_CAPS, GLYPH_GRADES, GLYPH_LABELS, itemGrade, liftItem } from "../glyphs.mjs";
 
 // The Item shape both snapshot readers produce (gestal.mjs's gestalItem and decode.mjs's
 // decodeRow), cut down to what this module reads. `rank` is the RAW 1-6 star level, which is what
@@ -79,4 +79,49 @@ test("an unknown grade is refused rather than defaulted", () => {
     .toThrow(/glyphs: unknown grade "mythical" — use one of 5, normal, rare, epic, legendary/);
   expect(() => itemGrade(item(), "6")).toThrow(/unknown grade "6"/);
   expect(() => itemGrade(item(), undefined)).toThrow(/unknown grade/);
+});
+
+// --- liftItem: what rises -------------------------------------------------------------
+
+// All nine glyphable keys in one item, so a transposed cap row names itself. HP appears TWICE,
+// flat and percent, because they share a statId and differ only by `isFlat` — a lift that read
+// the flat cap for a percent substat would write 1150 where 12 belongs, which is a 95x error
+// that still looks like a number.
+test("every glyphable substat rises to its cap for the grade", () => {
+  const it = item({ substats: [
+    sub(1, 500, 0, true),    // HP flat   -> 1150
+    sub(1, 5, 0, false),     // HP%       -> 12
+    sub(2, 200, 0, true),    // ATK flat  -> 60
+    sub(2, 5, 0, false),     // ATK%      -> 12
+    sub(3, 200, 0, true),    // DEF flat  -> 60
+    sub(3, 5, 0, false),     // DEF%      -> 12
+    sub(4, 10, 0, true),     // SPD       -> 12
+    sub(7, 20, 0, true),     // RES       -> 24
+    sub(8, 20, 0, true),     // ACC       -> 24
+  ] });
+  const { item: lifted, lifts } = liftItem(it, "legendary");
+  expect(lifted.substats.map((s) => s.glyph))
+    .toEqual([1150, 12, 60, 12, 60, 12, 12, 24, 24]);
+  expect(lifts.map((l) => l.key))
+    .toEqual(["HP", "HP%", "ATK", "ATK%", "DEF", "DEF%", "SPD", "RES", "ACC"]);
+});
+
+// The grade chooses the row, so the same item lifts to different numbers. A 5★ item takes the
+// "5" row through itemGrade whatever was asked, which is the rank rule reaching liftItem.
+test("the grade chooses the cap row, and a 5★ item is capped at the 5★ row", () => {
+  const it = item({ substats: [sub(4, 10, 0, true)] });
+  expect(liftItem(it, "epic").item.substats[0].glyph).toBe(10);
+  expect(liftItem(it, "normal").item.substats[0].glyph).toBe(8);
+  expect(liftItem(item({ rank: 5, substats: [sub(4, 10, 0, true)] }), "legendary")
+    .item.substats[0].glyph).toBe(5);
+});
+
+// `from` and `to` are what the CLI prints and what its per-lift value is computed from, so a
+// lift that reported the wrong `from` would print the right arrow and the wrong worth.
+test("lifts record each raised substat's old and new glyph, in substat order", () => {
+  const it = item({ substats: [sub(4, 10, 3, true), sub(7, 20, 0, true)] });
+  expect(liftItem(it, "epic").lifts).toEqual([
+    { key: "SPD", from: 3, to: 10 },
+    { key: "RES", from: 0, to: 20 },
+  ]);
 });
