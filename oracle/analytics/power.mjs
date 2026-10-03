@@ -30,8 +30,10 @@
 // Advisory only for the game: nothing is written to a snapshot, to Gestal's folder or to the
 // game's own database. `log` and `fit` write to out/, which is personal account data and
 // gitignored.
+import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, lookupName } from "@rslh/core";
 import { STATS } from "./champion-stats.mjs";
 import { selectChamps } from "./champs.mjs";
+import { SET_BONUSES } from "./set-bonuses.mjs";
 import { isSnapshotArg } from "./snapshots.mjs";
 
 // --- CLI: pure helpers ------------------------------------------------------
@@ -248,4 +250,26 @@ export function formatOffBest(index, build, best, c) {
   const delta = c === null ? build.lin - best.lin : powerOf(build.lin, c) - powerOf(best.lin, c);
   const shown = c === null ? delta.toFixed(2) : String(Math.round(delta));
   return `  #${index}  (${shown} ${c === null ? "√power" : "power"} off BEST)`;
+}
+
+// --- labels ---------------------------------------------------------------------
+
+const slotName = (s) => lookupName(ARTIFACT_SLOT_NAMES, s);
+const setLabel = (s) => (s === 0 ? "(setless)" : lookupName(ARTIFACT_SET_NAMES, s) || `#${s}`);
+
+// "Merciless x6 · Zeal x2". Biggest count first, then by name, so a rerun prints the same line.
+//
+// `all` names every set the build holds. The default names only the sets that GRANT STATS, because
+// a set that grants none did not move a power number and listing it here would imply it had.
+// verify passes `all`: a set that gained a stat in a patch is the case it exists to catch, and that
+// set sits in NO_STAT_SETS until the table is updated.
+//
+// Set 0 never reaches here — setCounts skips it, since a setless piece belongs to no set.
+export function formatSets(counts, all = false) {
+  const parts = [...counts]
+    .filter(([setId]) => all || SET_BONUSES[setId])
+    .sort((a, b) => b[1] - a[1] || setLabel(a[0]).localeCompare(setLabel(b[0])))
+    .map(([setId, count]) => `${setLabel(setId)} x${count}`);
+  if (parts.length) return parts.join(" · ");
+  return all ? "no sets" : "no stat sets";
 }

@@ -10,8 +10,8 @@
 // and append to the developer's real oracle/analytics/out/ — a test that pollutes a personal
 // reading log, and one whose own assertions would depend on whatever is already in it.
 import { expect, test } from "vitest";
-import { formatBreakdown, formatCertificate, formatGain, formatOffBest, formatTotals, mainCopies,
-  parsePowerArgs } from "../power.mjs";
+import { formatBreakdown, formatCertificate, formatGain, formatOffBest, formatSets, formatTotals,
+  mainCopies, parsePowerArgs } from "../power.mjs";
 import { STATS } from "../champion-stats.mjs";
 
 // --- parsePowerArgs: modes and positionals ------------------------------------
@@ -353,4 +353,35 @@ test("formatOffBest measures a runner-up against BEST in power when the constant
 test("formatOffBest measures it in sqrt(power) when the constant is unknown", () => {
   expect(formatOffBest(3, { lin: 110 }, { lin: 120 }, null))
     .toBe("  #3  (-10.00 √power off BEST)");
+});
+
+// --- formatSets -----------------------------------------------------------------
+//
+// Set names come from @rslh/core's ARTIFACT_SET_NAMES, the same table speed.mjs and
+// champion-gear.mjs label items with, so one report does not call a set what another does not.
+// (set-bonuses.mjs carries its own `name` field; it is not the one printed.)
+
+test("formatSets names each set with its count, biggest first", () => {
+  expect(formatSets(new Map([[59, 6], [54, 2]]))).toBe("Merciless x6 · Zeal x2");
+});
+
+test("formatSets breaks a tie on the set name, so a rerun prints the same line", () => {
+  expect(formatSets(new Map([[54, 2], [59, 2]]))).toBe("Merciless x2 · Zeal x2");
+  expect(formatSets(new Map([[59, 2], [54, 2]]))).toBe("Merciless x2 · Zeal x2");
+});
+
+// Set 12 is Cursed, one of the 28 ids that grant no stats at all. Naming it in a POWER report would
+// imply it moved the number; it cannot, because no stat column reflects it.
+test("formatSets leaves out the sets that grant no stats", () => {
+  expect(formatSets(new Map([[12, 4], [59, 2]]))).toBe("Merciless x2");
+  expect(formatSets(new Map([[12, 4]]))).toBe("no stat sets");
+  expect(formatSets(new Map())).toBe("no stat sets");
+});
+
+// verify is the one caller that wants them all. A set that GAINED a stat in a game patch is
+// exactly what it is looking for, and that set is still in NO_STAT_SETS until the table is
+// updated — so hiding it would hide the cause of the mismatch being reported.
+test("formatSets names every set when asked for all of them", () => {
+  expect(formatSets(new Map([[12, 4], [59, 2]]), true)).toBe("Cursed x4 · Merciless x2");
+  expect(formatSets(new Map(), true)).toBe("no sets");
 });
