@@ -1,7 +1,7 @@
 // oracle/analytics/__tests__/build-solve.test.mjs
 import { test, expect } from "vitest";
 import {
-  SLOTS, buildIndex, slotsSupplying, usefulCounts, enumeratePlans,
+  SLOTS, buildIndex, slotsSupplying, usefulCounts, enumeratePlans, scoreBuild,
 } from "../build-solve.mjs";
 
 // Every item carries a plain `value` the injected valuation reads back. The module is
@@ -208,4 +208,31 @@ test("enumeratePlans drops a plan whose sets share too few slots between them", 
 test("enumeratePlans ignores a bonus attached to set 0", () => {
   const index = indexOf([1, 2, 3].map((slot) => ({ slot, set: 0, value: 0 })));
   expect(enumeratePlans(index, bonusOf({ 0: { 2: 50 } }))).toEqual([[]]);
+});
+
+// `picks` is what assignPlan hands back; scoreBuild is tested on hand-written ones so the scoring
+// rule is pinned independently of whatever the assignment happens to produce.
+const pick = (slot, setId, value) =>
+  ({ slot, setId, item: item({ id: slot, slot, set: setId }), value });
+
+test("scoreBuild sums the item values when no set pays", () => {
+  expect(scoreBuild([pick(1, 4, 10), pick(2, 4, 7)], new Map())).toBe(17);
+});
+
+// The bonus is read at the count the build HOLDS. A rule that paid per piece would answer 24 for
+// the first case; a rule that paid once per set regardless of count would answer 12 for the last.
+test("scoreBuild credits each set once, at the count the build actually holds", () => {
+  const bonusAt = bonusOf({ 4: { 2: 12, 4: 24 } });
+  expect(scoreBuild([pick(1, 4, 0), pick(2, 4, 0)], bonusAt)).toBe(12);
+  expect(scoreBuild([pick(1, 4, 0), pick(2, 4, 0), pick(3, 4, 0)], bonusAt)).toBe(12);
+  expect(scoreBuild([pick(1, 4, 0), pick(2, 4, 0), pick(3, 4, 0), pick(4, 4, 0)], bonusAt)).toBe(24);
+});
+
+test("scoreBuild grants nothing for a set the model says nothing about", () => {
+  expect(scoreBuild([pick(1, 66, 5), pick(2, 66, 5)], bonusOf({ 4: { 2: 12 } }))).toBe(10);
+});
+
+// Set 0 is "no set". Counting it would make nine setless pieces look like a nine-piece set.
+test("scoreBuild never counts set 0 as a set", () => {
+  expect(scoreBuild([pick(1, 0, 5), pick(2, 0, 5)], bonusOf({ 0: { 2: 99 } }))).toBe(10);
 });

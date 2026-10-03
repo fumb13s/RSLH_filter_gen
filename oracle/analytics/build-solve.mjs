@@ -145,3 +145,24 @@ export function enumeratePlans(index, bonusAt) {
   extend(0, [], 0, 0);
   return plans;
 }
+
+// setId -> how many picks carry it. Set 0 is "no set" and is skipped, as speed-model.mjs's
+// setCounts does, so a build of nine setless pieces has no counts rather than one count of nine.
+function countsOf(picks) {
+  const counts = new Map();
+  for (const p of picks) {
+    if (!p.setId) continue;
+    counts.set(p.setId, (counts.get(p.setId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+// What a build is actually worth: its items' values, plus each set's bonus AT THE COUNT THE BUILD
+// HOLDS. Never at a plan's count — a free pick can complete a set the plan never named, and
+// scoring the plan would under-report it.
+export function scoreBuild(picks, bonusAt) {
+  let total = 0;
+  for (const p of picks) total += p.value;
+  for (const [setId, count] of countsOf(picks)) total += bonusAt.get(setId)?.[count] ?? 0;
+  return total;
+}
