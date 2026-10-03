@@ -189,6 +189,12 @@ export function solvePower({ items, faction, champStats, current, weights, top =
   // The whole POOL, not the last round: the best build may have come from any round, or be the
   // gear already worn. Stable sort, so a tie falls to insertion order — round order, then
   // build-solve's own deterministic ranking — and a rerun returns the same list.
-  const builds = [...pool.values()].sort((a, b) => b.lin - a.lin);
+  //
+  // These are the best DISTINCT SETS OF ITEMS this iteration happened to see. That is not a
+  // proved top-N, and build-solve's own `top` is not either: its entries after the first are the
+  // best each OTHER plan could reach. Said plainly rather than claimed otherwise.
+  const builds = [...pool.values()]
+    .sort((a, b) => b.lin - a.lin)
+    .slice(0, Math.max(1, top));
   return { builds, rounds, converged, upperBound: 0, gap: 0 };
 }

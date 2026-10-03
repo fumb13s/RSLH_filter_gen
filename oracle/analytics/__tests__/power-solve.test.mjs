@@ -433,3 +433,32 @@ test("the answer is never worse than the worn gear, even when every round is", (
   expect(got.builds[0].items.map((it) => it.id)).toEqual([1]);
   expect(got.builds[0].lin).toBeCloseTo(8750, 6);
 });
+
+// --- solvePower: top --------------------------------------------------------------------------
+
+// The POOL is what `top` ranks, not one round's output. buildIndex keeps only the best piece of
+// each set in each slot, so a one-slot pool of three setless pieces offers the solver exactly one
+// build per round — all three entries below were found in three DIFFERENT rounds.
+test("top greater than one returns distinct builds from the whole pool, best first", () => {
+  const got = solvePower({ ...CONVERGE_ARGS, top: 3 });
+  expect(got.builds.map((b) => b.items.map((it) => it.id))).toEqual([[3], [1], [2]]);
+  expect(got.builds.map((b) => Math.round(b.lin))).toEqual([8250, 2500, 0]);
+});
+
+test("top caps the number of builds returned", () => {
+  const got = solvePower({ ...CONVERGE_ARGS, top: 2 });
+  expect(got.builds).toHaveLength(2);
+  expect(got.builds[0].items.map((it) => it.id)).toEqual([3]);
+});
+
+// Entries are distinct SETS of items, so a build two rounds both reached is listed once.
+test("top does not list the same set of items twice", () => {
+  const got = solvePower({ ...CONVERGE_ARGS, top: 9 });
+  const keys = got.builds.map((b) => b.items.map((it) => it.id).sort((a, c) => a - c).join(","));
+  expect(new Set(keys).size).toBe(keys.length);
+});
+
+// The default is one build, and `top` can never shrink the answer to nothing.
+test("top defaults to one build", () => {
+  expect(solvePower(CONVERGE_ARGS).builds).toHaveLength(1);
+});
