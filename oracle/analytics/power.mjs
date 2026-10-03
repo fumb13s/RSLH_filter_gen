@@ -30,6 +30,8 @@
 // Advisory only for the game: nothing is written to a snapshot, to Gestal's folder or to the
 // game's own database. `log` and `fit` write to out/, which is personal account data and
 // gitignored.
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, lookupName } from "@rslh/core";
 import { STATS } from "./champion-stats.mjs";
 import { selectChamps } from "./champs.mjs";
@@ -307,3 +309,21 @@ export function latestReading(readings, heroId) {
   }
   return best;
 }
+
+// --- where the local files live --------------------------------------------------
+
+// The readings and the fitted weights. $RSLH_POWER_DIR overrides the location, which is what lets a
+// test run without reading or appending to a real log. The default is MODULE-relative — the way
+// analyze.mjs locates out/ — rather than relative to the working directory, so the log is the same
+// file whichever directory the tool is run from. oracle/analytics/.gitignore already denies out/:
+// a reading log and a fitted table are personal account data.
+export function powerDir() {
+  return process.env.RSLH_POWER_DIR || fileURLToPath(new URL("out/", import.meta.url));
+}
+
+// One reading record per line, in power-fit.mjs's format.
+export const readingsPath = () => join(powerDir(), "power-readings.jsonl");
+
+// baseTypeId -> { name, b, r, a, s, k, fittedAt, readings }. The whole object is the `fitted`
+// argument to weightsFor, which reads only the five weights and ignores the rest.
+export const weightsPath = () => join(powerDir(), "power-weights.json");

@@ -11,7 +11,8 @@
 // reading log, and one whose own assertions would depend on whatever is already in it.
 import { expect, test } from "vitest";
 import { formatBreakdown, formatCertificate, formatGain, formatOffBest, formatSets, formatTotals,
-  latestReading, mainCopies, parsePowerArgs, readingsFor } from "../power.mjs";
+  latestReading, mainCopies, parsePowerArgs, powerDir, readingsFor, readingsPath,
+  weightsPath } from "../power.mjs";
 import { STATS } from "../champion-stats.mjs";
 
 // --- parsePowerArgs: modes and positionals ------------------------------------
@@ -440,4 +441,35 @@ test("latestReading returns null when the copy has no reading", () => {
 test("latestReading compares timestamps rather than trusting the file order", () => {
   const log = [rec({ t: "2026-10-09T09:00:00.000Z" }), rec({ t: "2026-10-01T09:00:00.000Z" })];
   expect(latestReading(log, 11).t).toBe("2026-10-09T09:00:00.000Z");
+});
+
+// --- powerDir -------------------------------------------------------------------
+
+// The default is MODULE-relative, the way analyze.mjs locates out/, rather than relative to the
+// working directory — so the reading log is the same file whichever directory the tool is run from.
+// oracle/analytics/.gitignore already denies out/: these are personal account data.
+test("powerDir defaults to the module's own out/ directory", () => {
+  const saved = process.env.RSLH_POWER_DIR;
+  try {
+    delete process.env.RSLH_POWER_DIR;
+    expect(powerDir().replace(/\\/g, "/")).toMatch(/oracle\/analytics\/out\/?$/);
+  } finally {
+    if (saved === undefined) delete process.env.RSLH_POWER_DIR;
+    else process.env.RSLH_POWER_DIR = saved;
+  }
+});
+
+// $RSLH_POWER_DIR is what lets a test run without touching a real reading log, and what lets the
+// account owner keep one somewhere else.
+test("powerDir honours $RSLH_POWER_DIR and the two file names hang off it", () => {
+  const saved = process.env.RSLH_POWER_DIR;
+  try {
+    process.env.RSLH_POWER_DIR = "/tmp/elsewhere";
+    expect(powerDir()).toBe("/tmp/elsewhere");
+    expect(readingsPath()).toBe("/tmp/elsewhere/power-readings.jsonl");
+    expect(weightsPath()).toBe("/tmp/elsewhere/power-weights.json");
+  } finally {
+    if (saved === undefined) delete process.env.RSLH_POWER_DIR;
+    else process.env.RSLH_POWER_DIR = saved;
+  }
 });
