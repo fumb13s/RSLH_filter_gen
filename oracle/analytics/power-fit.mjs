@@ -158,23 +158,31 @@ export function fitWeights(readings) {
       + " — a fit needs readings >= copies + columns");
   }
 
-  // Step 4: the factorization, over the varying columns scaled to unit 2-norm.
+  // Step 4: which of the varying columns are independent, in the fixed order and without pivoting.
   const fac = factorize(varying.map((j) => cx[j].map((v) => v / scale[j])));
-  const gamma = solve(fac, cy);
+  const keptCols = fac.kept.map((q) => varying[q]);
+  const undeterminedCols = [...COLUMNS.keys()].filter((j) => !keptCols.includes(j));
+  const undetermined = undeterminedCols.map((j) => COLUMNS[j].param);
+
+  // Step 5: the priors. The weights the SOLVERS will use for an undetermined parameter are exactly
+  // what weightsFor falls back to, so that share of the signal comes out of the right-hand side
+  // before the kept columns are solved. Left in, a kept column absorbs a dropped column's effect
+  // and the prior adds it back a second time. roleId is static champion data and every reading here
+  // is one champion, so the first reading settles it; an unknown roleId throws out of weightsFor.
+  const prior = weightsFor({ baseTypeId: ids[0], roleId: readings[0].roleId }).weights;
+  const rhs = cy.slice();
+  for (const j of undeterminedCols) {
+    const w = prior[COLUMNS[j].param];
+    for (let i = 0; i < readings.length; i++) rhs[i] -= w * cx[j][i];
+  }
+  const gamma = solve(fac, rhs);
 
   const params = { b: null, r: null, a: null, s: null, k: null };
   fac.kept.forEach((q, i) => {
     const j = varying[q];
     params[COLUMNS[j].param] = gamma[i] / scale[j];
   });
-  const keptCols = fac.kept.map((q) => varying[q]);
-  const undeterminedCols = [...COLUMNS.keys()].filter((j) => !keptCols.includes(j));
-  const undetermined = undeterminedCols.map((j) => COLUMNS[j].param);
 
-  // Step 5 (priors): an undetermined parameter is not unknown to the SOLVERS — they will take
-  // exactly what weightsFor falls back to. roleId is static champion data, and every reading here
-  // is one champion, so the first reading settles it; an unknown roleId throws out of weightsFor.
-  const prior = weightsFor({ baseTypeId: ids[0], roleId: readings[0].roleId }).weights;
   const effective = { ...params };
   for (const name of undetermined) effective[name] = prior[name];
 

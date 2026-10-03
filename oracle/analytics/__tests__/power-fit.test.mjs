@@ -258,3 +258,17 @@ test("every number a rank-deficient power fit returns is finite", () => {
     expect(Number.isFinite(res.errorPct), res.t).toBe(true);
   }
 });
+
+// The dropped column's share has to come OUT of the right-hand side before the kept columns are
+// solved. Left in, RES absorbs it — ACC is exactly RES/2 here, so `r` would come back as
+// r + a/2, about 8% high — and the solver would then ALSO add the prior `a` back for the dropped
+// column, counting one effect twice.
+test("an undetermined parameter's prior is removed from the fit before the kept columns solve", () => {
+  const w = { ...W, a: PRIOR.a };
+  const fit = fitWeights([...linkedCopy(11, w, C11), ...linkedCopy(22, w, C22, OVER_22)]);
+  expect(close(fit.params.r, w.r)).toBeLessThan(1e-6);
+  for (const name of ["b", "s", "k"]) {
+    expect(close(fit.params[name], w[name]), name).toBeLessThan(1e-6);
+  }
+  for (const res of fit.residuals) expect(Math.abs(res.errorPct)).toBeLessThan(1e-6);
+});
