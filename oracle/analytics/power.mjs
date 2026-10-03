@@ -30,7 +30,7 @@
 // Advisory only for the game: nothing is written to a snapshot, to Gestal's folder or to the
 // game's own database. `log` and `fit` write to out/, which is personal account data and
 // gitignored.
-import { realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, lookupName } from "@rslh/core";
@@ -38,6 +38,8 @@ import { STATS, statBreakdown } from "./champion-stats.mjs";
 import { isRealChamp, selectChamps, suggestNames } from "./champs.mjs";
 import { gestalChampRows, gestalChampStats, gestalItems, isGestalPath,
   readGestalSnapshot } from "./gestal.mjs";
+import { constantFrom, lin, weightsFor } from "./power-model.mjs";
+import { buildTotals } from "./power-solve.mjs";
 import { SET_BONUSES } from "./set-bonuses.mjs";
 import { isSnapshotArg, resolveSnapshot } from "./snapshots.mjs";
 
@@ -376,6 +378,48 @@ function accountState(snapshot) {
   };
 }
 
+// The reading log, one record per line. A missing file is an empty log, which is the state before
+// the first `log`. A line that does not parse is a corrupted log, and skipping it silently would
+// make a fit quietly narrower than the reader believes — so it is named, by its real line number.
+function readReadings(path) {
+  if (!existsSync(path)) return [];
+  const out = [];
+  const lines = readFileSync(path, "utf8").split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line === "") continue;   // a trailing newline is normal
+    try {
+      out.push(JSON.parse(line));
+    } catch {
+      console.error(`${path}: line ${i + 1} is not JSON — the reading log is corrupted`);
+      process.exit(1);
+    }
+  }
+  return out;
+}
+
+// The fitted weights, or an empty table. A missing file is the state before the first `fit`; a file
+// that does not parse is NOT, and falling back to the built-in weights for it would print
+// "built-in" on a champion the reader has already calibrated, which reads like the fit never ran.
+function readWeights(path) {
+  if (!existsSync(path)) return {};
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch (e) {
+    console.error(`${path} is not readable JSON (${e.message}) — fix or remove it`);
+    process.exit(1);
+  }
+}
+
+// Listed with their ids, because an id is the selector that picks exactly one copy. `why` names
+// what the ambiguity would break, which differs between the two callers.
+function tooManyCopies(copies, why) {
+  console.error(`${why}, but ${copies.length} champions matched:`);
+  for (const row of copies) console.error(`  ${row.Name} #${row.ID}`);
+  console.error("name one by its id to pick exactly one copy.");
+  process.exit(1);
+}
+
 // Same shape as speed.mjs: the selector that found nothing, then the near misses, so a half-typed
 // name costs one rerun rather than a scroll through the roster.
 function noMatch(rows, selector) {
@@ -385,12 +429,57 @@ function noMatch(rows, selector) {
   process.exit(1);
 }
 
+// The copy's own constant, and where it came from. Both sources go through constantFrom on the
+// totals the power was observed WITH, which is what makes the result a property of the COPY rather
+// than of the gear it had on at the time — power-model measured `c` unchanged across every gear
+// change, so a reading logged weeks ago still describes it.
+function resolveConstant(args, weights, currentTotals, readings, heroId) {
+  if (args.power !== null) {
+    return { c: constantFrom(currentTotals, weights, args.power), source: "--power" };
+  }
+  const latest = latestReading(readings, heroId);
+  if (latest) {
+    return { c: constantFrom(latest.totals, weights, latest.power),
+      source: `logged reading of ${latest.t}` };
+  }
+  return { c: null, source: "none" };
+}
+
+function printCopy(row, { items, rows, statsById, fitted, readings, args }) {
+  const champStats = statsById.get(row.ID);
+  const { weights, source, fromDefaults } = weightsFor(
+    { baseTypeId: row.BaseHeroID, roleId: row.Role }, fitted);
+  const current = items.filter((it) => it.equippedChampId === row.ID);
+  // UNROUNDED, because this is what the objective, the constant and a logged reading are all
+  // evaluated on. The rounded screen totals are printed just below, and are a different number by
+  // at most 1 per stat.
+  const currentTotals = buildTotals(champStats, current);
+  const currentLin = lin(currentTotals, weights);
+  const { c, source: cSource } = resolveConstant(args, weights, currentTotals, readings, row.ID);
+
+  console.log(`\n${row.Name} #${row.ID}  ${row.Rang}★ +${row.Lvl}`
+    + `  ·  weights ${source}`
+    + `${fromDefaults.length ? ` (approximate: ${fromDefaults.join(", ")})` : ""}`
+    + `  ·  constant ${c === null ? "unknown" : `${c.toFixed(2)} (${cSource})`}`);
+
+  console.log("  CURRENT");
+  console.log(formatBreakdown(statBreakdown(champStats, current)));
+  if (c !== null) console.log(`    ${Math.round((currentLin + c) ** 2)} power`);
+  void rows;
+}
+
 function runSolve(args) {
   const { path, snapshot } = readGestalOrDie(args.dbArg);
   const { items, rows, statsById } = accountState(snapshot);
   const copies = mainCopies(rows, statsById, items, args.selector);
   if (!copies.length) return noMatch(rows, args.selector);
+  if (args.power !== null && copies.length !== 1) {
+    return tooManyCopies(copies, "--power is one champion's in-game reading");
+  }
+  const fitted = readWeights(weightsPath());
+  const readings = readReadings(readingsPath());
   console.log(`# Power — snapshot ${path.split(/[\\/]/).pop()}`);
+  for (const row of copies) printCopy(row, { items, rows, statsById, fitted, readings, args });
 }
 
 function main() {

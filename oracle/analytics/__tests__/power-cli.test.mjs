@@ -629,3 +629,103 @@ test("solve heads the report with the snapshot it read", () => {
   expect(res.status, res.stderr).toBe(0);
   expect(res.stdout).toMatch(/^# Power — snapshot 2026-10-03-Gestal\.json\.gz$/m);
 });
+
+// --- solve: CURRENT, the weights and the constant --------------------------------
+
+// A reading log holding one record for copy #100, written where RSLH_POWER_DIR points. `totals` is
+// whatever was measured at the time, so it is deliberately NOT this snapshot's totals — the point of
+// a logged reading is that the constant it yields survives the gear change since.
+const READING = {
+  t: "2026-10-02T09:00:00.000Z", heroId: 100, baseTypeId: 1490, name: "Elhain", roleId: 0,
+  totals: { HP: 30000, ATK: 2000, DEF: 1500, SPD: 200, "C.RATE": 60, "C.DMG": 150, RES: 100, ACC: 50 },
+  power: 480000,
+};
+
+// A power directory holding whichever of the two files a test needs.
+function powerOut({ readings, weights } = {}) {
+  const dir = tmp();
+  if (readings) {
+    writeFileSync(join(dir, "power-readings.jsonl"),
+      readings.map((r) => `${JSON.stringify(r)}\n`).join(""));
+  }
+  if (weights) writeFileSync(join(dir, "power-weights.json"), JSON.stringify(weights, null, 2));
+  return dir;
+}
+
+test("solve prints the stat breakdown in the game's Total Stats layout", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR })]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {2}CURRENT$/m);
+  // `m` is load-bearing: each label starts its own line, and without it `^` anchors to the start of
+  // the whole stdout and every label but the first could never match.
+  for (const label of ["Basic", "Artifacts", "Affinity", "Classic Arena", "Masteries",
+    "Faction Guardians", "Empowerment", "Blessing", "Relic", "Total"]) {
+    expect(res.stdout, label).toMatch(new RegExp(`^ {2}${label} `, "m"));
+  }
+});
+
+// Elhain is in no BUILT_IN row, so every weight falls through to a role default — and the header has
+// to say so, because those are the parameters a `fit` would improve.
+test("solve names the weight source and the parameters that fell through to a default", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR })]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/weights role default/);
+  expect(res.stdout).toMatch(/approximate: b, r, a, s, k/);
+});
+
+// A fitted row for this champion's baseTypeId outranks the built-in table and the role defaults,
+// per parameter, through weightsFor — so a calibrated champion must stop reading "approximate".
+test("solve prefers a fitted weights row and drops the approximate note", () => {
+  const dir = powerOut({ weights: { 1490: { name: "Elhain", b: 0.0122, r: 0.277, a: 0.0387,
+    s: 0.022, k: 0.00154, fittedAt: "2026-10-02T09:00:00.000Z", readings: 8 } } });
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR })], { powerDir: dir });
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/weights fitted/);
+  expect(res.stdout).not.toMatch(/approximate:/);
+});
+
+// Without a constant there is no power to print at all: power is (lin + c)^2, so every absolute
+// number needs it.
+test("solve reports the constant as unknown when nothing supplies one", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR })]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/· {2}constant unknown$/m);
+});
+
+test("solve measures the constant from the copy's latest logged reading", () => {
+  const dir = powerOut({ readings: [READING] });
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR })], { powerDir: dir });
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/constant -?[\d.]+ \(logged reading of 2026-10-02T09:00:00\.000Z\)/);
+  expect(res.stdout).toMatch(/^ {4}\d+ power$/m);
+});
+
+// --power is this copy's power RIGHT NOW, read off the screen, so it beats a reading logged against
+// whatever gear the copy had on at the time.
+test("solve lets --power override a logged reading", () => {
+  const dir = powerOut({ readings: [READING] });
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR }), "--power", "412000"],
+    { powerDir: dir });
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/constant -?[\d.]+ \(--power\)/);
+  expect(res.stdout).not.toMatch(/logged reading/);
+});
+
+// One in-game power value belongs to ONE copy. Measuring a constant for several from it would make
+// every power printed afterwards wrong by that amount, with nothing saying so.
+test("solve refuses --power when the selector matches more than one champion", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR, champions: TWO_CHAMPS }),
+    "--power", "412000"]);
+  expect(res.status).toBe(1);
+  expect(res.stderr).toMatch(/--power is one champion's in-game reading/);
+  expect(res.stderr).toMatch(/Elhain #100/);
+  expect(res.stderr).toMatch(/Dark Elhain #200/);
+});
+
+// Without --power the same selector is fine: two champions means two reports.
+test("solve reports every main copy a selector matches", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR, champions: TWO_CHAMPS })]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^Elhain #100 /m);
+  expect(res.stdout).toMatch(/^Dark Elhain #200 /m);
+});
