@@ -30,8 +30,10 @@ test("tiered sets accumulate their thresholds instead of stacking", () => {
   expect(speedTerms(counts({ 58: 9 }))).toEqual([10, 10, 12]);
 });
 
-// Swift Parry's thresholds are 2/4/8, not the 3/5/8 every other tiered set uses.
-test("Swift Parry uses 2/4/8 thresholds, unlike its neighbours", () => {
+// Swift Parry's thresholds are 2/4/8. It shares the 2-piece opening with Deflection, Feral,
+// Pinpoint, Rebirth and Chronophage, but its SECOND tier lands at 4 where every one of theirs
+// lands at 5 — so it is still the only set on this shape.
+test("Swift Parry uses 2/4/8 thresholds", () => {
   expect(speedTerms(counts({ 35: 2 }))).toEqual([8]);
   expect(speedTerms(counts({ 35: 3 }))).toEqual([8]);
   expect(speedTerms(counts({ 35: 4 }))).toEqual([8, 10]);
@@ -104,11 +106,12 @@ test("SPEED_SET_IDS covers exactly the 19 sets in the two tables", () => {
 
 // --- Every row of both tables, pinned ---------------------------------------------------------
 //
-// The tests above cover eight of the eighteen rows; these cover all of them. This matters more here
-// than in an ordinary module because the values are dictated game data that cannot be re-derived
-// from the vault — relic speed masks them — so if a percentage rots, NO test anywhere downstream
-// can notice. The most exposed row is Protection's T(12, 12, 8), whose third tier is genuinely
-// lower than its first and so reads like a typo waiting to be "fixed".
+// The tests above cover eight of the nineteen rows; these cover all of them. The values are derived
+// from set-bonuses.mjs now rather than dictated here, which relocates the risk rather than removing
+// it: a wrong SPD% in that table, or a filter here that picks the wrong tiers out of it, reaches
+// speed.mjs unchallenged, because relic speed masks these magnitudes and nothing downstream can
+// re-derive them from the vault. The most exposed row is Protection's 12 / 12 / 8, whose third tier
+// is genuinely lower than its first and so reads like a typo waiting to be "fixed".
 //
 // Each profile is speedTerms at 1, 2, 3... pieces, written out LONGHAND rather than computed from
 // the table under test. That redundancy is the point: it is a second copy that has to be edited in
@@ -143,11 +146,11 @@ const TIERED_PROFILES = [
   [60, "Slayer",       [[], [], [5],  [5],  [5],      [5],      [5],      [5, 5],       [5, 5]]],
 ];
 
-test.each(CLASSIC_PROFILES)("classic set %i (%s) grants its dictated bonus at every count 1-6", (id, name, profile) => {
+test.each(CLASSIC_PROFILES)("classic set %i (%s) grants its derived bonus at every count 1-6", (id, name, profile) => {
   expect(profile.map((_, i) => speedTerms(counts({ [id]: i + 1 })))).toEqual(profile);
 });
 
-test.each(TIERED_PROFILES)("tiered set %i (%s) grants its dictated bonus at every count 1-9", (id, name, profile) => {
+test.each(TIERED_PROFILES)("tiered set %i (%s) grants its derived bonus at every count 1-9", (id, name, profile) => {
   expect(profile.map((_, i) => speedTerms(counts({ [id]: i + 1 })))).toEqual(profile);
 });
 
