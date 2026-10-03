@@ -1,6 +1,7 @@
 // oracle/analytics/__tests__/power-model.test.mjs
 import { test, expect } from "vitest";
-import { ALL_DEFAULTS, BUILT_IN, constantFrom, lin, power, ROLE_DEFAULTS } from "../power-model.mjs";
+import { ALL_DEFAULTS, BUILT_IN, constantFrom, lin, power, ROLE_DEFAULTS, weightsFor }
+  from "../power-model.mjs";
 
 // The game's Total Stats, every source included. C.RATE and C.DMG are percentage POINTS.
 const totals = (o = {}) => ({
@@ -111,5 +112,58 @@ test("the Defense role defaults carry a higher b and a lower r than every other 
   for (const roleId of [0, 2, 3]) {
     expect(ROLE_DEFAULTS[1].b).toBeGreaterThan(ROLE_DEFAULTS[roleId].b);
     expect(ROLE_DEFAULTS[1].r).toBeLessThan(ROLE_DEFAULTS[roleId].r);
+  }
+});
+
+// --- weightsFor precedence ---------------------------------------------------------------------
+
+const FITTED = { b: 0.02, r: 0.3, a: 0.05, s: 0.01, k: 0.002 };
+
+test("weightsFor prefers a full fitted table over everything else", () => {
+  const got = weightsFor({ baseTypeId: 7090, roleId: 1 }, { 7090: FITTED });
+  expect(got.weights).toEqual(FITTED);
+  expect(got.source).toBe("fitted");
+  expect(got.fromDefaults).toEqual([]);
+});
+
+// Helicath's row supplies s and k only, so b and r come off the role table and a off the
+// all-champion means — and the source is still "built-in", because a built-in row DID answer.
+test("weightsFor fills a partial built-in row from the role and all-champion defaults", () => {
+  const got = weightsFor({ baseTypeId: 7200, roleId: 1 });
+  expect(got.source).toBe("built-in");
+  expect(got.fromDefaults).toEqual(["b", "r", "a"]);
+  expect(got.weights.s).toBe(BUILT_IN[7200].s);
+  expect(got.weights.k).toBe(BUILT_IN[7200].k);
+  expect(got.weights.b).toBe(ROLE_DEFAULTS[1].b);
+  expect(got.weights.r).toBe(ROLE_DEFAULTS[1].r);
+  expect(got.weights.a).toBe(ALL_DEFAULTS.a);
+});
+
+// A champion in no table at all: every parameter is a default, and the two with no role pattern
+// come from ALL_DEFAULTS.
+test("weightsFor falls back to the role defaults for a champion in no table", () => {
+  const got = weightsFor({ baseTypeId: 999999, roleId: 0 });
+  expect(got.source).toBe("role default");
+  expect(got.fromDefaults).toEqual(["b", "r", "a", "s", "k"]);
+  expect(got.weights).toEqual({ ...ROLE_DEFAULTS[0], ...ALL_DEFAULTS });
+});
+
+// A fit determines some parameters and not others, and returns null for the rest. The null falls
+// through on its own while the four real values stand — which is the point of resolving per
+// parameter rather than picking one table.
+test("weightsFor falls back per parameter for a null in an otherwise fitted row", () => {
+  const got = weightsFor({ baseTypeId: 7200, roleId: 1 }, { 7200: { ...FITTED, s: null } });
+  expect(got.source).toBe("fitted");
+  expect(got.weights.b).toBe(FITTED.b);
+  expect(got.weights.s).toBe(BUILT_IN[7200].s);
+  expect(got.fromDefaults).toEqual([]);
+});
+
+// A weakly measured stat can come back zero or negative from least squares, and a broken fit can
+// come back NaN. None of those is a measurement, so each falls through exactly as the null does.
+test("weightsFor skips a fitted value that is not a finite positive number", () => {
+  for (const bad of [NaN, 0, -0.01, Infinity, undefined]) {
+    const got = weightsFor({ baseTypeId: 7200, roleId: 1 }, { 7200: { ...FITTED, s: bad } });
+    expect(got.weights.s, `fitted s = ${bad}`).toBe(BUILT_IN[7200].s);
   }
 });

@@ -50,3 +50,56 @@ export const ROLE_DEFAULTS = {
 // the measured champions. Between them these two tables cover all five parameters, which is what
 // lets weightsFor always return five positive weights.
 export const ALL_DEFAULTS = { a: 0.0387, k: 0.00154 };
+
+// --- resolving one champion's weights ----------------------------------------------------------
+
+// The five parameters in a fixed order, so `fromDefaults` reads the same way on every call.
+const PARAMS = ["b", "r", "a", "s", "k"];
+
+// A weight counts only when it is a finite number above zero. A least-squares fit returns null for
+// a parameter it could not determine, and can return a zero or a negative one for a stat it barely
+// saw; neither is plausible — every weight measured so far is positive — and a negative one would
+// break the solvers, which need non-negative weights. Applying the same test to BUILT_IN is what
+// makes a partial row like Helicath's fall through per parameter instead of yielding `undefined`.
+const measured = (v) => typeof v === "number" && Number.isFinite(v) && v > 0;
+
+// Each of the five parameters is resolved SEPARATELY down the chain, so a champion with one fitted
+// weight and a partial built-in row gets the best available value for each rather than one table
+// wholesale. `source` is the highest-priority table that supplied ANY parameter; `fromDefaults`
+// lists the parameters that fell all the way through to a default table.
+export function weightsFor({ baseTypeId, roleId }, fitted = {}) {
+  // Indexed RAW, never through Number(): the roleId comes off champion data with no NOT NULL
+  // guarantee, and Number(null) is 0, which would quietly grade a role-less champion as Attack.
+  const role = ROLE_DEFAULTS[roleId];
+  // Unconditional, even when a fitted or built-in row would supply all five. A roleId the defaults
+  // do not know is bad champion data, and answering anyway hides it until the first champion that
+  // actually needs the fallback arrives.
+  if (!role) {
+    throw new Error(`power-model: unknown roleId ${roleId}`
+      + ` — ROLE_DEFAULTS knows ${Object.keys(ROLE_DEFAULTS).join(", ")}`);
+  }
+  // Highest priority first. The last two both report as "role default": ALL_DEFAULTS is the role
+  // table's own fallback for the two parameters that showed no role pattern, not a tier a caller
+  // would ever distinguish.
+  const tiers = [
+    { source: "fitted", table: fitted?.[baseTypeId], isDefault: false },
+    { source: "built-in", table: BUILT_IN[baseTypeId], isDefault: false },
+    { source: "role default", table: role, isDefault: true },
+    { source: "role default", table: ALL_DEFAULTS, isDefault: true },
+  ];
+  const weights = {};
+  const fromDefaults = [];
+  // The last tier is the floor: ROLE_DEFAULTS + ALL_DEFAULTS cover all five parameters, so every
+  // parameter resolves and this index can only move toward a higher-priority tier.
+  let best = tiers.length - 1;
+  for (const name of PARAMS) {
+    for (let i = 0; i < tiers.length; i++) {
+      if (!measured(tiers[i].table?.[name])) continue;
+      weights[name] = tiers[i].table[name];
+      if (tiers[i].isDefault) fromDefaults.push(name);
+      if (i < best) best = i;
+      break;
+    }
+  }
+  return { weights, source: tiers[best].source, fromDefaults };
+}
