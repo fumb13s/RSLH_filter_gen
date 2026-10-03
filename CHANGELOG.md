@@ -7,6 +7,10 @@ Each entry carries a severity tag indicating its semver impact: `[major]`, `[min
 
 ## [Unreleased]
 
+### Added
+
+- [minor] Add `oracle/analytics/power-solve.mjs`: the gear assignment that maximizes a champion's in-game power, out of the whole vault. Power's crit term is a product of two build totals, so the solver freezes it at reference levels, solves exactly with `build-solve.mjs`, re-linearizes at the answer and iterates to a fixed point — then certifies the result with a McCormick upper bound, so the output says how far from the maximum it could be rather than claiming optimality. The gear already worn is always in the candidate pool, so the answer is never a downgrade (#45)
+
 ## [0.4.0] - 2026-10-03
 
 ### Added
