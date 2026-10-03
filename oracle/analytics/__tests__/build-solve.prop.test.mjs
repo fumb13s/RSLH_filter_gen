@@ -5,7 +5,7 @@
 // which is what stops the generator quietly narrowing until the property proves nothing.
 import { test, expect } from "vitest";
 import fc from "fast-check";
-import { SLOTS, buildIndex, solve } from "../build-solve.mjs";
+import { SLOTS, buildIndex, enumeratePlans, slotsSupplying, solve } from "../build-solve.mjs";
 
 // vitest.config.ts gives a test 10 s, or 120 s when FC_NUM_RUNS is set; the scheduled fuzz
 // workflow runs the whole suite at FC_NUM_RUNS=25000. Each test below carries an explicit 60 s
@@ -170,4 +170,50 @@ test("solve returns the same maximum as exhaustive search", () => {
     }),
     PARAMS,
   );
+}, 60_000);
+
+// A set is TIERED here if it pays at seven or eight pieces. Only the three nine-slot shapes do;
+// stack2 tops out at six and stack4 at four. Reading the shape back off the profile keeps this
+// check independent of how the generator happened to label it.
+const isTiered = (bonus) => bonus[8] > bonus[7] || bonus[7] > bonus[6];
+
+// The generator IS the test. When it narrows, nothing else here complains — which is how a
+// property file can come to draw four slots and one shape while claiming to prove a nine-slot
+// solver exact. So the states the property exists to cover are asserted reachable rather than
+// left to inspection.
+//
+// Unseeded and sampled wide on purpose: a fixed seed would make the floor below hostage to
+// fast-check changing how it generates between versions.
+//
+// Measured locally: 0.3 s, with 765 nine-slot, 396 four-set-plan, 454 five-active-set and 203
+// eight-slot-tiered instances out of 2,000. The rarest clears the floor below by roughly eight
+// standard deviations, so a passing run is not a near miss.
+test("the generator reaches every state the property is supposed to cover", () => {
+  const seen = { nineSlots: 0, fourSetPlan: 0, fiveActiveSets: 0, eightSlotTiered: 0 };
+  for (const { specs, bonusAt } of fc.sample(instance, 2000)) {
+    const items = specs.map((s, i) => mkItem(i + 1, s.slot, s.set, s.value));
+    const index = buildIndex(items, 0, valueOf);
+    if (index.size === SLOTS.length) seen.nineSlots++;
+    if (enumeratePlans(index, bonusAt).some((plan) => plan.length === 4)) seen.fourSetPlan++;
+    // "Active" is read off the BRUTE-FORCE optimum, not off solve's answer: the point is that the
+    // best build really does run past four active sets, which is the regime speed-solve.mjs
+    // cannot reach. Reading it off solve would make the check circular.
+    const counts = new Map();
+    for (const it of bruteForceBest(items, bonusAt).chosen) {
+      if (!it.set) continue;
+      counts.set(it.set, (counts.get(it.set) ?? 0) + 1);
+    }
+    let active = 0;
+    for (const [setId, n] of counts) if ((bonusAt.get(setId)?.[n] ?? 0) > 0) active++;
+    if (active >= 5) seen.fiveActiveSets++;
+    for (const [setId, bonus] of bonusAt) {
+      if (isTiered(bonus) && slotsSupplying(index, setId) >= 8) { seen.eightSlotTiered++; break; }
+    }
+  }
+  // More than 100 of 2,000, not "at least once": a state reached twice in 2,000 draws is not
+  // covered by the 300 instances the property above actually runs. At 5% each of these is hit a
+  // dozen times or more in a default run, and hundreds of times in a fuzz shard.
+  for (const [state, hits] of Object.entries(seen)) {
+    expect(hits, `${state} is generated too rarely to count as covered`).toBeGreaterThan(100);
+  }
 }, 60_000);
