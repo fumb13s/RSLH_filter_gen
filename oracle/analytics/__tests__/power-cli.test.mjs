@@ -15,9 +15,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, test } from "vitest";
-import { formatBreakdown, formatCertificate, formatGain, formatOffBest, formatProven, formatSets,
-  formatTotals, latestReading, mainCopies, parsePowerArgs, powerDir, readingsFor, readingsPath,
-  weightsPath } from "../power.mjs";
+import { formatBreakdown, formatCertificate, formatGain, formatGlyphGain, formatOffBest,
+  formatProven, formatSets, formatTotals, latestReading, mainCopies, parsePowerArgs, powerDir,
+  readingsFor, readingsPath, weightsPath } from "../power.mjs";
 import { STATS } from "../champion-stats.mjs";
 import { FORMAT, FORMAT_VERSION } from "../gestal.mjs";
 import { power as powerOf } from "../power-model.mjs";
@@ -405,6 +405,42 @@ test("formatGain handles a negative constant without losing the sign", () => {
 // read as "+0.0%" for a build that is in fact an infinite improvement.
 test("formatGain names a zero current rather than reporting a ratio for it", () => {
   expect(formatGain(0, 120, null)).toMatch(/gain unknown/);
+});
+
+// --- formatGlyphGain ------------------------------------------------------------
+
+// Measured against the plain BEST rather than against current: the question the block answers is
+// what glyphing the gear would add ON TOP of the best build the vault already allows, and the
+// gain over current is the line above it.
+//
+// The grade is printed through GLYPH_LABELS, never raw — a headline reading "WITH 5 GLYPHS" would
+// be read as a count of glyphs rather than as a star level.
+//   best (100 + 5)^2 = 11,025 · glyphed (120 + 5)^2 = 15,625 · gain 4,600
+test("formatGlyphGain reports power and the gain over BEST when the constant is known", () => {
+  expect(formatGlyphGain(100, 120, 5, "epic"))
+    .toBe("  WITH 6★ Epic GLYPHS  15625 power  (+4600 over BEST)");
+});
+
+// Same fallback as formatGain and for the same reason: power is (lin + c)^2, so without `c` every
+// absolute number is unavailable and only the ratio can be stated — computed at c = 0, where it
+// is an OVER-estimate, because a positive c raises both sides and shrinks it.
+//   (120 / 100)^2 - 1 = 0.44
+test("formatGlyphGain falls back to a percentage when the constant is unknown", () => {
+  expect(formatGlyphGain(100, 120, null, "legendary")).toBe(
+    "  WITH 6★ Legendary GLYPHS  ≈ +44.0% over BEST"
+    + " (per-copy constant unknown: log a reading or pass --power)");
+});
+
+// The 5★ grade's label is the one that must never print as a bare "5".
+test("formatGlyphGain labels the 5★ grade as a star level, not a number", () => {
+  expect(formatGlyphGain(100, 120, 5, "5")).toMatch(/^ {2}WITH 5★ GLYPHS {2}15625 power/);
+});
+
+// The guard formatGain carries, for the same reason: at bestLin = 0 the ratio would read "+0.0%"
+// for a lift that is in fact an infinite improvement. Unreachable for a real champion — BEST is a
+// real build and base stats alone put `lin` in the hundreds — so it is named rather than computed.
+test("formatGlyphGain names a zero BEST rather than reporting a ratio for it", () => {
+  expect(formatGlyphGain(0, 120, null, "epic")).toMatch(/gain unknown/);
 });
 
 // --- formatCertificate ----------------------------------------------------------

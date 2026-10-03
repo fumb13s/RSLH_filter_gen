@@ -41,7 +41,7 @@ import { STATS, statBreakdown } from "./champion-stats.mjs";
 import { isRealChamp, selectChamps, suggestNames } from "./champs.mjs";
 import { gestalChampRows, gestalChampStats, gestalItems, isGestalPath,
   readGestalSnapshot } from "./gestal.mjs";
-import { GLYPH_GRADES } from "./glyphs.mjs";
+import { GLYPH_GRADES, GLYPH_LABELS } from "./glyphs.mjs";
 import { fitWeights } from "./power-fit.mjs";
 import { constantFrom, lin, weightsFor } from "./power-model.mjs";
 import { buildTotals, solvePower, solvePowerExact } from "./power-solve.mjs";
@@ -278,6 +278,34 @@ export function formatGain(currentLin, bestLin, c) {
   }
   const pct = ((bestLin / currentLin) ** 2 - 1) * 100;
   return `  BEST  ≈ +${pct.toFixed(1)}%`
+    + " (per-copy constant unknown: log a reading or pass --power)";
+}
+
+// The glyph block's headline, measured against the PLAIN BEST rather than against current: the
+// question the block answers is what glyphing the gear would add on top of the best build the
+// vault already allows, and the gain over current is the line above it.
+//
+// The grade is printed through GLYPH_LABELS and never raw, because "WITH 5 GLYPHS" reads as a
+// count of glyphs rather than as the star level it is.
+//
+// Same two branches as formatGain, for the same reason: without `c` no absolute power exists and
+// the only honest thing left is the ratio at c = 0, an over-estimate.
+export function formatGlyphGain(bestLin, glyphLin, c, grade) {
+  const label = GLYPH_LABELS[grade];
+  if (c !== null) {
+    const glyph = powerOf(glyphLin, c);
+    return `  WITH ${label} GLYPHS  ${Math.round(glyph)} power`
+      + `  (+${Math.round(glyph - powerOf(bestLin, c))} over BEST)`;
+  }
+  // The guard formatGain carries, unreachable for the same reason: BEST is a real build, and base
+  // stats alone put `lin` in the hundreds. At bestLin = 0 the ratio would read "+0.0%" for a lift
+  // that is in fact an infinite improvement.
+  if (!(bestLin > 0)) {
+    return `  WITH ${label} GLYPHS  gain unknown (BEST scores zero and the per-copy constant is`
+      + " unknown: log a reading or pass --power)";
+  }
+  const pct = ((glyphLin / bestLin) ** 2 - 1) * 100;
+  return `  WITH ${label} GLYPHS  ≈ +${pct.toFixed(1)}% over BEST`
     + " (per-copy constant unknown: log a reading or pass --power)";
 }
 
