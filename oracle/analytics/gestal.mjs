@@ -194,6 +194,8 @@ export function gestalChampStats(snapshot) {
     const v2 = c.bonusesV2 ?? {};
     const who = `champion ${c.name} ${c.heroId}`;
     const from = (name) => bonusEntries(v2[name], `${name} bonus of ${who}`);
+    const observedSets = new Map();
+    for (const [key, value] of from("sets")) observedSets.set(key, (observedSets.get(key) ?? 0) + value);
     out.set(c.heroId, {
       base: { HP: b.hp, ATK: b.atk, DEF: b.def, SPD: b.spd,
         "C.RATE": b.crate, "C.DMG": b.cdmg, RES: b.res, ACC: b.acc },
@@ -201,6 +203,7 @@ export function gestalChampStats(snapshot) {
         mastery: from("mastery"), blessing: from("blessing"), relic: from("relic"),
         empower: from("empower"), factionGuardian: from("factionGuardian"),
       },
+      observedSets,
     });
   }
   return out;

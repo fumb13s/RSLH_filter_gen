@@ -158,3 +158,35 @@ test("every refusal ends in the adapter's standard advice", () => {
   expect(() => only({ bonusesV2: { relic: [{ statKindId: 9, isAbsolute: true, value: 1 }] } }))
     .toThrow(/— the adapter needs updating$/);
 });
+
+// --- observedSets -------------------------------------------------------------------
+//
+// The game's OWN set bonus for this copy's current gear, which a later power.mjs verify compares
+// against the set table. A Map rather than a list, so diffSetBonuses can read it directly.
+
+test("observedSets is a Map in the same key space as setBonusTotals", () => {
+  const sets = only().observedSets;
+  expect(sets).toBeInstanceOf(Map);
+  expect(Object.fromEntries(sets)).toEqual({ "ATK%": 15 });
+});
+
+// SPD% is the one key that reaches us from sets alone — no ITEM grants it, so it never appears in
+// the other four sources.
+test("observedSets carries SPD% from a set bonus", () => {
+  const spd = { bonusesV2: { sets: [{ statKindId: 4, isAbsolute: false, value: 0.12 }] } };
+  expect(Object.fromEntries(only(spd).observedSets)).toEqual({ "SPD%": 12 });
+});
+
+test("observedSets sums a key Gestal lists twice rather than keeping the last", () => {
+  const twice = { bonusesV2: { sets: [
+    { statKindId: 1, isAbsolute: false, value: 0.15 },
+    { statKindId: 1, isAbsolute: false, value: 0.08 },
+  ] } };
+  expect(Object.fromEntries(only(twice).observedSets)).toEqual({ "HP%": 23 });
+});
+
+test("observedSets is empty when the copy wears no set, and refuses an unknown shape", () => {
+  expect(only({ bonusesV2: { sets: null } }).observedSets.size).toBe(0);
+  expect(() => only({ bonusesV2: { sets: [{ statKindId: 9, isAbsolute: true, value: 1 }] } }))
+    .toThrow(/unknown Gestal stat kind 9 \(sets bonus of champion Elhain 100\)/);
+});
