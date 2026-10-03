@@ -7,6 +7,14 @@ Each entry carries a severity tag indicating its semver impact: `[major]`, `[min
 
 ## [Unreleased]
 
+### Added
+
+- [minor] Add `oracle/analytics/set-bonuses.mjs`: every artifact set's bonus for every stat, generated from Gestal Desktop's set catalogue and verified against the game's own per-champion set bonuses for all 532 geared champions on a 2026-09-29 capture. `speed-sets.mjs` is now the SPD-only view of it rather than a second hand-typed table (#41)
+
+### Fixed
+
+- [patch] Correct the set-bonus values `speed.mjs` solves against: Deflection, Feral, Pinpoint, Rebirth and Chronophage grant their first SPD tier at two pieces rather than three, and Killstroke (+5% SPD per 2-piece completion) was missing from the table entirely. Builds using any of those six sets were under-valued (#41)
+
 ## [0.3.0] - 2026-10-03
 
 ### Added
