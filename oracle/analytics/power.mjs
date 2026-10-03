@@ -487,13 +487,20 @@ function printCopy(row, { items, rows, statsById, fitted, readings, args }) {
   const result = solvePower({ items, faction: row.Fraction, champStats, current, weights,
     top: args.top });
   // builds[0] always exists: solvePower records the worn gear as round 0 before it iterates.
-  const [best] = result.builds;
+  const [best, ...rest] = result.builds;
   // One wearer map per copy, shared by every build printed for it, because --top draws them all
   // from the same vault-wide pool.
   const wearers = otherWearers(items, row.ID, rows);
   console.log(`\n${formatGain(currentLin, best.lin, c)}`);
   printBuild(best, wearers);
   console.log(formatCertificate(result, best.lin, c));
+
+  // The runners-up, each measured against BEST rather than against current: BEST is what a reader
+  // compares them with when deciding whether one is worth its lower power.
+  rest.forEach((build, i) => {
+    console.log(`\n${formatOffBest(i + 2, build, best, c)}`);
+    printBuild(build, wearers);
+  });
 }
 
 function runSolve(args) {

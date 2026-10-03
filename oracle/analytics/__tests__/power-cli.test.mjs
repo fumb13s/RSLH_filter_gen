@@ -814,3 +814,36 @@ test("solve still reports a champion with no gear and an empty vault", () => {
   expect(res.stdout).toMatch(/^ {2}BEST /m);
   expect(res.stdout).toMatch(/below the true maximum/);
 });
+
+// --- solve: --top ----------------------------------------------------------------
+
+// Two sets over three slots gives the solver more than one plan to rank: {}, {Critical Rate: 2} and
+// {Crit Damage: 2} all reach a different set of items. A runner-up that costs little power but
+// frees three pieces of a set is visible rather than discarded.
+//
+// These are the best DISTINCT SETS OF ITEMS the iteration saw, not a proved top-N — power-solve is
+// explicit about that and neither is this report.
+test("--top 2 adds a numbered runner-up block measured against BEST", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR }), "--top", "2"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {2}#2 {2}\(-?[\d.]+ √power off BEST\)$/m);
+  // The runner-up gets the same per-build detail as BEST, so it can be acted on directly.
+  expect(res.stdout.match(/^ {4}sets: /gm)).toHaveLength(2);
+});
+
+// The runner-up's distance has to be in the SAME unit as the certificate line, or the two numbers
+// on one report cannot be compared.
+test("--top states the runner-up's distance in power once the constant is known", () => {
+  const dir = powerOut({ readings: [READING] });
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR }), "--top", "2"], { powerDir: dir });
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {2}#2 {2}\(-?\d+ power off BEST\)$/m);
+});
+
+// The default is one build, so an ordinary run is not made longer by a feature it did not ask for.
+test("solve prints only BEST without --top", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR })]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).not.toMatch(/off BEST/);
+  expect(res.stdout.match(/^ {4}sets: /gm)).toHaveLength(1);
+});
