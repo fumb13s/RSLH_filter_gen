@@ -150,10 +150,11 @@ export function fitWeights(readings) {
   }
 
   // In input order, so a caller can line a residual up with the reading it came from.
-  const residuals = readings.map((r) => ({
-    heroId: r.heroId, t: r.t, power: r.power,
-    predicted: power(r.totals, params, constants.get(r.heroId)),
-  }));
+  const residuals = readings.map((r) => {
+    const predicted = power(r.totals, params, constants.get(r.heroId));
+    return { heroId: r.heroId, t: r.t, power: r.power, predicted,
+      errorPct: ((predicted - r.power) / r.power) * 100 };
+  });
 
   return { params, constants, undetermined, residuals };
 }

@@ -142,3 +142,20 @@ test("residuals come back one per reading, in input order, rebuilt from the retu
     expect(close(res.predicted, readings[i].power)).toBeLessThan(1e-9);
   });
 });
+
+// The sign convention, pinned by the one case where it is visible. One reading's power is raised
+// 5%; sixteen readings against seven unknowns cannot chase a single observation, so the fit lands
+// BELOW it — predicted < observed, and errorPct = (predicted - power) / power is negative. A
+// flipped subtraction passes every exact-fit test and fails only here.
+test("errorPct goes negative for a reading whose power was raised above the fit", () => {
+  const readings = [...copy(11, W, C11), ...copy(22, W, C22, OVER_22)];
+  const bumped = readings.map((r, i) => (i === 0 ? { ...r, power: r.power * 1.05 } : r));
+  const fit = fitWeights(bumped);
+  expect(fit.residuals[0].errorPct).toBeLessThan(0);
+});
+
+// And it is ~0 everywhere when the readings came out of the formula unaltered.
+test("errorPct is about zero across an exactly solvable fit", () => {
+  const fit = fitWeights([...copy(11, W, C11), ...copy(22, W, C22, OVER_22)]);
+  for (const res of fit.residuals) expect(Math.abs(res.errorPct)).toBeLessThan(1e-6);
+});
