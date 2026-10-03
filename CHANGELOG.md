@@ -7,6 +7,15 @@ Each entry carries a severity tag indicating its semver impact: `[major]`, `[min
 
 ## [Unreleased]
 
+### Added
+
+- [minor] Read Gestal Desktop snapshots alongside RSL Helper ones, so `oracle/analytics` runs on a Mac, where RSL Helper does not: `refresh-gestal.mjs` freezes Gestal's gear, roster and stat documents into a dated `resources/<date>-Gestal.json.gz` without the account key or player id, and every tool reads it as it reads a `.db` snapshot. A Gestal snapshot carries no champion speed, so `speed.mjs` needs `--constant` on one (#39)
+- [minor] Add `cross-check.mjs`: compare an RSL Helper snapshot with a Gestal one record by record — gear, champions and who wears what — and exit 1 on any difference it cannot explain (#39)
+
+### Changed
+
+- [patch] Pick the default snapshot in one place, `oracle/analytics/snapshots.mjs`, instead of seven per-tool copies; Gestal captures are candidates too, and on a same-date tie the Gestal capture wins (#39)
+
 ## [0.2.0] - 2026-09-30
 
 ### Added
