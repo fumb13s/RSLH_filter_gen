@@ -3,14 +3,17 @@
 Decodes a vault snapshot — `../resources/*-RSLHelper.db` from RSL Helper, or `*-Gestal.json.gz` from
 Gestal Desktop — and rates the gear in it — vault-wide (`analyze.mjs`) or one champion's worn gear at
 a time (`champion-gear.mjs`).
-Design + rationale: `DESIGN.md`. Advisory only: `analyze.mjs` writes its reports to `out/`, and
-`champion-gear.mjs` and `speed.mjs` only print. None of them writes to a snapshot or to the game's
-own database, and nothing is ever deleted.
+Design + rationale: `DESIGN.md`. Advisory only: `analyze.mjs` writes its reports to `out/`,
+`power.mjs` writes its power readings and fitted weights to `out/`, and `champion-gear.mjs` and
+`speed.mjs` only print. None of them writes to a snapshot or to the game's own database, and nothing
+is ever deleted.
 
 ## Snapshots
 
-Every tool reads either kind. Given no snapshot argument, a tool takes the newest dated one in
-`../resources/` — on a same-date tie, the Gestal one, whose record of who wears what is current.
+Every tool reads either kind, except `power.mjs`, which reads Gestal snapshots only — the champion
+stat model needs each copy's base stats and its per-source bonus breakdown, and an RSL Helper DB
+carries neither. Given no snapshot argument, a tool takes the newest dated one in `../resources/` —
+on a same-date tie, the Gestal one, whose record of who wears what is current.
 
 - **RSL Helper (Windows):** `./oracle/analytics/refresh.sh` copies the live `*_RSLHelper.db` to
   `resources/<date>-RSLHelper.db`.
@@ -125,6 +128,53 @@ Every tool reads either kind. Given no snapshot argument, a tool takes the newes
 
    Advisory and strictly read-only: both reads open read-only, nothing is written, and a mistyped
    path fails rather than creating an empty database.
+6. Highest-power build for one champion:
+   `node --experimental-sqlite oracle/analytics/power.mjs <name|ID> [snapshot.json.gz] [--power N] [--top N]`
+   `node --experimental-sqlite oracle/analytics/power.mjs log <name|ID> <in-game power>`
+   `node --experimental-sqlite oracle/analytics/power.mjs fit <name|ID>`
+   `node --experimental-sqlite oracle/analytics/power.mjs verify [snapshot.json.gz]`
+
+   **Gestal snapshots only.** The champion stat model needs each copy's base stats and its
+   per-source bonus breakdown, and an RSL Helper DB carries neither, so a `.db` path is refused
+   rather than half-read. One copy per champion is reported — the most invested one — unless an
+   all-digit selector names an exact copy.
+
+   The formula, reverse-engineered from about 50 in-game readings:
+   `sqrt(power) = b*(HP/15 + ATK + DEF) + r*RES + a*ACC + s*SPD + k*C.RATE*(100 + C.DMG) + c`.
+
+   Each of the five weights is resolved separately, best source first: a **fitted** row for this
+   champion (from `fit`, below), then the **built-in** table of champions already measured, then the
+   **role defaults**. The header names the source, and `approximate: …` lists the parameters that
+   fell through to a default — those are the ones a `fit` would improve. `c` is a property of the
+   **copy**, not the champion, and no gear change moves it.
+
+   **Calibration.** After each in-game power check, `power.mjs log <name> <power>` records the
+   reading against the copy's live stats; once a champion has a few, `power.mjs fit <name>` fits its
+   weights and writes them for `solve` to prefer. `log` is the one exception to reading snapshots —
+   it reads Gestal's live documents, so Gestal must be attached to a running Raid; stale data only
+   produces a warning, since the reader is looking at the screen and can tell. The log line it
+   writes is itself the frozen record, which is why no snapshot is taken.
+
+   `--power N` gives the copy's power right now, which measures `c` without a logged reading and
+   overrides one; it takes exactly one champion, because an in-game reading belongs to one copy.
+   Without either, no absolute power can be printed and the gain is reported as a marked ratio.
+
+   Every build closes with a **certificate**: `at most X below the true maximum`. The solver
+   linearizes the crit product, solves exactly and iterates to a fixed point, so the answer is not
+   proved optimal — the certificate is a proven *ceiling* on what is still left on the table, from a
+   McCormick upper bound over every assignment of the vault. A wide gap means this champion's crit
+   range is too broad for the linearization. `--top N` prints the N best builds seen, each measured
+   against BEST in the same unit as the certificate.
+
+   `power.mjs verify` checks the set table against the game's own per-champion set bonuses on a
+   fresh capture and exits 1 on any mismatch. The set table is game data and will drift on a patch;
+   this is the guard.
+
+   Two files live in `out/`, which is gitignored because both are personal account data:
+   `power-readings.jsonl` (one logged reading per line) and `power-weights.json` (the fitted weights,
+   per champion). `$RSLH_POWER_DIR` relocates both.
+
+   Design: `docs/plans/2026-10-03-champion-power-design.md`.
 
 ### Reading a champion report
 
