@@ -10,7 +10,8 @@
 // and append to the developer's real oracle/analytics/out/ — a test that pollutes a personal
 // reading log, and one whose own assertions would depend on whatever is already in it.
 import { expect, test } from "vitest";
-import { mainCopies, parsePowerArgs } from "../power.mjs";
+import { formatBreakdown, formatTotals, mainCopies, parsePowerArgs } from "../power.mjs";
+import { STATS } from "../champion-stats.mjs";
 
 // --- parsePowerArgs: modes and positionals ------------------------------------
 
@@ -202,4 +203,69 @@ test("mainCopies returns the exact copy for an all-digit selector, spare or not"
 
 test("mainCopies returns nothing when the selector matches nothing", () => {
   expect(mainCopies([copyRow()], statsOf({}), [], "Kael")).toEqual([]);
+});
+
+// --- formatBreakdown ------------------------------------------------------------
+//
+// The grid is read back by SLICING fixed-width fields rather than by splitting on whitespace: a
+// blank cell is the thing being tested, and splitting would collapse it into its neighbours. The
+// widths are re-derived here rather than imported, so a change to the layout fails this test —
+// which is the point, the widths ARE the contract.
+const LABEL_W = 18, CELL_W = 8;
+const fields = (line) => {
+  const body = line.slice(2);
+  return [body.slice(0, LABEL_W).trim(),
+    ...STATS.map((_, i) => body.slice(LABEL_W + i * CELL_W, LABEL_W + (i + 1) * CELL_W).trim())];
+};
+
+const vec = (o = {}) => ({ ...Object.fromEntries(STATS.map((s) => [s, 0])), ...o });
+
+test("formatBreakdown heads the grid with the eight stats in the screen's order", () => {
+  const lines = formatBreakdown({ columns: [], totals: vec() }).split("\n");
+  expect(fields(lines[0])).toEqual(["", ...STATS]);
+});
+
+// One row per source, in whatever order the breakdown gives them, then Total. A zero is left BLANK
+// rather than printed: most sources touch two or three stats, and a grid of 80 cells with seventy
+// zeroes in it hides the handful that matter.
+test("formatBreakdown prints one row per column, then Total, blanking the zeroes", () => {
+  const breakdown = {
+    columns: [["Basic", vec({ HP: 15000, ATK: 1000, DEF: 900, SPD: 100, "C.RATE": 15, "C.DMG": 50, RES: 30 })],
+      ["Artifacts", vec({ "C.RATE": 12, "C.DMG": 30 })]],
+    totals: vec({ HP: 15000, ATK: 1000, DEF: 900, SPD: 100, "C.RATE": 27, "C.DMG": 80, RES: 30 }),
+  };
+  const lines = formatBreakdown(breakdown).split("\n");
+  expect(fields(lines[1]))
+    .toEqual(["Basic", "15000", "1000", "900", "100", "15", "50", "30", ""]);
+  expect(fields(lines[2])).toEqual(["Artifacts", "", "", "", "", "12", "30", "", ""]);
+  expect(fields(lines[3]))
+    .toEqual(["Total", "15000", "1000", "900", "100", "27", "80", "30", ""]);
+  expect(lines).toHaveLength(4);
+});
+
+// Column vectors are unrounded on purpose (champion-stats.mjs rounds each column once and then
+// sums). Printing one unrounded would leave a column that does not add up to the Total beneath it.
+test("formatBreakdown rounds each cell, as the game's screen does", () => {
+  const lines = formatBreakdown({
+    columns: [["Classic Arena", vec({ HP: 3300.4, ATK: 220.6 })]], totals: vec({ HP: 3300 }),
+  }).split("\n");
+  expect(fields(lines[1])).toEqual(["Classic Arena", "3300", "221", "", "", "", "", "", ""]);
+});
+
+// Faction Guardians is the longest label the stat model produces, at 17 characters, so the label
+// column has to hold it without pushing the grid out of alignment.
+test("formatBreakdown keeps the grid aligned under the longest source label", () => {
+  const lines = formatBreakdown({
+    columns: [["Faction Guardians", vec({ HP: 2000 })]], totals: vec({ HP: 2000 }),
+  }).split("\n");
+  expect(fields(lines[1])[0]).toBe("Faction Guardians");
+  expect(fields(lines[1])[1]).toBe("2000");
+});
+
+// --- formatTotals ---------------------------------------------------------------
+
+// One line rather than a grid: a build's totals are printed per build, and --top prints several.
+test("formatTotals names every stat with its rounded value on one line", () => {
+  expect(formatTotals(vec({ HP: 42000.4, ATK: 2100, SPD: 240, "C.RATE": 100, "C.DMG": 220 })))
+    .toBe("    totals: HP 42000  ATK 2100  DEF 0  SPD 240  C.RATE 100  C.DMG 220  RES 0  ACC 0");
 });

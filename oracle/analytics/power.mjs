@@ -30,6 +30,7 @@
 // Advisory only for the game: nothing is written to a snapshot, to Gestal's folder or to the
 // game's own database. `log` and `fit` write to out/, which is personal account data and
 // gitignored.
+import { STATS } from "./champion-stats.mjs";
 import { selectChamps } from "./champs.mjs";
 import { isSnapshotArg } from "./snapshots.mjs";
 
@@ -149,4 +150,43 @@ export function mainCopies(rows, statsById, items, selector) {
     if (!held || compareInvestment(row, held, awakenOf, items) < 0) best.set(row.BaseHeroID, row);
   }
   return [...best.values()].sort((a, b) => a.ID - b.ID);
+}
+
+// --- the game's Total Stats screen ----------------------------------------------
+
+// Wide enough for "Faction Guardians", the longest label the stat model produces.
+const LABEL_WIDTH = 18;
+// Wide enough for a six-digit HP total and for the "C.RATE" heading, with a space between columns.
+const CELL_WIDTH = 8;
+
+// One cell. ROUNDED, because that is what the game shows and what statBreakdown's own totals are
+// summed from — a column printed unrounded would not add up to the Total row beneath it. A zero is
+// BLANK rather than printed: most sources touch two or three stats, and a grid of eighty cells with
+// seventy zeroes in it hides the handful that matter.
+const cell = (value) => {
+  const n = Math.round(value);
+  return (n === 0 ? "" : String(n)).padStart(CELL_WIDTH);
+};
+
+const gridRow = (label, vector) =>
+  `  ${label.padEnd(LABEL_WIDTH)}${STATS.map((stat) => cell(vector[stat])).join("")}`;
+
+// The game's Total Stats screen: one row per source, one column per stat, then the totals. The
+// source rows come out in whatever order statBreakdown gives them, which is the screen's own order
+// (Basic, Artifacts, Affinity, Classic Arena, Masteries, Faction Guardians, Empowerment, Blessing,
+// Relic) — so the layout is the stat model's to change, not this printer's.
+export function formatBreakdown(breakdown) {
+  const lines = [`  ${"".padEnd(LABEL_WIDTH)}${STATS.map((s) => s.padStart(CELL_WIDTH)).join("")}`];
+  for (const [label, vector] of breakdown.columns) lines.push(gridRow(label, vector));
+  lines.push(gridRow("Total", breakdown.totals));
+  return lines.join("\n");
+}
+
+// One build's totals on a single line. A grid per build would be eleven lines each, and --top asks
+// for several builds at once; what a reader compares between them is the eight numbers.
+//
+// Every stat is named, zeroes included, unlike the grid above: on one line there is nothing for a
+// zero to hide among, and a missing stat would read as a stat the model does not carry.
+export function formatTotals(totals) {
+  return `    totals: ${STATS.map((s) => `${s} ${Math.round(totals[s])}`).join("  ")}`;
 }
