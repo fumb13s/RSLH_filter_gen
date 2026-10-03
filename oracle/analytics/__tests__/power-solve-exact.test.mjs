@@ -5,7 +5,7 @@
 // case where the default mode converges to a fixed point that is NOT the optimum. The claim
 // itself — equality with an exhaustive search — is power-solve-exact.prop.test.mjs's job.
 import { test, expect } from "vitest";
-import { buildTotals, nonCritWeights, solvePowerExact } from "../power-solve.mjs";
+import { buildTotals, nonCritWeights, solvePower, solvePowerExact } from "../power-solve.mjs";
 import { STATS } from "../champion-stats.mjs";
 import { lin } from "../power-model.mjs";
 
@@ -20,8 +20,12 @@ const item = (o = {}) => ({
 // Our item stat ids (STAT_NAMES order): 4 SPD, 5 C.RATE, 6 C.DMG. ids 4-8 are POINTS whatever
 // `isFlat` says — champion-stats.mjs's ITEM_KEY ignores it for them — so only 1-3 (HP/ATK/DEF)
 // read it at all.
+const spd = (id, slot, value) =>
+  item({ id, slot, mainStat: { statId: 4, isFlat: true, value } });
 const crate = (id, slot, value) =>
   item({ id, slot, mainStat: { statId: 5, isFlat: false, value } });
+const cdmg = (id, slot, value) =>
+  item({ id, slot, mainStat: { statId: 6, isFlat: false, value } });
 
 // Zero on every stat. base MUST carry HP, ATK and DEF as numbers: GREAT_HALL and ARENA both hold
 // "HP%"/"ATK%"/"DEF%" keys, and contribution would turn a missing one into NaN.
@@ -206,4 +210,73 @@ test("plansTotal counts every plan build-solve enumerates, the empty one include
 test("the per-plan bound rules out a plan the incumbent already beats", () => {
   const got = solvePowerExact(SETS_ARGS);
   expect(got.plansPruned).toBeGreaterThanOrEqual(1);
+});
+
+// The optimum here is MIXED — two Critical Rate and one Crit Damage, at 9,620 — and neither the
+// worn three-of-a-kind (9,000) nor either single-set plan reaches it. A search that scored leaves
+// on their PLAN rather than on their actual set counts would miss the +12 the two Critical Rate
+// pieces earn when the third slot went elsewhere, and would answer 9,000 while looking healthy.
+test("the exact search scores leaves on their actual set counts", () => {
+  const got = solvePowerExact(SETS_ARGS);
+  expect(got.build.items.map((it) => it.id).sort((a, b) => a - b)).toEqual([1, 3, 6]);
+  expect(got.build.lin).toBeCloseTo(9620, 6);
+  expect(got.build.lin).toBeGreaterThan(solvePower(SETS_ARGS).builds[0].lin);
+});
+
+// --- solvePowerExact: a fixed point that is not the optimum ------------------------------------
+
+// SPD AND CRIT, because a crit-only pool cannot produce this case at all. Write
+// f(CR, CD) = k * CR * (100 + CD); then f(Q) = tangent_P(Q) + k * dCR * dCD, and a fixed point
+// means tangent_P(Q) <= f(P) for every Q, so beating P needs dCR * dCD > 0 — both totals up,
+// which positive linear weights would already have preferred, or both down, which makes both
+// factors smaller. Either way impossible. The gap opens only once a NON-CRIT weight is in play,
+// because then a build can buy crit on BOTH axes by giving up non-crit value, which the
+// linearization at a low-crit reference prices at almost nothing.
+const SPD_AND_CRIT = { b: 0, r: 0, a: 0, s: 1, k: 1 };
+
+// Two slots. Each offers a pure-SPD piece or a pure-crit one, and nothing in between. Non-gear
+// crit is the Great Hall's C.DMG 25; non-gear SPD is zero. lin = SPD + C.RATE * (100 + C.DMG).
+//
+//   worn  {1, 3}  SPD 210, C.RATE 0, C.DMG  25   true 210 +   0 * 125 =   210
+//         {1, 4}  SPD 200, C.RATE 0, C.DMG 325   true 200 +   0 * 425 =   200
+//         {2, 3}  SPD  10, C.RATE 1, C.DMG  25   true  10 +   1 * 125 =   135
+//   best  {2, 4}  SPD   0, C.RATE 1, C.DMG 325   true   0 +   1 * 425 =   425
+//
+// Round 1 linearizes at the worn build's own crit, (C.RATE 0, C.DMG 25), which prices SPD at 1,
+// C.RATE at k * (100 + 25) = 125 and C.DMG at k * C.RATE = 0 — the champion has no crit rate, so
+// crit damage is worth literally nothing to it:
+//
+//   slot 1   SPD 200 -> 200   vs   C.RATE 1 -> 125     keeps the SPD piece
+//   slot 2   SPD  10 ->  10   vs   C.DMG 300 ->   0    keeps the SPD piece
+//
+// so round 1 returns the worn build itself: a FIXED POINT, at 210 against a true optimum of 425.
+const TRAP = [spd(1, 1, 200), crate(2, 1, 1), spd(3, 2, 10), cdmg(4, 2, 300)];
+const TRAP_ARGS = {
+  items: TRAP, faction: 0, champStats: champStats(),
+  current: [TRAP[0], TRAP[2]], weights: SPD_AND_CRIT,
+};
+
+// The fixture is only a trap while solvePower really does converge on it. Pinned here, so a
+// change to the default mode that escapes this pool fails THIS test rather than quietly turning
+// the one below into a test of nothing.
+test("solvePower converges to this pool's fixed point, which is not its optimum", () => {
+  const got = solvePower(TRAP_ARGS);
+  expect(got.converged).toBe(true);
+  expect(got.rounds).toBe(1);
+  expect(got.builds[0].items.map((it) => it.id).sort((a, b) => a - b)).toEqual([1, 3]);
+  expect(got.builds[0].lin).toBeCloseTo(210, 6);
+});
+
+test("the exact search finds the build the fixed point missed", () => {
+  const got = solvePowerExact(TRAP_ARGS);
+  expect(got.build.items.map((it) => it.id).sort((a, b) => a - b)).toEqual([2, 4]);
+  expect(got.build.lin).toBeCloseTo(425, 6);
+  expect(got.provenOptimal).toBe(true);
+});
+
+// Stated as a comparison rather than as two numbers, because that is the claim the mode exists to
+// make: whatever the default mode found, the exact search is never below it.
+test("the exact answer beats the default mode's on the same pool", () => {
+  expect(solvePowerExact(TRAP_ARGS).build.lin)
+    .toBeGreaterThan(solvePower(TRAP_ARGS).builds[0].lin);
 });
