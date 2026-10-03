@@ -1,6 +1,6 @@
 // oracle/analytics/__tests__/power-model.test.mjs
 import { test, expect } from "vitest";
-import { constantFrom, lin, power } from "../power-model.mjs";
+import { ALL_DEFAULTS, BUILT_IN, constantFrom, lin, power, ROLE_DEFAULTS } from "../power-model.mjs";
 
 // The game's Total Stats, every source included. C.RATE and C.DMG are percentage POINTS.
 const totals = (o = {}) => ({
@@ -56,4 +56,60 @@ test("constantFrom recovers the c that reproduces an observed power", () => {
   const observed = 123456;
   const c = constantFrom(totals(), W, observed);
   expect(Math.abs(power(totals(), W, c) / observed - 1)).toBeLessThan(1e-12);
+});
+
+// --- the weight tables -------------------------------------------------------------------------
+
+const PARAMS = ["b", "r", "a", "s", "k"];
+
+// The invariant weightsFor leans on: between them these two tables supply all five parameters, so
+// the fallback chain always terminates in five positive weights however little is known about a
+// champion. Lose this and weightsFor starts returning undefined weights, which lin turns into NaN.
+test("ROLE_DEFAULTS and ALL_DEFAULTS together cover all five parameters for every role", () => {
+  expect(Object.keys(ROLE_DEFAULTS).sort()).toEqual(["0", "1", "2", "3"]);
+  for (const roleId of Object.keys(ROLE_DEFAULTS)) {
+    for (const name of PARAMS) {
+      const v = ROLE_DEFAULTS[roleId][name] ?? ALL_DEFAULTS[name];
+      expect(Number.isFinite(v) && v > 0).toBe(true);
+    }
+  }
+});
+
+// Every weight measured so far is positive, and the solvers that will consume them need
+// non-negative weights. A zero or a negative in a committed table would be a transcription slip.
+test("every weight in every table is a finite positive number", () => {
+  const tables = [...Object.values(BUILT_IN), ...Object.values(ROLE_DEFAULTS), ALL_DEFAULTS];
+  for (const table of tables) {
+    for (const name of PARAMS) {
+      if (table[name] === undefined) continue;   // partial rows are legitimate; see Helicath
+      expect(Number.isFinite(table[name]) && table[name] > 0).toBe(true);
+    }
+  }
+});
+
+// A BUILT_IN row whose roleId the defaults do not know could never be filled in, and weightsFor
+// would throw for a champion we have actually measured.
+test("every BUILT_IN roleId is a key of ROLE_DEFAULTS", () => {
+  for (const [id, row] of Object.entries(BUILT_IN)) {
+    expect(ROLE_DEFAULTS[row.roleId], `baseTypeId ${id}`).toBeDefined();
+  }
+});
+
+// Helicath's b, r and a were never measured. The built-in precedence test below depends on their
+// being ABSENT rather than guessed, so pin that rather than let a later edit quietly fill them.
+test("Helicath's BUILT_IN row is partial: s and k only", () => {
+  expect(BUILT_IN[7200].s).toBeGreaterThan(0);
+  expect(BUILT_IN[7200].k).toBeGreaterThan(0);
+  expect(BUILT_IN[7200].b).toBeUndefined();
+  expect(BUILT_IN[7200].r).toBeUndefined();
+  expect(BUILT_IN[7200].a).toBeUndefined();
+});
+
+// The one role pattern the measurements showed: b and r split Defense (roleId 1) from the other
+// three, which is the whole reason ROLE_DEFAULTS is keyed by role at all.
+test("the Defense role defaults carry a higher b and a lower r than every other role", () => {
+  for (const roleId of [0, 2, 3]) {
+    expect(ROLE_DEFAULTS[1].b).toBeGreaterThan(ROLE_DEFAULTS[roleId].b);
+    expect(ROLE_DEFAULTS[1].r).toBeLessThan(ROLE_DEFAULTS[roleId].r);
+  }
 });
