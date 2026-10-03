@@ -153,6 +153,23 @@ export function unlistedWearers(snapshot, items = gestalItems(snapshot)) {
   return [...new Set(items.map((it) => it.equippedChampId).filter((id) => id && !listed.has(id)))];
 }
 
+// Gestal's per-champion stat records, keyed by heroId: the champion stat model's input. Unlike
+// gestalChampRows this covers the ROSTER DOCUMENT ONLY — a wearer the roster omits has no
+// baseStats to report, so it gets no entry here, and the two can legitimately disagree on
+// membership.
+export function gestalChampStats(snapshot) {
+  const out = new Map();
+  for (const c of snapshot.documents.champions.payload.champions) {
+    const b = c.baseStats;
+    if (!b) throw new Error(`champion ${c.name} ${c.heroId} has no baseStats — the adapter needs updating`);
+    out.set(c.heroId, {
+      base: { HP: b.hp, ATK: b.atk, DEF: b.def, SPD: b.spd,
+        "C.RATE": b.crate, "C.DMG": b.cdmg, RES: b.res, ACC: b.acc },
+    });
+  }
+  return out;
+}
+
 // Throws unless `doc` is a Gestal document this adapter has been verified against.
 export function checkDocument(name, doc) {
   const spec = DOCUMENTS[name];
