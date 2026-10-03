@@ -1,6 +1,6 @@
 // oracle/analytics/__tests__/power-model.test.mjs
 import { test, expect } from "vitest";
-import { lin } from "../power-model.mjs";
+import { constantFrom, lin, power } from "../power-model.mjs";
 
 // The game's Total Stats, every source included. C.RATE and C.DMG are percentage POINTS.
 const totals = (o = {}) => ({
@@ -39,4 +39,21 @@ test("lin's crit term is k x C.RATE x (100 + C.DMG)", () => {
   expect(lin(crit(60, 0), onlyK)).toBeCloseTo(6, 10);      // 0.001 * 60 * 100
   expect(lin(crit(60, 150), onlyK)).toBeCloseTo(15, 10);   // 0.001 * 60 * 250
   expect(lin(crit(0, 150), onlyK)).toBe(0);
+});
+
+// --- power and the copy constant ---------------------------------------------------------------
+
+// Power is the SQUARE of the linear part plus the copy's constant. lin(totals(), W) is 95.5, so a
+// constant of 4.5 makes the whole bracket 100 and the power exactly 10000.
+test("power squares the linear part plus the copy constant", () => {
+  expect(power(totals(), W, 4.5)).toBeCloseTo(10000, 6);
+});
+
+// The round trip the calibrator relies on: a constant measured off one reading reproduces that
+// reading's power. Compared RELATIVELY — an absolute tolerance on a five-digit power is a tolerance
+// on the fourteenth significant digit.
+test("constantFrom recovers the c that reproduces an observed power", () => {
+  const observed = 123456;
+  const c = constantFrom(totals(), W, observed);
+  expect(Math.abs(power(totals(), W, c) / observed - 1)).toBeLessThan(1e-12);
 });
