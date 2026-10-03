@@ -847,3 +847,66 @@ test("solve prints only BEST without --top", () => {
   expect(res.stdout).not.toMatch(/off BEST/);
   expect(res.stdout.match(/^ {4}sets: /gm)).toHaveLength(1);
 });
+
+// --- verify ----------------------------------------------------------------------
+//
+// The set table is GAME DATA and will drift on a patch. verify is the guard: it diffs the table
+// against the game's OWN per-champion set bonus, which Gestal captures as bonusesV2.sets.
+//
+// Two worn Critical Rate pieces are one 2-piece completion, +12 C.RATE. Gestal reports a relative
+// C.RATE under statKindId 7 as the FRACTION 0.12, which the adapter scales to the 12 points the
+// screen shows. Lore of Steel is off in the fixture, and the table is multiplier-free, so the two
+// numbers have to agree exactly.
+const WORN_PAIR = [
+  piece({ id: 1, slot: G_WEAPON, gearSetId: CR_SET, equippedOnHeroId: 100 }),
+  piece({ id: 2, slot: G_HELMET, gearSetId: CR_SET, equippedOnHeroId: 100 }),
+];
+const critRateSets = (value) => ({
+  bonusesV2: { sets: [{ statKindId: 7, isAbsolute: false, value }],
+    mastery: [], blessing: [], relic: [], empower: [], factionGuardian: [] },
+});
+
+test("verify reports every geared champion matching and exits 0", () => {
+  const snap = snapshotFile({ artifacts: WORN_PAIR, champions: [champion(critRateSets(0.12))] });
+  const res = run(["verify", snap]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout)
+    .toMatch(/^set table matches the game's set bonuses for 1 of 1 geared champions$/m);
+});
+
+// The whole point of the check: a disagreement is named, with the champion, the sets it is wearing
+// and both numbers, and the exit code makes it a failure rather than a note.
+test("verify names a mismatching champion and exits 1", () => {
+  const snap = snapshotFile({ artifacts: WORN_PAIR, champions: [champion(critRateSets(0.2))] });
+  const res = run(["verify", snap]);
+  expect(res.status).toBe(1);
+  expect(res.stdout)
+    .toMatch(/^set table matches the game's set bonuses for 0 of 1 geared champions$/m);
+  expect(res.stdout).toMatch(/Elhain #100 {2}Critical Rate x2/);
+  expect(res.stdout).toMatch(/^ {4}C\.RATE: table 12 vs game 20$/m);
+});
+
+// A champion wearing nothing has no set bonus to check, and counting it as a match would inflate
+// the denominator with champions the check never looked at.
+test("verify counts only the champions wearing something", () => {
+  const champions = [champion(critRateSets(0.12)),
+    champion({ heroId: 200, baseTypeId: 1491, name: "Kael" })];
+  const res = run(["verify", snapshotFile({ artifacts: WORN_PAIR, champions })]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/for 1 of 1 geared champions/);
+});
+
+test("verify refuses a non-Gestal snapshot, as solve does", () => {
+  const res = run(["verify", "x/y.db"]);
+  expect(res.status).toBe(1);
+  expect(res.stderr).toMatch(/power\.mjs needs a Gestal snapshot/);
+});
+
+// verify takes no selector, so it must not be caught by the missing-selector check that solve, log
+// and fit share.
+test("verify runs without a selector", () => {
+  const snap = snapshotFile({ artifacts: WORN_PAIR, champions: [champion(critRateSets(0.12))] });
+  const res = run(["verify", snap]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stderr).not.toMatch(/usage:/);
+});

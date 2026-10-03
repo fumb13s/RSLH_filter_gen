@@ -40,7 +40,7 @@ import { gestalChampRows, gestalChampStats, gestalItems, isGestalPath,
   readGestalSnapshot } from "./gestal.mjs";
 import { constantFrom, lin, weightsFor } from "./power-model.mjs";
 import { buildTotals, solvePower } from "./power-solve.mjs";
-import { SET_BONUSES, setCounts } from "./set-bonuses.mjs";
+import { SET_BONUSES, diffSetBonuses, setCounts } from "./set-bonuses.mjs";
 import { isSnapshotArg, resolveSnapshot } from "./snapshots.mjs";
 import { describeWearers, otherWearers } from "./wearers.mjs";
 
@@ -517,6 +517,42 @@ function runSolve(args) {
   for (const row of copies) printCopy(row, { items, rows, statsById, fitted, readings, args });
 }
 
+// The set table against the game's own per-champion set bonus. set-bonuses.mjs is transcribed from
+// Gestal's catalogue and is GAME DATA, so it will drift on a patch; this is the guard, and the
+// header comment there names it as such.
+//
+// Checked against bonusesV2.sets, which is what the champion screen shows. The table is
+// multiplier-free and so is that field — Lore of Steel shows under Masteries rather than inside the
+// set bonus — so no multiplier is applied on either side here.
+function runVerify(args) {
+  const { path, snapshot } = readGestalOrDie(args.dbArg);
+  const { items, rows, statsById } = accountState(snapshot);
+  const mismatches = [];
+  let geared = 0;
+  for (const row of rows) {
+    const worn = items.filter((it) => it.equippedChampId === row.ID);
+    // A champion wearing nothing has no set bonus to check, and counting it as a match would
+    // inflate the denominator with champions the check never looked at.
+    if (!worn.length) continue;
+    geared++;
+    const counts = setCounts(worn);
+    const diff = diffSetBonuses(counts, statsById.get(row.ID).observedSets);
+    if (diff.length) mismatches.push({ row, counts, diff });
+  }
+  console.log(`# Power verify — snapshot ${path.split(/[\\/]/).pop()}`);
+  console.log(`set table matches the game's set bonuses for ${geared - mismatches.length}`
+    + ` of ${geared} geared champions`);
+  for (const { row, counts, diff } of mismatches) {
+    // ALL the sets, not only the stat-granting ones: a set that GAINED a stat in a patch is exactly
+    // this case, and it sits in NO_STAT_SETS until the table is updated.
+    console.log(`\n  ${row.Name} #${row.ID}  ${formatSets(counts, true)}`);
+    for (const d of diff) console.log(`    ${d.key}: table ${d.table} vs game ${d.observed}`);
+  }
+  // A mismatch is a failure, not a note: this runs to find out whether the table can still be
+  // trusted, and exiting 0 on a disagreement would let a patch pass unnoticed in a script.
+  if (mismatches.length) process.exit(1);
+}
+
 function main() {
   let args;
   try {
@@ -524,6 +560,9 @@ function main() {
   } catch (e) {
     return die(e);
   }
+  // verify reads the whole roster and takes no selector, so it is dispatched before the check the
+  // other three share.
+  if (args.mode === "verify") return runVerify(args);
   if (args.selector === null) return usage(args.mode);
   return runSolve(args);
 }
