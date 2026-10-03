@@ -15,8 +15,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, test } from "vitest";
-import { formatBreakdown, formatCertificate, formatGain, formatOffBest, formatSets, formatTotals,
-  latestReading, mainCopies, parsePowerArgs, powerDir, readingsFor, readingsPath,
+import { formatBreakdown, formatCertificate, formatGain, formatOffBest, formatProven, formatSets,
+  formatTotals, latestReading, mainCopies, parsePowerArgs, powerDir, readingsFor, readingsPath,
   weightsPath } from "../power.mjs";
 import { STATS } from "../champion-stats.mjs";
 import { FORMAT, FORMAT_VERSION } from "../gestal.mjs";
@@ -42,9 +42,14 @@ test("parsePowerArgs recognises the three subcommands as the first positional", 
 
 // `top` defaults to 1 as in parseSpeedArgs; the other three have no default value that could be
 // mistaken for a supplied one, so they are null.
+//
+// `topGiven` is carried SEPARATELY from `top` because --exact refuses any --top, even `--top 1`,
+// which is indistinguishable from the default by value alone. toEqual rather than toMatchObject,
+// so a field silently dropped from the record names itself here.
 test("parsePowerArgs defaults top to 1 and leaves the rest null", () => {
   expect(parsePowerArgs(["Elhain"])).toEqual({
-    mode: "solve", selector: "Elhain", dbArg: undefined, power: null, top: 1, logPower: null,
+    mode: "solve", selector: "Elhain", dbArg: undefined, power: null, top: 1, topGiven: false,
+    exact: false, logPower: null,
   });
 });
 
@@ -139,6 +144,40 @@ test("parsePowerArgs rejects a snapshot given to a mode that reads none", () => 
 // `solve` is the default mode and has no usage line to type, so the word is an ordinary selector.
 test("parsePowerArgs treats a mode word after the first positional as a selector", () => {
   expect(parsePowerArgs(["solve"])).toMatchObject({ mode: "solve", selector: "solve" });
+});
+
+// --- parsePowerArgs: --exact ----------------------------------------------------
+
+// A bare flag, so it is read wherever it appears and never consumes the next argument — `--exact
+// Elhain` must still find Elhain.
+test("parsePowerArgs reads --exact in solve mode", () => {
+  expect(parsePowerArgs(["Elhain", "--exact"])).toMatchObject({ mode: "solve", exact: true });
+  expect(parsePowerArgs(["--exact", "Elhain"])).toMatchObject({ selector: "Elhain", exact: true });
+  expect(parsePowerArgs(["Elhain"]).exact).toBe(false);
+});
+
+// The other three modes run no solver at all, so --exact there is a reader expecting a different
+// command to do something it cannot. Answering anyway — running `fit` and ignoring the flag —
+// would look like the exact mode had been used.
+test("parsePowerArgs rejects --exact outside solve mode", () => {
+  for (const mode of ["log", "fit", "verify"]) {
+    expect(() => parsePowerArgs([mode, "Elhain", "100", "--exact"]), mode)
+      .toThrow(/--exact is only supported in solve mode/);
+  }
+});
+
+// ANY --top, `--top 1` included. The exact mode proves ONE maximum and has no second-best to
+// report — build-solve's `top` lists the best each other PLAN could reach, which this search does
+// not keep. `--top 1` asks for exactly what --exact gives, but accepting it would mean accepting a
+// flag whose every other value is a silent lie, so the parser refuses the option rather than the
+// value. That is why `topGiven` is recorded separately: `top` is 1 by default.
+test("parsePowerArgs rejects --exact combined with any --top", () => {
+  expect(() => parsePowerArgs(["Elhain", "--exact", "--top", "1"]))
+    .toThrow(/--top is not supported with --exact/);
+  expect(() => parsePowerArgs(["Elhain", "--top", "3", "--exact"]))
+    .toThrow(/--top is not supported with --exact/);
+  // Without --exact the same --top is ordinary.
+  expect(parsePowerArgs(["Elhain", "--top", "1"])).toMatchObject({ top: 1, topGiven: true });
 });
 
 // --- mainCopies -----------------------------------------------------------------
@@ -347,6 +386,25 @@ test("formatCertificate says plainly when there was no fixed point", () => {
 // value would hide exactly the case the gap was left signed for.
 test("formatCertificate keeps a negative gap visible rather than absorbing it", () => {
   expect(formatCertificate(cert({ gap: -0.004 }), 120, null)).toMatch(/at most -0\.00 √power/);
+});
+
+// --- formatProven ----------------------------------------------------------------
+//
+// The line --exact prints INSTEAD of the certificate. There is no gap to state, so no unit and no
+// constant enter it — which is why it takes neither `bestLin` nor `c`, unlike every other format
+// helper here. The two numbers it does carry are the ones a reader of an opt-in slow mode wants:
+// what it cost, and how much of the plan space the bound removed before the search ran.
+
+test("formatProven states the maximum with the runtime and the plan counts", () => {
+  expect(formatProven({ runtimeMs: 8934, plansPruned: 13, plansTotal: 988 }))
+    .toBe("    proven maximum   [8934 ms, 13/988 plans pruned]");
+});
+
+// Pruning nothing is the ordinary case on a small pool, and zero plans is what an unfillable one
+// gives. Neither is an error, and both have to read as numbers rather than as a blank.
+test("formatProven prints a zero prune count rather than omitting it", () => {
+  expect(formatProven({ runtimeMs: 0, plansPruned: 0, plansTotal: 1 }))
+    .toBe("    proven maximum   [0 ms, 0/1 plans pruned]");
 });
 
 // --- formatOffBest --------------------------------------------------------------
@@ -847,6 +905,59 @@ test("solve prints only BEST without --top", () => {
   expect(res.status, res.stderr).toBe(0);
   expect(res.stdout).not.toMatch(/off BEST/);
   expect(res.stdout.match(/^ {4}sets: /gm)).toHaveLength(1);
+});
+
+// --- solve: --exact --------------------------------------------------------------
+
+// The whole point of the flag, end to end: the certificate line is GONE and `proven maximum` is
+// in its place. Asserting the absence matters as much as the presence — a run that printed both
+// would be claiming a ceiling on a number that has no ceiling left.
+//
+// The counts are matched as digits rather than pinned: `plansTotal` is a property of the set table
+// and this fixture's three slots, and `runtimeMs` is a wall clock. Pinning either would make the
+// test fail on a table patch or a slow runner without anything being wrong.
+test("--exact replaces the certificate with the proven maximum, its runtime and plan counts", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR }), "--exact"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {4}proven maximum {3}\[\d+ ms, \d+\/\d+ plans pruned\]$/m);
+  expect(res.stdout).not.toMatch(/below the true maximum/);
+  // Everything else about the report is unchanged: BEST, the gear slot by slot, and the sets.
+  expect(res.stdout).toMatch(/^ {2}BEST /m);
+  expect(res.stdout).toMatch(/^ {4}sets: /m);
+});
+
+// The exact mode is never worse than the default one — it searches the same pool and starts from
+// the default's answer as its incumbent — so the build it reports has to be at least as good. On
+// this fixture the default mode already finds the optimum, so the two agree outright, and that is
+// the assertion: --exact must not come back with something different.
+test("--exact reports a build at least as good as the default mode's", () => {
+  const snapshot = snapshotFile({ artifacts: GEAR });
+  const sets = (out) => out.match(/^ {4}sets: .*$/m)[0];
+  expect(sets(run(["Elhain", snapshot, "--exact"]).stdout))
+    .toBe(sets(run(["Elhain", snapshot]).stdout));
+});
+
+// A champion with nothing wearable is a real state, and solvePowerExact returns `build: null` for
+// it rather than an empty build. speed.mjs prints this same line for an empty index: there is no
+// assignment to report, let alone one to prove anything about.
+test("--exact says plainly when no slot can be filled", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: [] }), "--exact"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {2}no eligible items for any slot\.$/m);
+  expect(res.stdout).not.toMatch(/proven maximum/);
+  // CURRENT still prints: the copy's own stats do not depend on there being gear to move.
+  expect(res.stdout).toMatch(/^ {2}CURRENT$/m);
+});
+
+// The parser's two refusals, through the CLI rather than through parsePowerArgs, so the exit code
+// and the usage line a reader actually sees are checked too.
+test("--exact exits 1 outside solve mode and with --top", () => {
+  const wrongMode = run(["verify", "--exact"]);
+  expect(wrongMode.status).toBe(1);
+  expect(wrongMode.stderr).toMatch(/--exact is only supported in solve mode/);
+  const withTop = run(["Elhain", "--exact", "--top", "1"]);
+  expect(withTop.status).toBe(1);
+  expect(withTop.stderr).toMatch(/--top is not supported with --exact/);
 });
 
 // --- verify ----------------------------------------------------------------------

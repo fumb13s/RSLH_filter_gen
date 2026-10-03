@@ -129,7 +129,7 @@ on a same-date tie, the Gestal one, whose record of who wears what is current.
    Advisory and strictly read-only: both reads open read-only, nothing is written, and a mistyped
    path fails rather than creating an empty database.
 6. Highest-power build for one champion:
-   `node --experimental-sqlite oracle/analytics/power.mjs <name|ID> [snapshot.json.gz] [--power N] [--top N]`
+   `node --experimental-sqlite oracle/analytics/power.mjs <name|ID> [snapshot.json.gz] [--power N] [--top N] [--exact]`
    `node --experimental-sqlite oracle/analytics/power.mjs log <name|ID> <in-game power>`
    `node --experimental-sqlite oracle/analytics/power.mjs fit <name|ID>`
    `node --experimental-sqlite oracle/analytics/power.mjs verify [snapshot.json.gz]`
@@ -165,6 +165,14 @@ on a same-date tie, the Gestal one, whose record of who wears what is current.
    McCormick upper bound over every assignment of the vault. A wide gap means this champion's crit
    range is too broad for the linearization. `--top N` prints the N best builds seen, each measured
    against BEST in the same unit as the certificate.
+
+   `--exact` answers that wide gap: it returns the **provable maximum** of the true objective over
+   every assignment of the vault — the same standard `speed.mjs` holds for speed — and prints
+   `proven maximum` in place of the certificate, with the runtime and how many set plans the bound
+   pruned. It starts from the default mode's answer as its incumbent, so it is never worse, and it
+   is **opt-in because it is slower**: the default mode is a handful of exact solves, while this one
+   bounds every plan and then runs a branch-and-bound over the slots. It proves one build and keeps
+   no runner-up, so it takes no `--top` — not even `--top 1`.
 
    `power.mjs verify` checks the set table against the game's own per-champion set bonuses on a
    fresh capture and exits 1 on any mismatch. The set table is game data and will drift on a patch;

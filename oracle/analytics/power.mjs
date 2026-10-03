@@ -3,6 +3,8 @@
 //   node --experimental-sqlite oracle/analytics/power.mjs <name|ID> [snapshot.json.gz] [opts]
 //     --power N      this copy's in-game power right now, to measure its constant from
 //     --top N        print the N best builds rather than only the winner
+//     --exact        prove the maximum instead of certifying a fixed point. Slower, and takes no
+//                    --top: it proves one build and keeps no runner-up to rank.
 //
 //   node --experimental-sqlite oracle/analytics/power.mjs log <name|ID> <in-game power>
 //     record a power reading against Gestal's LIVE stats, for `fit` to calibrate from.
@@ -41,7 +43,7 @@ import { gestalChampRows, gestalChampStats, gestalItems, isGestalPath,
   readGestalSnapshot } from "./gestal.mjs";
 import { fitWeights } from "./power-fit.mjs";
 import { constantFrom, lin, weightsFor } from "./power-model.mjs";
-import { buildTotals, solvePower } from "./power-solve.mjs";
+import { buildTotals, solvePower, solvePowerExact } from "./power-solve.mjs";
 import { captureSnapshot, dataRoot, freshnessWarnings, resolveAccount } from "./refresh-gestal.mjs";
 import { SET_BONUSES, diffSetBonuses, setCounts } from "./set-bonuses.mjs";
 import { isSnapshotArg, resolveSnapshot } from "./snapshots.mjs";
@@ -52,7 +54,7 @@ import { describeWearers, otherWearers } from "./wearers.mjs";
 // What each mode's usage line shows. Printed back on a missing argument, so the answer is the one
 // shape that would have worked rather than all four.
 export const USAGE = {
-  solve: "power.mjs <name|ID> [snapshot.json.gz] [--power N] [--top N]",
+  solve: "power.mjs <name|ID> [snapshot.json.gz] [--power N] [--top N] [--exact]",
   log: "power.mjs log <name|ID> <in-game power>",
   fit: "power.mjs fit <name|ID>",
   verify: "power.mjs verify [snapshot.json.gz]",
@@ -70,15 +72,20 @@ const TAKES = { solve: 1, log: 2, fit: 1, verify: 0 };
 // they are read, so `--top 3 Elhain` still finds Elhain rather than reading 3 as the selector.
 export function parsePowerArgs(argv) {
   const out = { mode: "solve", selector: null, dbArg: undefined, power: null, top: 1,
-    logPower: null };
+    topGiven: false, exact: false, logPower: null };
   const positional = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "") continue;
     if (arg === "--power" || arg === "--top") {
       out[arg.slice(2)] = positiveInt(arg, argv[++i]);
+      // Recorded SEPARATELY from the value, because --exact refuses any --top at all and `--top 1`
+      // is indistinguishable from the default by value alone.
+      if (arg === "--top") out.topGiven = true;
       continue;
     }
+    // A bare flag: it consumes no value, so `--exact Elhain` still finds Elhain.
+    if (arg === "--exact") { out.exact = true; continue; }
     // Anything else beginning `--` is a typo, not a champion, and swallowing it as a positional is
     // the worst outcome on offer: `--tpo 3` loses the option-value race, prints one build, exits 0,
     // and says nothing about the two it dropped. A plausible wrong answer, not a crash.
@@ -91,6 +98,19 @@ export function parsePowerArgs(argv) {
       continue;
     }
     positional.push(arg);
+  }
+  // CHECKED AFTER THE LOOP, because the mode is only known once the first positional has been
+  // read. Both are refusals rather than warnings: the other three modes run no solver at all, so
+  // ignoring the flag there would look like the exact mode had been used; and --exact proves ONE
+  // maximum and keeps no runner-up, so every --top above 1 asks for builds it does not have. The
+  // option is refused rather than the value, so `--top 1` — which asks for exactly what --exact
+  // gives — is refused too, rather than being the single value of a flag that otherwise lies.
+  if (out.exact && out.mode !== "solve") {
+    throw new Error(`--exact is only supported in solve mode — usage: ${USAGE.solve}`);
+  }
+  if (out.exact && out.topGiven) {
+    throw new Error(`--top is not supported with --exact — the exact mode proves one maximum and`
+      + " keeps no runner-up to rank");
   }
   if (READS_SNAPSHOT.has(out.mode)) out.dbArg = positional.find(isSnapshotArg);
   if (!READS_SNAPSHOT.has(out.mode)) {
@@ -239,7 +259,7 @@ export function formatGain(currentLin, bestLin, c) {
 // the objective linearized at its own crit totals and is NOT the optimum of the true objective. The
 // wording must not drift into claiming otherwise; power-solve.mjs's header is explicit about it.
 // A wide gap is the signal that this champion's crit range is too broad for the linearization,
-// which is what the planned exact mode is for.
+// which is what `--exact` is for — see formatProven, the line that replaces this one.
 export function formatCertificate({ gap, upperBound, rounds, converged }, bestLin, c) {
   const best = c === null ? bestLin : powerOf(bestLin, c);
   const amount = c === null ? gap : powerOf(upperBound, c) - best;
@@ -250,6 +270,20 @@ export function formatCertificate({ gap, upperBound, rounds, converged }, bestLi
   return `    at most ${shown} ${c === null ? "√power" : "power"} (${pct}) below the true maximum`
     + `   [${rounds} round${rounds === 1 ? "" : "s"},`
     + ` ${converged ? "converged" : "no fixed point"}]`;
+}
+
+// What `--exact` PROVED, printed where the certificate line goes. solvePowerExact returns the
+// maximum of the true objective over every assignment of this vault, so there is no gap left to
+// state — and with no gap there is no unit and no constant, which is why this takes neither
+// `bestLin` nor `c` while every other helper here does.
+//
+// The two numbers it does carry are the ones a reader of an OPT-IN SLOW MODE wants. `runtimeMs` is
+// what the proof cost, which is the only reason not to run this mode always. The plan counts say
+// how much of the plan space the McCormick bound removed before the branch-and-bound ran; a low
+// prune count is not a fault — power-solve.mjs is explicit that the counts are a diagnostic rather
+// than usually an early exit.
+export function formatProven({ runtimeMs, plansPruned, plansTotal }) {
+  return `    proven maximum   [${runtimeMs} ms, ${plansPruned}/${plansTotal} plans pruned]`;
 }
 
 // One runner-up's distance from BEST, in the same unit as the certificate line above so the two
@@ -487,13 +521,27 @@ function printCopy(row, { items, rows, statsById, fitted, readings, args }) {
   console.log(formatBreakdown(statBreakdown(champStats, current)));
   if (c !== null) console.log(`    ${Math.round((currentLin + c) ** 2)} power`);
 
+  // One wearer map per copy, shared by every build printed for it, because --top draws them all
+  // from the same vault-wide pool.
+  const wearers = otherWearers(items, row.ID, rows);
+
+  // --exact replaces the whole iterate-and-certify path. One build, no runners-up — the parser has
+  // already refused --top — and `proven maximum` where the certificate would be.
+  if (args.exact) {
+    const proven = solvePowerExact({ items, faction: row.Fraction, champStats, current, weights });
+    // No slot can be filled at all: the vault is empty, or every accessory is the wrong faction.
+    // speed.mjs prints this same line for an empty index. There is no assignment to report, let
+    // alone one to prove anything about, and an empty BEST block would read as a build.
+    if (!proven.build) return console.log("  no eligible items for any slot.");
+    console.log(`\n${formatGain(currentLin, proven.build.lin, c)}`);
+    printBuild(proven.build, wearers);
+    return console.log(formatProven(proven));
+  }
+
   const result = solvePower({ items, faction: row.Fraction, champStats, current, weights,
     top: args.top });
   // builds[0] always exists: solvePower records the worn gear as round 0 before it iterates.
   const [best, ...rest] = result.builds;
-  // One wearer map per copy, shared by every build printed for it, because --top draws them all
-  // from the same vault-wide pool.
-  const wearers = otherWearers(items, row.ID, rows);
   console.log(`\n${formatGain(currentLin, best.lin, c)}`);
   printBuild(best, wearers);
   console.log(formatCertificate(result, best.lin, c));
