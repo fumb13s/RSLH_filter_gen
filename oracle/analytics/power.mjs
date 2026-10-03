@@ -41,6 +41,7 @@ import { STATS, statBreakdown } from "./champion-stats.mjs";
 import { isRealChamp, selectChamps, suggestNames } from "./champs.mjs";
 import { gestalChampRows, gestalChampStats, gestalItems, isGestalPath,
   readGestalSnapshot } from "./gestal.mjs";
+import { GLYPH_GRADES } from "./glyphs.mjs";
 import { fitWeights } from "./power-fit.mjs";
 import { constantFrom, lin, weightsFor } from "./power-model.mjs";
 import { buildTotals, solvePower, solvePowerExact } from "./power-solve.mjs";
@@ -54,7 +55,7 @@ import { describeWearers, otherWearers } from "./wearers.mjs";
 // What each mode's usage line shows. Printed back on a missing argument, so the answer is the one
 // shape that would have worked rather than all four.
 export const USAGE = {
-  solve: "power.mjs <name|ID> [snapshot.json.gz] [--power N] [--top N] [--exact]",
+  solve: "power.mjs <name|ID> [snapshot.json.gz] [--power N] [--top N] [--exact] [--glyph G]",
   log: "power.mjs log <name|ID> <in-game power>",
   fit: "power.mjs fit <name|ID>",
   verify: "power.mjs verify [snapshot.json.gz]",
@@ -72,7 +73,7 @@ const TAKES = { solve: 1, log: 2, fit: 1, verify: 0 };
 // they are read, so `--top 3 Elhain` still finds Elhain rather than reading 3 as the selector.
 export function parsePowerArgs(argv) {
   const out = { mode: "solve", selector: null, dbArg: undefined, power: null, top: 1,
-    topGiven: false, exact: false, logPower: null };
+    topGiven: false, exact: false, glyph: null, logPower: null };
   const positional = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -86,6 +87,10 @@ export function parsePowerArgs(argv) {
     }
     // A bare flag: it consumes no value, so `--exact Elhain` still finds Elhain.
     if (arg === "--exact") { out.exact = true; continue; }
+    // A GRADE rather than a number, so it is validated against the five names rather than by
+    // positiveInt — and its value is consumed as it is read, because `--glyph 5 Elhain` would
+    // otherwise read "5" as an all-digit selector, which mainCopies treats as an exact copy id.
+    if (arg === "--glyph") { out.glyph = glyphGrade(argv[++i]); continue; }
     // Anything else beginning `--` is a typo, not a champion, and swallowing it as a positional is
     // the worst outcome on offer: `--tpo 3` loses the option-value race, prints one build, exits 0,
     // and says nothing about the two it dropped. A plausible wrong answer, not a crash.
@@ -111,6 +116,11 @@ export function parsePowerArgs(argv) {
   if (out.exact && out.topGiven) {
     throw new Error(`--top is not supported with --exact — the exact mode proves one maximum and`
       + " keeps no runner-up to rank");
+  }
+  // The same refusal, for the same reason: log, fit and verify run no solver, so a lifted vault
+  // has nothing to be solved over and ignoring the flag would look like it had been.
+  if (out.glyph !== null && out.mode !== "solve") {
+    throw new Error(`--glyph is only supported in solve mode — usage: ${USAGE.solve}`);
   }
   if (READS_SNAPSHOT.has(out.mode)) out.dbArg = positional.find(isSnapshotArg);
   if (!READS_SNAPSHOT.has(out.mode)) {
@@ -140,6 +150,26 @@ function positiveInt(what, raw) {
     throw new Error(`${what} needs a positive integer`);
   }
   return value;
+}
+
+// A glyph GRADE, not a number. Glyph values differ per stat — a SPD glyph tops out at 12 and a
+// flat HP one at 1,150 — so one number cannot cover every stat, and "every glyphable substat at
+// the cap of a 6★ Epic glyph" is the assumption a reader can state and control. glyphs.mjs's
+// header has the provenance.
+//
+// Blank is checked BEFORE the lookup, for the reason positiveInt checks it before Number(): an
+// option whose value went missing would otherwise be reported as an unknown grade of "", which
+// names the symptom rather than the mistake. The grade list comes off GLYPH_GRADES, so the names
+// in this message cannot drift from the table they index.
+function glyphGrade(raw) {
+  const valid = `use one of ${GLYPH_GRADES.join(", ")}`;
+  if (raw === undefined || raw.trim() === "") {
+    throw new Error(`--glyph needs a grade — ${valid}`);
+  }
+  if (!GLYPH_GRADES.includes(raw)) {
+    throw new Error(`unknown glyph grade "${raw}" — ${valid}`);
+  }
+  return raw;
 }
 
 // How many of these items a copy is wearing. A measure of INVESTMENT in the copy, not of what it

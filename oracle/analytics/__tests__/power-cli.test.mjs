@@ -49,7 +49,7 @@ test("parsePowerArgs recognises the three subcommands as the first positional", 
 test("parsePowerArgs defaults top to 1 and leaves the rest null", () => {
   expect(parsePowerArgs(["Elhain"])).toEqual({
     mode: "solve", selector: "Elhain", dbArg: undefined, power: null, top: 1, topGiven: false,
-    exact: false, logPower: null,
+    exact: false, glyph: null, logPower: null,
   });
 });
 
@@ -178,6 +178,61 @@ test("parsePowerArgs rejects --exact combined with any --top", () => {
     .toThrow(/--top is not supported with --exact/);
   // Without --exact the same --top is ordinary.
   expect(parsePowerArgs(["Elhain", "--top", "1"])).toMatchObject({ top: 1, topGiven: true });
+});
+
+// --- parsePowerArgs: --glyph ----------------------------------------------------
+
+// A GRADE, not a number: glyph values differ per stat, so one number could not cover both a SPD
+// glyph that tops out at 12 and a flat HP one at 1,150.
+//
+// The second case is the one that matters most. `--glyph 5` carries an ALL-DIGIT value, and an
+// all-digit selector is an exact copy id to mainCopies — so a value that leaked into the
+// positionals would not merely be ignored, it would silently report a different champion.
+test("parsePowerArgs reads --glyph in solve mode and consumes its value", () => {
+  expect(parsePowerArgs(["Elhain", "--glyph", "epic"]))
+    .toMatchObject({ mode: "solve", glyph: "epic" });
+  expect(parsePowerArgs(["--glyph", "5", "Elhain"]))
+    .toMatchObject({ selector: "Elhain", glyph: "5" });
+  expect(parsePowerArgs(["Elhain"]).glyph).toBe(null);
+});
+
+// The five grades are the whole vocabulary, and a near miss has to name them rather than being
+// guessed at: `--glyph 6` is someone reading the labels and typing the star level, and lifting a
+// vault by a table nobody chose is a plausible wrong answer rather than a crash.
+test("parsePowerArgs rejects an unknown glyph grade, naming the five", () => {
+  expect(() => parsePowerArgs(["Elhain", "--glyph", "mythical"]))
+    .toThrow(/unknown glyph grade "mythical" — use one of 5, normal, rare, epic, legendary/);
+  expect(() => parsePowerArgs(["Elhain", "--glyph", "6"])).toThrow(/unknown glyph grade "6"/);
+  expect(() => parsePowerArgs(["Elhain", "--glyph", "EPIC"]))
+    .toThrow(/unknown glyph grade "EPIC"/);
+});
+
+// Same reason positiveInt checks blank before Number(): an option whose value went missing must
+// not read as something legal. Here a blank would fall through to the grade lookup and report
+// `unknown glyph grade ""`, which describes the symptom rather than the mistake.
+test("parsePowerArgs rejects a missing or blank glyph grade", () => {
+  const wanted = /--glyph needs a grade — use one of 5, normal, rare, epic, legendary/;
+  expect(() => parsePowerArgs(["Elhain", "--glyph"]), "missing").toThrow(wanted);
+  expect(() => parsePowerArgs(["Elhain", "--glyph", ""]), "empty").toThrow(wanted);
+  expect(() => parsePowerArgs(["Elhain", "--glyph", "  "]), "blank").toThrow(wanted);
+});
+
+// The other three modes run no solver at all, so --glyph there is a reader expecting a different
+// command to do something it cannot. Answering anyway — running `fit` and ignoring the flag —
+// would look like the lifted solve had been run.
+test("parsePowerArgs rejects --glyph outside solve mode", () => {
+  for (const mode of ["log", "fit", "verify"]) {
+    expect(() => parsePowerArgs([mode, "Elhain", "100", "--glyph", "epic"]), mode)
+      .toThrow(/--glyph is only supported in solve mode/);
+  }
+});
+
+// The grade is validated where it is READ, as --power and --top are, so a bad grade in the wrong
+// mode reports the grade. Pinned because the opposite order is just as defensible and a reader of
+// either message should not have to guess which one a run will give.
+test("parsePowerArgs reports a bad grade before it reports the wrong mode", () => {
+  expect(() => parsePowerArgs(["fit", "Elhain", "--glyph", "bogus"]))
+    .toThrow(/unknown glyph grade "bogus"/);
 });
 
 // --- mainCopies -----------------------------------------------------------------
