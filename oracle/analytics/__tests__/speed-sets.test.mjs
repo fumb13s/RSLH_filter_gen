@@ -180,3 +180,14 @@ test("usefulCounts includes maxSlots itself when it lands exactly on a boundary"
   expect(usefulCounts(58, 8)).toEqual([3, 5, 8]);
   expect(usefulCounts(35, 4)).toEqual([2, 4]);
 });
+
+// The solver's "at most four active sets" cap (enumeratePlans in speed-solve.mjs) is sound only
+// because no speed set opens below two pieces: four sets at two pieces is eight of the nine slots,
+// and a fifth would need ten. One-piece tiers DO exist in set-bonuses.mjs — Stone Skin's first tier
+// is a single piece — so the day a patch puts SPD% on a one-piece tier, that cap starts silently
+// discarding the best build. This makes it fail loudly instead.
+test("no speed set grants anything below two pieces, which the solver's four-set cap needs", () => {
+  for (const setId of SPEED_SET_IDS) {
+    expect(firstThreshold(setId), `set ${setId} (${speedSetName(setId)})`).toBeGreaterThanOrEqual(2);
+  }
+});
