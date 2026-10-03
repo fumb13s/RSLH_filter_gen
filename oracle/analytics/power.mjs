@@ -37,14 +37,14 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync,
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, lookupName } from "@rslh/core";
-import { STATS, statBreakdown } from "./champion-stats.mjs";
+import { STATS, contribution, statBreakdown } from "./champion-stats.mjs";
 import { isRealChamp, selectChamps, suggestNames } from "./champs.mjs";
 import { gestalChampRows, gestalChampStats, gestalItems, isGestalPath,
   readGestalSnapshot } from "./gestal.mjs";
 import { GLYPH_GRADES, GLYPH_LABELS } from "./glyphs.mjs";
 import { fitWeights } from "./power-fit.mjs";
 import { constantFrom, lin, weightsFor } from "./power-model.mjs";
-import { buildTotals, solvePower, solvePowerExact } from "./power-solve.mjs";
+import { buildTotals, linearizedWeights, solvePower, solvePowerExact } from "./power-solve.mjs";
 import { captureSnapshot, dataRoot, freshnessWarnings, resolveAccount } from "./refresh-gestal.mjs";
 import { SET_BONUSES, diffSetBonuses, setCounts } from "./set-bonuses.mjs";
 import { isSnapshotArg, resolveSnapshot } from "./snapshots.mjs";
@@ -353,6 +353,24 @@ export function formatOffBest(index, build, best, c) {
   const delta = c === null ? build.lin - best.lin : powerOf(build.lin, c) - powerOf(best.lin, c);
   const shown = c === null ? delta.toFixed(2) : String(Math.round(delta));
   return `  #${index}  (${shown} ${c === null ? "√power" : "power"} off BEST)`;
+}
+
+// --- the glyph block's per-lift values -------------------------------------------
+
+// What the reported build would LOSE if one lift alone were undone, in sqrt(power). Exact, and
+// additive across lifts, because every glyphable stat enters `lin` LINEARLY — the one term that is
+// not linear is the crit product, and no lift is ever crit (glyphs.mjs's crit rule).
+//
+// linearizedWeights at (0, 0) is read here as a plain per-stat scalar table, NOT as a
+// linearization: at that reference its C.RATE scalar is k * 100 rather than 0, which a search
+// would double-count. That cannot bite, because `lift.key` is never a crit key — nonCritWeights
+// is the function to reach for the day one could be.
+//
+// `contribution` is what makes a "%" lift a percentage of the champion's BASE stat rather than a
+// flat addition, which is the difference between 10 points of HP and 10% of 15,000.
+export function liftDelta(lift, base, weights) {
+  const [stat, amount] = contribution(lift.key, lift.to - lift.from, base);
+  return linearizedWeights(weights, 0, 0)[stat] * amount;
 }
 
 // --- labels ---------------------------------------------------------------------

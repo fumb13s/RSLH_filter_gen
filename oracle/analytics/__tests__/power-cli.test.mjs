@@ -16,8 +16,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, test } from "vitest";
 import { formatBreakdown, formatCertificate, formatGain, formatGlyphGain, formatOffBest,
-  formatProven, formatSets, formatTotals, latestReading, mainCopies, parsePowerArgs, powerDir,
-  readingsFor, readingsPath, weightsPath } from "../power.mjs";
+  formatProven, formatSets, formatTotals, latestReading, liftDelta, mainCopies, parsePowerArgs,
+  powerDir, readingsFor, readingsPath, weightsPath } from "../power.mjs";
 import { STATS } from "../champion-stats.mjs";
 import { FORMAT, FORMAT_VERSION } from "../gestal.mjs";
 import { power as powerOf } from "../power-model.mjs";
@@ -511,6 +511,50 @@ test("formatOffBest measures a runner-up against BEST in power when the constant
 test("formatOffBest measures it in sqrt(power) when the constant is unknown", () => {
   expect(formatOffBest(3, { lin: 110 }, { lin: 120 }, null))
     .toBe("  #3  (-10.00 √power off BEST)");
+});
+
+// --- liftDelta ------------------------------------------------------------------
+//
+// What the build loses if ONE lift alone is undone, in sqrt(power). Every expected number below is
+// written out as the two multiplications a reader can check, the way power-solve.test.mjs pins
+// linearizedWeights — reading it back off the module would assert nothing.
+
+const LIFT_W = { b: 0.012, r: 0.28, a: 0.039, s: 0.022, k: 0.0015 };
+const LIFT_BASE = { HP: 15000, ATK: 1000, DEF: 1000, SPD: 100, "C.RATE": 15, "C.DMG": 50,
+  RES: 30, ACC: 0 };
+
+// A flat key lands on its own stat as-is, so the delta is the glyph's rise times that stat's
+// scalar.
+//   12 points of SPD at s = 0.022 -> 0.264
+test("liftDelta values a flat lift at its stat's weight", () => {
+  expect(liftDelta({ key: "SPD", from: 0, to: 12 }, LIFT_BASE, LIFT_W))
+    .toBeCloseTo(0.264, 9);
+});
+
+// A percent key is a percentage of the champion's BASE stat, so the same rise is worth more on a
+// champion with more base. This is the trap: reading "HP% 10" as ten points of HP rather than as
+// ten percent of 15,000 would under-value the lift by 150x.
+//   2 -> 12 is +10% of base HP 15,000 = 1,500 HP, at b/15 = 0.0008 -> 1.2
+test("liftDelta scales a percent lift by the champion's base stat", () => {
+  expect(liftDelta({ key: "HP%", from: 2, to: 12 }, LIFT_BASE, LIFT_W))
+    .toBeCloseTo(1.2, 9);
+});
+
+// Flat HP and HP% share a stat COLUMN but not a key, and the two land on the same column by
+// completely different arithmetic. Pinned beside the test above so a lift that read the wrong one
+// names itself.
+//   1,150 flat HP at b/15 = 0.0008 -> 0.92
+test("liftDelta does not scale a flat lift on a percent-capable stat", () => {
+  expect(liftDelta({ key: "HP", from: 0, to: 1150 }, LIFT_BASE, LIFT_W))
+    .toBeCloseTo(0.92, 9);
+});
+
+// Only the RISE is valued, never the whole new glyph: a substat already glyphed at 3 and lifted to
+// 10 costs one glyph and is worth the 7 points it gained, not the 10 it ends up with.
+//   10 - 3 = 7 points of RES at r = 0.28 -> 1.96
+test("liftDelta values only the rise, not the whole new glyph", () => {
+  expect(liftDelta({ key: "RES", from: 3, to: 10 }, LIFT_BASE, LIFT_W))
+    .toBeCloseTo(1.96, 9);
 });
 
 // --- formatSets -----------------------------------------------------------------
