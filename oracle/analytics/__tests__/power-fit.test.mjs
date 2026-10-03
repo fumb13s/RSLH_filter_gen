@@ -203,3 +203,18 @@ test("predicted is power() rebuilt from the returned values, undetermined ones a
     expect(close(res.predicted, want), res.t).toBeLessThan(1e-12);
   });
 });
+
+// Three readings of one copy, with HP, RES and SPD all moving: one copy constant plus three varying
+// columns is four unknowns against three equations. The counts are all three named, because which
+// one to change is the caller's decision — log more readings, or hold a stat still.
+test("fitWeights refuses a fit with fewer readings than unknowns, naming the three counts", () => {
+  const few = [
+    reading(11, totals(), W, C11, 0),
+    reading(11, totals({ HP: 36000 }), W, C11, 1),
+    reading(11, totals({ RES: 160, SPD: 240 }), W, C11, 2),
+  ];
+  expect(() => fitWeights(few)).toThrow(/power-fit/);
+  expect(() => fitWeights(few)).toThrow(/readings=3/);
+  expect(() => fitWeights(few)).toThrow(/copies=1/);
+  expect(() => fitWeights(few)).toThrow(/varying stat columns=3/);
+});

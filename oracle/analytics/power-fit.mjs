@@ -140,6 +140,16 @@ export function fitWeights(readings) {
   // own uncentered norm, so the test means the same thing for SPD (~200) and X_K (~15000).
   const varying = [...COLUMNS.keys()].filter((j) => scale[j] > VARY_TOL * norm2(x[j]));
 
+  // Step 3: enough equations. Below this the system is under-determined before the factorization
+  // even looks at it, and the answer would be arbitrary rather than wrong by a little. Named as
+  // key=value because all three counts matter and prose that stays grammatical at every count does
+  // not exist ("1 copy constants").
+  if (readings.length < copies.size + varying.length) {
+    throw new Error(`power-fit: too few readings: readings=${readings.length},`
+      + ` copies=${copies.size}, varying stat columns=${varying.length}`
+      + " — a fit needs readings >= copies + columns");
+  }
+
   // Step 4: the factorization, over the varying columns scaled to unit 2-norm.
   const fac = factorize(varying.map((j) => cx[j].map((v) => v / scale[j])));
   const gamma = solve(fac, cy);
