@@ -218,3 +218,43 @@ test("fitWeights refuses a fit with fewer readings than unknowns, naming the thr
   expect(() => fitWeights(few)).toThrow(/copies=1/);
   expect(() => fitWeights(few)).toThrow(/varying stat columns=3/);
 });
+
+// --- dependent columns -------------------------------------------------------------------------
+
+// The same step list with no ACC step: ACC is derived from RES, so the RES step moves both columns.
+const LINKED_STEPS = [
+  {}, { HP: 36000 }, { ATK: 2600 }, { RES: 160 }, { SPD: 240 }, { "C.RATE": 85 }, { "C.DMG": 220 },
+];
+
+// RES and ACC locked in a fixed 2:1 ratio, so the centered ACC column is exactly half the centered
+// RES column — a champion geared so that accuracy only ever arrives alongside resistance.
+const linkedCopy = (heroId, w, c, over = {}) =>
+  LINKED_STEPS.map((step, i) => {
+    const stats = totals({ ...over, ...step });
+    return reading(heroId, { ...stats, ACC: stats.RES / 2 }, w, c, i);
+  });
+
+// ACC sits AFTER RES in the fixed column order and the factorization does not pivot, so RES is kept
+// and ACC is dropped — every time, on every machine. With pivoting, which of the two survived would
+// follow whichever rounding produced the larger norm.
+test("a column that only moves with an earlier one is dropped, and the fixed order picks which", () => {
+  const w = { ...W, a: PRIOR.a };
+  const fit = fitWeights([...linkedCopy(11, w, C11), ...linkedCopy(22, w, C22, OVER_22)]);
+  expect(fit.params.a).toBeNull();
+  expect(fit.undetermined).toEqual(["a"]);
+  expect(fit.params.r).not.toBeNull();
+});
+
+// Nothing non-finite ever leaves the fit: the skip is what keeps back-substitution off a ~0 pivot.
+test("every number a rank-deficient power fit returns is finite", () => {
+  const w = { ...W, a: PRIOR.a };
+  const fit = fitWeights([...linkedCopy(11, w, C11), ...linkedCopy(22, w, C22, OVER_22)]);
+  for (const [name, v] of Object.entries(fit.params)) {
+    if (v !== null) expect(Number.isFinite(v), name).toBe(true);
+  }
+  for (const [heroId, c] of fit.constants) expect(Number.isFinite(c), `copy ${heroId}`).toBe(true);
+  for (const res of fit.residuals) {
+    expect(Number.isFinite(res.predicted), res.t).toBe(true);
+    expect(Number.isFinite(res.errorPct), res.t).toBe(true);
+  }
+});

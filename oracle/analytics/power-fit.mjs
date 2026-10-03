@@ -16,9 +16,12 @@ const COLUMNS = [
 // stat, rather than becoming a NaN that propagates into every number the fit returns.
 const TOTAL_KEYS = ["HP", "ATK", "DEF", "SPD", "C.RATE", "C.DMG", "RES", "ACC"];
 
-// A centered column counts as VARYING when it keeps this fraction of its own uncentered norm.
-// Dimensionless, so the test means the same thing for SPD (~200) and X_K (~15000).
+// A centered column counts as VARYING when it keeps this fraction of its own uncentered norm...
 const VARY_TOL = 1e-9;
+// ...and as INDEPENDENT of the columns before it when the norm it has left after their reflections
+// clears this. Both are dimensionless: the varying test is a ratio, and the factorization runs on
+// columns scaled to unit length.
+const RANK_TOL = 1e-9;
 
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 const mean = (xs) => sum(xs) / xs.length;
@@ -50,7 +53,7 @@ function reflector(col, p) {
 }
 
 function reflect(h, vec) {
-  if (h.vtv === 0) return;   // unreachable: a kept column's tail is nonzero, so v[p] != 0
+  if (h.vtv === 0) return;   // unreachable: a kept column's tail clears RANK_TOL, so v[p] != 0
   let dot = 0;
   for (let i = h.p; i < h.v.length; i++) dot += h.v[i] * vec[i];
   const f = (2 * dot) / h.vtv;
@@ -67,6 +70,11 @@ function factorize(cols) {
   for (let j = 0; j < cols.length; j++) {
     for (const h of reflectors) reflect(h, R[j]);
     const p = kept.length;
+    // Step 4: this column's diagonal entry of R — the norm it has left after the KEPT columns'
+    // reflections. Below RANK_TOL it is a linear combination of them, so it is skipped outright:
+    // no reflector, no R column, and its parameter comes back undetermined. Keeping it would put
+    // back-substitution on a pivot of about zero.
+    if (tailNorm(R[j], p) < RANK_TOL) continue;
     const h = reflector(R[j], p);
     reflect(h, R[j]);
     reflectors.push(h);
