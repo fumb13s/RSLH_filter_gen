@@ -1,6 +1,8 @@
 // oracle/analytics/__tests__/build-solve.test.mjs
 import { test, expect } from "vitest";
-import { SLOTS, buildIndex, slotsSupplying, usefulCounts } from "../build-solve.mjs";
+import {
+  SLOTS, buildIndex, slotsSupplying, usefulCounts, enumeratePlans,
+} from "../build-solve.mjs";
 
 // Every item carries a plain `value` the injected valuation reads back. The module is
 // stat-agnostic — it never looks at a stat — so a number on the item is the honest way to
@@ -126,4 +128,84 @@ test("usefulCounts never reports 1, so a one-piece bonus is never planned", () =
 
 test("usefulCounts is empty for a set the model says nothing about", () => {
   expect(usefulCounts(new Map(), 4, 9)).toEqual([]);
+});
+
+test("enumeratePlans always includes the empty plan", () => {
+  const index = indexOf([{ slot: 1, set: 0, value: 10 }]);
+  expect(enumeratePlans(index, new Map())).toEqual([[]]);
+});
+
+test("enumeratePlans lists each useful count for a single set", () => {
+  const index = indexOf([1, 2, 3, 4].map((slot) => ({ slot, set: 4, value: 10 })));
+  const bonusAt = bonusOf({ 4: { 2: 12, 4: 24, 6: 36 } });
+  expect(enumeratePlans(index, bonusAt))
+    .toEqual([[], [{ setId: 4, count: 2 }], [{ setId: 4, count: 4 }]]);
+});
+
+// The cap is the POPULATED slots, not the nine there could be. A plan needing seven pieces on a
+// six-slot pool is unfillable, and enumerating it is wasted work on every one of a few hundred
+// thousand calls.
+test("enumeratePlans never names more pieces than there are slots to fill", () => {
+  const specs = [];
+  for (const set of [4, 34, 53, 57, 38]) {
+    for (let slot = 1; slot <= 6; slot++) specs.push({ slot, set, value: 10 });
+  }
+  const index = indexOf(specs);
+  const bonusAt = bonusOf(Object.fromEntries([4, 34, 53, 57, 38].map((s) => [s, { 2: 10, 4: 20 }])));
+  for (const plan of enumeratePlans(index, bonusAt)) {
+    expect(plan.reduce((sum, p) => sum + p.count, 0)).toBeLessThanOrEqual(6);
+  }
+});
+
+// The cap is exactly four, not merely at-most-four: four two-piece sets fit inside nine slots, so
+// a four-set plan has to be reachable or the bound in the module header is vacuous.
+test("enumeratePlans reaches four named sets when the pool can supply them", () => {
+  const specs = [];
+  for (const [i, set] of [4, 34, 53, 35].entries()) {
+    for (const slot of [i * 2 + 1, i * 2 + 2]) specs.push({ slot, set, value: 0 });
+  }
+  specs.push({ slot: 9, set: 0, value: 0 });
+  const index = indexOf(specs);
+  const bonusAt = bonusOf(Object.fromEntries([4, 34, 53, 35].map((s) => [s, { 2: 10 }])));
+  expect(enumeratePlans(index, bonusAt).some((plan) => plan.length === 4)).toBe(true);
+});
+
+// A set that pays from one piece only has no count to plan, and naming it would be a fifth name
+// competing for a slot the singleton column gets for nothing.
+test("enumeratePlans never names a set whose only bonus is at one piece", () => {
+  const index = indexOf([1, 2, 3].map((slot) => ({ slot, set: 70, value: 0 })));
+  expect(enumeratePlans(index, bonusOf({ 70: { 1: 9 } }))).toEqual([[]]);
+});
+
+// Slots can be plentiful and a count still impossible: two pieces of a set only one slot supplies.
+test("enumeratePlans caps a set's count at the slots that supply it", () => {
+  const index = indexOf([
+    { slot: 1, set: 4, value: 0 }, { slot: 2, set: 0, value: 0 }, { slot: 3, set: 0, value: 0 },
+  ]);
+  expect(enumeratePlans(index, bonusOf({ 4: { 2: 12 } }))).toEqual([[]]);
+});
+
+// Two sets that each fit alone and cannot both fit, because they draw on the SAME two slots.
+// Slots 3 and 4 are here so the per-set room cap does NOT catch it: with four populated slots
+// there is room for 2 + 2, and only the union of the two sets' supplying slots shows that the
+// pieces have nowhere to go. Checking each set's supply independently passes this test with the
+// bad plan still in the list, and nothing downstream complains — assignPlan just returns null,
+// after the plan's full cost has been paid.
+test("enumeratePlans drops a plan whose sets share too few slots between them", () => {
+  const index = indexOf([
+    { slot: 1, set: 4, value: 0 }, { slot: 1, set: 34, value: 0 },
+    { slot: 2, set: 4, value: 0 }, { slot: 2, set: 34, value: 0 },
+    { slot: 3, set: 0, value: 0 }, { slot: 4, set: 0, value: 0 },
+  ]);
+  const bonusAt = bonusOf({ 4: { 2: 12 }, 34: { 2: 12 } });
+  expect(enumeratePlans(index, bonusAt))
+    .toEqual([[], [{ setId: 4, count: 2 }], [{ setId: 34, count: 2 }]]);
+});
+
+// Set 0 is "no set", not a set. It is skipped when counting a build, so a bonus attached to it
+// could never be credited — planning it would produce plans that can only ever score as the
+// empty plan does.
+test("enumeratePlans ignores a bonus attached to set 0", () => {
+  const index = indexOf([1, 2, 3].map((slot) => ({ slot, set: 0, value: 0 })));
+  expect(enumeratePlans(index, bonusOf({ 0: { 2: 50 } }))).toEqual([[]]);
 });

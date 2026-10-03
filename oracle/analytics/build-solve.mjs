@@ -83,3 +83,65 @@ export function usefulCounts(bonusAt, setId, maxSlots) {
   for (let count = 2; count <= top; count++) if (bonus[count] > bonus[count - 1]) out.push(count);
   return out;
 }
+
+// The slots this index could fill, always ascending, so every column order and every pick list
+// below is the same on a rerun.
+const populated = (index) => SLOTS.filter((slot) => index.has(slot));
+
+// A plan names at most four sets. Not a tuning knob: a useful count is at least two pieces, so a
+// fifth named set would need a tenth slot. One-piece bonuses are bought by singleton columns and
+// never enter a plan, which is what keeps this bound true in a world that has one-piece sets.
+const MAX_PLAN_SETS = 4;
+
+function popcount(bits) {
+  let n = 0;
+  for (let b = bits; b !== 0; b &= b - 1) n++;
+  return n;
+}
+
+// Every set allocation worth trying: up to four distinct sets, each at one of its useful counts,
+// with the counts summing to no more than there are slots to fill.
+//
+// Two filters, both NECESSARY conditions on a plan being fillable at all, and both cheap. A set
+// can only contribute as many pieces as there are slots supplying it — that is `room`. And the
+// UNION of the slots supplying a plan's sets must be at least as large as its counts sum to,
+// which is Hall's condition on the whole family. The union filter also prunes the RECURSION: a
+// plan that fails it is unfillable, and so is every plan containing it, because any assignment
+// for the larger plan restricts to one for the smaller. So no fillable plan is ever dropped.
+//
+// Slot sets are nine-bit masks rather than Sets. This runs a few hundred thousand times per
+// solve, and a Set per node is the difference between milliseconds and seconds.
+//
+// Set 0 is "no set" and is excluded: countsOf skips it, so a bonus attached to it could never be
+// credited, and planning it would enumerate plans that can only score as the empty plan does.
+export function enumeratePlans(index, bonusAt) {
+  const slots = populated(index);
+  const mask = new Map();
+  for (let i = 0; i < slots.length; i++) {
+    for (const setId of index.get(slots[i]).keys()) {
+      mask.set(setId, (mask.get(setId) ?? 0) | (1 << i));
+    }
+  }
+  const candidates = [...mask.keys()]
+    .filter((setId) => setId !== 0 && bonusAt.has(setId))
+    .sort((a, b) => a - b);
+
+  const plans = [[]];
+  const extend = (from, current, used, union) => {
+    if (current.length === MAX_PLAN_SETS) return;
+    for (let i = from; i < candidates.length; i++) {
+      const setId = candidates[i];
+      const bits = mask.get(setId);
+      const room = Math.min(popcount(bits), slots.length - used);
+      for (const count of usefulCounts(bonusAt, setId, room)) {
+        const nextUnion = union | bits;
+        if (popcount(nextUnion) < used + count) continue;
+        const next = [...current, { setId, count }];
+        plans.push(next);
+        extend(i + 1, next, used + count, nextUnion);
+      }
+    }
+  };
+  extend(0, [], 0, 0);
+  return plans;
+}
