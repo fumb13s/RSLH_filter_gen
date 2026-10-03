@@ -910,3 +910,106 @@ test("verify runs without a selector", () => {
   expect(res.status, res.stderr).toBe(0);
   expect(res.stderr).not.toMatch(/usage:/);
 });
+
+// --- log -------------------------------------------------------------------------
+//
+// log reads Gestal's LIVE documents rather than a snapshot, deliberately: the log line it writes is
+// itself the frozen record, so freezing a snapshot first would only add a file nobody reads. The
+// fixture is a Gestal data folder laid out as the app writes one.
+
+function gestalRoot({ artifacts = [], champions = [champion()] } = {}) {
+  const root = tmp();
+  const acct = join(root, "accounts", "abc123");
+  mkdirSync(join(acct, "diagnostics"), { recursive: true });
+  const put = (rel, body) => writeFileSync(join(acct, rel), JSON.stringify(body));
+  writeFileSync(join(root, "active.json"),
+    JSON.stringify(doc(1, { activeAccountKey: "abc123" })));
+  put("artifacts.json",
+    doc(2, { extractedAt: "2026-10-03T12:00:00Z", gameVersion: "11.75.0", artifacts }));
+  put("champions.json",
+    doc(2, { extractedAt: "2026-10-03T12:00:30Z", gameVersion: "11.75.0", champions }));
+  put("metadata.json", doc(2, { displayName: "Player One", raidPlayerId: "123456789" }));
+  put("diagnostics/last-extraction.json", doc(1, { attemptedAt: "2026-10-03T12:04:00Z",
+    succeeded: true, errorMessage: null, elapsedMilliseconds: 1000, gameVersion: "11.75.0" }));
+  return root;
+}
+
+const readLog = (dir) => readFileSync(join(dir, "power-readings.jsonl"), "utf8")
+  .split("\n").filter((l) => l.trim() !== "").map((l) => JSON.parse(l));
+
+test("log appends one reading with the copy's totals and the power given", () => {
+  const dir = tmp();
+  const res = run(["log", "Elhain", "12345"],
+    { powerDir: dir, dataRoot: gestalRoot({ artifacts: GEAR }) });
+  expect(res.status, res.stderr).toBe(0);
+  const log = readLog(dir);
+  expect(log).toHaveLength(1);
+  expect(log[0]).toMatchObject({ heroId: 100, baseTypeId: 1490, name: "Elhain", roleId: 0,
+    power: 12345 });
+  expect(Object.keys(log[0].totals).sort())
+    .toEqual(["ACC", "ATK", "C.DMG", "C.RATE", "DEF", "HP", "RES", "SPD"]);
+  expect(log[0].t).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+});
+
+// The log is append-only: a second reading of the same copy is another equation for the fit, not a
+// replacement for the first.
+test("log appends rather than replacing", () => {
+  const dir = tmp();
+  const root = gestalRoot({ artifacts: GEAR });
+  expect(run(["log", "Elhain", "12345"], { powerDir: dir, dataRoot: root }).status).toBe(0);
+  expect(run(["log", "Elhain", "12999"], { powerDir: dir, dataRoot: root }).status).toBe(0);
+  expect(readLog(dir).map((r) => r.power)).toEqual([12345, 12999]);
+});
+
+// So the reader can compare it with the screen the power was read off, which is the only check that
+// the reading and the stat model are describing the same copy.
+test("log prints the copy's stat breakdown in the game layout", () => {
+  const res = run(["log", "Elhain", "12345"], { dataRoot: gestalRoot({ artifacts: GEAR }) });
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {2}Basic /m);
+  expect(res.stdout).toMatch(/^ {2}Total /m);
+});
+
+// A reading landing on the wrong champion is the one failure that cannot be undone by rerunning:
+// it silently poisons that champion's fit. So an ambiguous selector writes NOTHING.
+test("log refuses an ambiguous selector and writes nothing", () => {
+  const dir = tmp();
+  const res = run(["log", "Elhain", "12345"],
+    { powerDir: dir, dataRoot: gestalRoot({ artifacts: GEAR, champions: TWO_CHAMPS }) });
+  expect(res.status).toBe(1);
+  expect(res.stderr).toMatch(/a logged reading belongs to one copy/);
+  expect(res.stderr).toMatch(/Elhain #100/);
+  expect(res.stderr).toMatch(/Dark Elhain #200/);
+  expect(existsSync(join(dir, "power-readings.jsonl"))).toBe(false);
+});
+
+test("log without its power exits 1 with log's usage line and writes nothing", () => {
+  const dir = tmp();
+  const res = run(["log", "Elhain"],
+    { powerDir: dir, dataRoot: gestalRoot({ artifacts: GEAR }) });
+  expect(res.status).toBe(1);
+  expect(res.stderr).toMatch(/usage: power\.mjs log <name\|ID> <in-game power>/);
+  expect(existsSync(join(dir, "power-readings.jsonl"))).toBe(false);
+});
+
+test("log without a selector exits 1 with log's usage line", () => {
+  const res = run(["log"], { dataRoot: gestalRoot() });
+  expect(res.status).toBe(1);
+  expect(res.stderr).toMatch(/usage: power\.mjs log <name\|ID> <in-game power>/);
+});
+
+// Gestal refreshes its documents only while attached to a running Raid, so data this old means the
+// stats may not be the ones on the screen. A WARNING, not a refusal: the reader is looking at the
+// screen and can tell.
+test("log warns that the live data is stale rather than refusing it", () => {
+  const res = run(["log", "Elhain", "12345"], { dataRoot: gestalRoot({ artifacts: GEAR }) });
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stderr).toMatch(/warning: the data is .* old/);
+});
+
+// resolveAccount's own message, which names what to do about it.
+test("log exits 1 with Gestal's own message when there is no data folder", () => {
+  const res = run(["log", "Elhain", "12345"], { dataRoot: join(tmp(), "nothing-here") });
+  expect(res.status).toBe(1);
+  expect(res.stderr).toMatch(/Gestal data folder not found/);
+});

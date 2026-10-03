@@ -30,7 +30,7 @@
 // Advisory only for the game: nothing is written to a snapshot, to Gestal's folder or to the
 // game's own database. `log` and `fit` write to out/, which is personal account data and
 // gitignored.
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, lookupName } from "@rslh/core";
@@ -40,6 +40,7 @@ import { gestalChampRows, gestalChampStats, gestalItems, isGestalPath,
   readGestalSnapshot } from "./gestal.mjs";
 import { constantFrom, lin, weightsFor } from "./power-model.mjs";
 import { buildTotals, solvePower } from "./power-solve.mjs";
+import { captureSnapshot, dataRoot, freshnessWarnings, resolveAccount } from "./refresh-gestal.mjs";
 import { SET_BONUSES, diffSetBonuses, setCounts } from "./set-bonuses.mjs";
 import { isSnapshotArg, resolveSnapshot } from "./snapshots.mjs";
 import { describeWearers, otherWearers } from "./wearers.mjs";
@@ -553,6 +554,60 @@ function runVerify(args) {
   if (mismatches.length) process.exit(1);
 }
 
+// Record one in-game power reading against the copy's stats as they are RIGHT NOW.
+//
+// THE LIVE FOLDER IS READ HERE DELIBERATELY, against the snapshots-only convention every other mode
+// follows: the log line this writes is itself the frozen record, so freezing a snapshot first would
+// add a file nobody reads and a chance for the two to disagree. Nothing is written to
+// oracle/resources/ — the capture is built in memory and dropped.
+function runLog(args) {
+  let captured;
+  try {
+    captured = captureSnapshot(resolveAccount(dataRoot(), null));
+  } catch (e) {
+    return die(e);
+  }
+  // `captured.items` is a COUNT, not a list, so the state comes off the snapshot itself.
+  const { snapshot } = captured;
+  // A warning, not a refusal: Gestal refreshes its documents only while attached to a running Raid,
+  // and the reader is looking at the screen and can tell whether it matches.
+  for (const w of freshnessWarnings(snapshot)) console.warn(`  warning: ${w}`);
+
+  const { items, rows, statsById } = accountState(snapshot);
+  const copies = mainCopies(rows, statsById, items, args.selector);
+  if (!copies.length) return noMatch(rows, args.selector);
+  // A reading landing on the wrong champion cannot be undone by rerunning — it silently poisons
+  // that champion's fit — so an ambiguous selector writes nothing at all.
+  if (copies.length !== 1) {
+    return tooManyCopies(copies, "a logged reading belongs to one copy");
+  }
+  const [row] = copies;
+  const champStats = statsById.get(row.ID);
+  const current = items.filter((it) => it.equippedChampId === row.ID);
+
+  console.log(`${row.Name} #${row.ID}  ${row.Rang}★ +${row.Lvl}  ·  power ${args.logPower}`);
+  // The game's layout, so the reader can compare it with the screen the power was read off. That
+  // comparison is the only check that the reading and the stat model describe the same copy.
+  console.log(formatBreakdown(statBreakdown(champStats, current)));
+
+  const record = {
+    t: new Date().toISOString(),
+    heroId: row.ID,
+    baseTypeId: row.BaseHeroID,
+    name: row.Name,
+    roleId: row.Role,
+    // UNROUNDED, matching what power-solve scores builds on and what the constant is measured
+    // against. The rounded screen totals are what was printed above; the difference is at most 1
+    // per stat, and recording the rounded ones would make the fit and the solver disagree slightly
+    // about what the same build is worth.
+    totals: buildTotals(champStats, current),
+    power: args.logPower,
+  };
+  mkdirSync(powerDir(), { recursive: true });
+  appendFileSync(readingsPath(), `${JSON.stringify(record)}\n`);
+  console.log(`\nlogged to ${readingsPath()}`);
+}
+
 function main() {
   let args;
   try {
@@ -564,6 +619,10 @@ function main() {
   // other three share.
   if (args.mode === "verify") return runVerify(args);
   if (args.selector === null) return usage(args.mode);
+  if (args.mode === "log") {
+    if (args.logPower === null) return usage("log");
+    return runLog(args);
+  }
   return runSolve(args);
 }
 
