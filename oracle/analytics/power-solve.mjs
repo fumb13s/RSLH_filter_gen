@@ -436,25 +436,18 @@ function candidatesBySlot(items, faction, ncW, vectorOf) {
 // incumbent. See (1) to (4) in the header for why it is exact. Everything here that is not a
 // bound — the slot order, the candidate order — is a speed choice that cannot move the answer,
 // because the search visits every unpruned leaf whatever order it visits them in.
-function searchBest({ cands, weights, ncW, estimators, setVecs, nonGear, box, vectorOf, best }) {
-  // ONE LANE per quantity the bound tracks. Lanes 0-2 are the non-crit linear value, C.RATE and
-  // C.DMG, which the product bound combines; lanes 3 and 4 are the two McCormick estimators, each
-  // affine and therefore exactly the same shape — one scalar per piece. Every lane is a
-  // NON-NEGATIVE linear functional of a stat vector, which is what makes a per-slot maximum and a
-  // set-bonus headroom upper bounds on what the remaining slots can add to it.
-  //
-  // The estimator lanes are the TIGHT ones: each collapses the crit product into a single scalar
-  // per piece, so a slot's maximum is attainable rather than three maxima that may belong to
-  // three different pieces. The product bound is the loose one, and the one the issue specifies.
-  // Taking the smaller of all three is sound because each is sound on its own.
-  const laneW = [ncW, unitWeights("C.RATE"), unitWeights("C.DMG"),
-    estimators[0].w, estimators[1].w];
+function searchBest({ cands, weights, ncW, setVecs, nonGear, box, vectorOf, best }) {
+  // ONE LANE per quantity the bound tracks: the non-crit linear value, C.RATE and C.DMG. Those
+  // three are a sufficient statistic for a build — see (2) in the header — so every ceiling below
+  // is built from them. Each lane is a NON-NEGATIVE linear functional of a stat vector, which is
+  // what makes a per-slot maximum and a set-bonus headroom upper bounds on what the remaining
+  // slots can add to it.
+  const laneW = [ncW, unitWeights("C.RATE"), unitWeights("C.DMG")];
   const laneSet = laneW.map((w) => new Map([...setVecs]
     .map(([setId, vectors]) => [setId, vectors.map((v) => dot(w, v))])));
   // What each lane holds before any gear. The two crit lanes carry the box floors, which ARE the
-  // non-gear crit totals; the estimator lanes carry their own affine offsets.
-  const laneBase = [dot(ncW, nonGear), box.CRlo, box.CDlo,
-    estimators[0].offset, estimators[1].offset];
+  // non-gear crit totals.
+  const laneBase = [dot(ncW, nonGear), box.CRlo, box.CDlo];
   const L = laneW.length;
 
   for (const list of cands.values()) {
@@ -478,6 +471,9 @@ function searchBest({ cands, weights, ncW, estimators, setVecs, nonGear, box, ve
   };
   const order = [...cands.keys()].sort((a, b) => spreadOf(b) - spreadOf(a) || a - b);
   const n = order.length;
+  // The candidate lists in SEARCH order, as a plain array. canBeat walks them per node, and a
+  // Map lookup per slot per node is measurable at this depth.
+  const slotCands = order.map((slot) => cands.get(slot));
 
   // suffMax[lane][i]: the largest value each slot from i on could still contribute in that lane,
   // summed. Every slot's candidate list is non-empty, so the inner maximum is always a real one.
@@ -485,13 +481,30 @@ function searchBest({ cands, weights, ncW, estimators, setVecs, nonGear, box, ve
     const out = new Float64Array(n + 1);
     for (let i = n - 1; i >= 0; i--) {
       let max = -Infinity;
-      for (const entry of cands.get(order[i])) {
+      for (const entry of slotCands[i]) {
         if (entry.lane[lane] > max) max = entry.lane[lane];
       }
       out[i] = out[i + 1] + max;
     }
     return out;
   });
+
+  // The least crit the remaining slots can be left holding. Every slot must take SOME piece, so
+  // the floor of the node's crit box is the current total plus each remaining slot's smallest
+  // contribution — not the current total, which no completion can actually stay at. Set bonuses
+  // only ever add, so they contribute nothing to a floor.
+  const suffMinCR = new Float64Array(n + 1);
+  const suffMinCD = new Float64Array(n + 1);
+  for (let i = n - 1; i >= 0; i--) {
+    let minCR = Infinity;
+    let minCD = Infinity;
+    for (const entry of slotCands[i]) {
+      if (entry.lane[1] < minCR) minCR = entry.lane[1];
+      if (entry.lane[2] < minCD) minCD = entry.lane[2];
+    }
+    suffMinCR[i] = suffMinCR[i + 1] + minCR;
+    suffMinCD[i] = suffMinCD[i + 1] + minCD;
+  }
 
   // suffSupply[i]: setId -> how many slots from i on could supply a piece of it. A tighter cap on
   // a set's remaining headroom than the number of slots left on its own, and the only place the
@@ -507,41 +520,149 @@ function searchBest({ cands, weights, ncW, estimators, setVecs, nonGear, box, ve
     suffSupply[i] = here;
   }
 
+  // What one more piece of a set is worth in one lane, at each count. A lane's set column is
+  // non-decreasing, so every increment is >= 0 — which is what lets laneGain pick the largest few
+  // and still bound the rest. Irregular on purpose: a tiered set pays at 1, 2, 3, 5, 7 and 8, so
+  // its increments at 4 and 6 are zero with positive ones after, and laneGain must not stop early.
+  const laneInc = laneSet.map((columns) => {
+    const out = new Map();
+    for (const [setId, column] of columns) {
+      const inc = new Float64Array(column.length);
+      for (let c = 1; c < column.length; c++) inc[c] = column[c] - column[c - 1];
+      out.set(setId, inc);
+    }
+    return out;
+  });
+
+  // Reused across every laneGain call. Safe because the calls are strictly sequential — one
+  // finishes before the next begins — and it saves an allocation per lane per node.
+  const topBuf = new Float64Array(n);
+
   // An upper bound on the TOTAL set-bonus increase the remaining slots can still buy in one lane.
-  // Per set, its count can rise by at most however many remaining slots supply it, capped by how
-  // many slots remain at all; a lane's set column is non-decreasing in count, so that count's
-  // bonus less the bonus at the count already held is that set's own ceiling. Summing over sets
-  // is LOOSE — the remaining slots cannot feed every set at once — and sound, which is what a
-  // bound has to be.
-  const laneGain = (lane, depth, counts) => {
-    const columns = laneSet[lane];
+  //
+  // THE COUNTING ARGUMENT. The remaining slots place exactly `left` more pieces between them, so
+  // if set s ends at held_s + j_s then the j_s sum to `left`. Set s's gain telescopes into its
+  // own consecutive increments from held_s, so the whole gain is a sub-multiset of the available
+  // increments of size `left`. Every increment is non-negative, so the sum of the `left` LARGEST
+  // available increments bounds it.
+  //
+  // Summing each set's full headroom instead — the obvious bound — hands every set at once all
+  // the pieces only one of them can have, and on a pool carrying eight sets in every slot that is
+  // roughly eight times too generous. Measured: it made the nine-slot performance instance
+  // intractable (six slots already took 4.8 s, growing about twelvefold per slot), because the
+  // crit ceilings it feeds are multiplied together and the product bound never bit.
+  // `a` and `b` combine the three lanes into one — the affine form a McCormick corner reads the
+  // build through. Bounding that form's set gain directly is TIGHTER than bounding each lane and
+  // recombining: three separate selections each spend their `left` picks on whichever sets suit
+  // that lane, so a pure-C.RATE set and a pure-C.DMG set both get counted in full, while one
+  // combined selection makes them compete for the same slots, which is what actually happens.
+  // Passing a = b = 0 reads lane 0 alone, which is what the product bound's three calls do.
+  const gainOf = (depth, counts, lane, a, b) => {
     const left = n - depth;
+    if (left === 0) return 0;
+    const inc0 = laneInc[lane];
+    const inc1 = laneInc[1];
+    const inc2 = laneInc[2];
+    let filled = 0;
     let total = 0;
     for (const [setId, supply] of suffSupply[depth]) {
-      const column = columns.get(setId);
-      if (!column) continue;
+      const c0 = inc0.get(setId);
+      if (!c0) continue;
+      const c1 = inc1.get(setId);
+      const c2 = inc2.get(setId);
       const held = counts.get(setId) ?? 0;
-      const reach = Math.min(held + Math.min(supply, left), SLOTS.length);
-      total += column[reach] - column[held];
+      const cap = Math.min(supply, left, SLOTS.length - held);
+      for (let t = 1; t <= cap; t++) {
+        const at = held + t;
+        const v = a === 0 && b === 0 ? c0[at] : c0[at] + a * c1[at] + b * c2[at];
+        if (v <= 0) continue;
+        if (filled < left) {
+          // Keep the buffer ASCENDING, so topBuf[0] is always the smallest kept increment and
+          // the test below is one comparison.
+          let i = filled++;
+          while (i > 0 && topBuf[i - 1] > v) { topBuf[i] = topBuf[i - 1]; i--; }
+          topBuf[i] = v;
+          total += v;
+        } else if (v > topBuf[0]) {
+          total += v - topBuf[0];
+          let i = 0;
+          while (i + 1 < left && topBuf[i + 1] < v) { topBuf[i] = topBuf[i + 1]; i++; }
+          topBuf[i] = v;
+        }
+      }
     }
     return total;
   };
 
-  const laneCeiling = (lane, depth, acc, counts) =>
-    laneBase[lane] + acc[lane] + suffMax[lane][depth] + laneGain(lane, depth, counts);
+  // Whether any completion of this partial build could still reach the incumbent. Three sound
+  // ceilings on the final objective; the node bound is the smallest, and the smallest being
+  // STRICTLY below the incumbent is the same as ANY of them being — so the moment one is, the
+  // rest need not be computed. Strict, so a branch whose ceiling merely equals the incumbent is
+  // kept: that is what stops the search from pruning a branch holding an equally good optimum.
+  //
+  // (a) THE PRODUCT BOUND, the issue's: each of the three lanes maximized independently, then
+  // recombined. Cheap — every term is a precomputed suffix — so it is tried first.
+  //
+  // (b) and (c) TWO McCORMICK CORNERS OVER THE NODE'S OWN BOX. The certificate's estimators are
+  // taken over the GLOBAL crit box, and that box never shrinks, so their error stays the full
+  // certificate gap at every depth — measured at 17% of the optimum six slots in, which prunes
+  // nothing until the build is nearly complete. Re-deriving McCormick over the box this node's
+  // completions can actually reach shrinks the error with the square of the slots left, which is
+  // what makes the search finish. Over the node box [crLo, crHi] x [cdLo, cdHi]:
+  //
+  //   (crHi - CR)(CD - cdLo) >= 0  =>  CR(100 + CD) <= crHi(100 + CD) + (100 + cdLo)CR - crHi(100 + cdLo)
+  //   (CR - crLo)(cdHi - CD) >= 0  =>  CR(100 + CD) <= crLo(100 + CD) + (100 + cdHi)CR - crLo(100 + cdHi)
+  //
+  // Each is AFFINE in the build's C.RATE and C.DMG, so maximizing it over the completions is one
+  // scalar per piece and a per-slot maximum is ATTAINABLE rather than three maxima belonging to
+  // three different pieces. Both coefficients are non-negative — k >= 0 and no crit total is
+  // below -100 — so the lane gains may be bounded term by term. The per-slot scan is the cost,
+  // and it is why these come second.
+  //
+  // THE CONSTANT IS -k * crRef * cdRef, the same correction solvePower's upperAt applies, and the
+  // 100 is why: multiplying the first rearrangement by k gives
+  // k*crHi*(100 + CD) + k*(100 + cdLo)*CR - k*crHi*(100 + cdLo), whose C.DMG coefficient is
+  // k*crHi and whose C.RATE coefficient is k*(100 + cdLo); the two k*crHi*100 terms then cancel,
+  // leaving -k * crHi * cdLo. Carrying the (100 + cdLo) into the constant instead makes the
+  // ceiling k*crHi*100 too SMALL, which prunes the optimum — it did, and the probe that compares
+  // this mode against solvePower on the same pool is what caught it.
+  const canBeat = (depth, acc, counts) => {
+    const gNC = gainOf(depth, counts, 0, 0, 0);
+    const gCR = gainOf(depth, counts, 1, 0, 0);
+    const gCD = gainOf(depth, counts, 2, 0, 0);
+    const ncNow = laneBase[0] + acc[0];
+    const crNow = laneBase[1] + acc[1];
+    const cdNow = laneBase[2] + acc[2];
+    const crHi = crNow + suffMax[1][depth] + gCR;
+    const cdHi = cdNow + suffMax[2][depth] + gCD;
+    if (ncNow + suffMax[0][depth] + gNC + weights.k * crHi * (100 + cdHi) < best.lin) return false;
 
-  // The smaller of three sound ceilings on the FINAL objective of every completion of this
-  // partial build: the product of the three tracked totals, and each McCormick estimator read off
-  // its own lane.
-  const ceilingAt = (depth, acc, counts) => {
-    let bound = laneCeiling(0, depth, acc, counts)
-      + weights.k * laneCeiling(1, depth, acc, counts)
-        * (100 + laneCeiling(2, depth, acc, counts));
-    for (let lane = 3; lane < L; lane++) {
-      const estimate = laneCeiling(lane, depth, acc, counts);
-      if (estimate < bound) bound = estimate;
+    const crLo = crNow + suffMinCR[depth];
+    const cdLo = cdNow + suffMinCD[depth];
+    const aHi = weights.k * (100 + cdLo);
+    const bHi = weights.k * crHi;
+    const aLo = weights.k * (100 + cdHi);
+    const bLo = weights.k * crLo;
+    let sumHi = 0;
+    let sumLo = 0;
+    for (let i = depth; i < n; i++) {
+      let maxHi = -Infinity;
+      let maxLo = -Infinity;
+      for (const entry of slotCands[i]) {
+        const hi = entry.lane[0] + aHi * entry.lane[1] + bHi * entry.lane[2];
+        if (hi > maxHi) maxHi = hi;
+        const lo = entry.lane[0] + aLo * entry.lane[1] + bLo * entry.lane[2];
+        if (lo > maxLo) maxLo = lo;
+      }
+      sumHi += maxHi;
+      sumLo += maxLo;
     }
-    return bound;
+    const atHi = ncNow + aHi * crNow + bHi * cdNow + gainOf(depth, counts, 0, aHi, bHi)
+      - weights.k * crHi * cdLo + sumHi;
+    if (atHi < best.lin) return false;
+    const atLo = ncNow + aLo * crNow + bLo * cdNow + gainOf(depth, counts, 0, aLo, bLo)
+      - weights.k * crLo * cdHi + sumLo;
+    return atLo >= best.lin;
   };
 
   const chosen = new Array(n);
@@ -579,7 +700,7 @@ function searchBest({ cands, weights, ncW, estimators, setVecs, nonGear, box, ve
       chosen[depth] = entry;
       // Pruned only when the ceiling is STRICTLY below the incumbent, so the branch holding the
       // optimum survives a ceiling that merely equals it.
-      if (ceilingAt(depth + 1, next, counts) >= best.lin) walk(depth + 1, next);
+      if (canBeat(depth + 1, next, counts)) walk(depth + 1, next);
       if (setId) { if (held === 0) counts.delete(setId); else counts.set(setId, held); }
     }
   };
@@ -679,7 +800,7 @@ export function solvePowerExact({ items, faction, champStats, current, weights }
   // Every build has a naming plan, so when every plan's bound fell below the incumbent the
   // incumbent IS the maximum and there is nothing left to search.
   if (survivors.length > 0) {
-    best = searchBest({ cands, weights, ncW, estimators, setVecs, nonGear, box, vectorOf, best });
+    best = searchBest({ cands, weights, ncW, setVecs, nonGear, box, vectorOf, best });
   }
 
   return { build: best, provenOptimal: true, plansTotal, plansPruned,
