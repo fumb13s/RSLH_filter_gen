@@ -10,6 +10,7 @@ Each entry carries a severity tag indicating its semver impact: `[major]`, `[min
 ### Added
 
 - [minor] Add `oracle/analytics/set-bonuses.mjs`: every artifact set's bonus for every stat, generated from Gestal Desktop's set catalogue and verified against the game's own per-champion set bonuses for all 532 geared champions on a 2026-09-29 capture. `speed-sets.mjs` is now the SPD-only view of it rather than a second hand-typed table (#41)
+- [minor] Add `oracle/analytics/build-solve.mjs`: a stat-agnostic exact build solver for an objective of per-item value plus per-(set, count) bonus. It stays provably optimal where `speed-solve.mjs` cannot — sets that pay from a single piece let a build hold nine active sets at once, more than any set plan can name, so one-piece bonuses are bought by singleton columns in a per-plan maximum-weight assignment instead of being planned (#42)
 - [minor] Add the reverse-engineered champion Power model to `oracle/analytics`: `power-model.mjs` holds the formula (power is the square of a weighted sum of stat totals plus a per-copy constant), the measured per-champion weight tables, role-keyed fallbacks resolved one parameter at a time, and the evidence and open questions behind them; `power-fit.mjs` calibrates one champion's weights from logged power readings by least squares, reporting a weight the readings cannot determine as `undetermined` rather than fitting it to noise (#43)
 
 ### Fixed
