@@ -115,6 +115,12 @@ export function setBonusTerms(counts) {
       for (let n = Math.floor(count / row.pieces); n > 0; n--) {
         for (const [key, value] of Object.entries(row.bonus)) terms.push({ setId, key, value });
       }
+      continue;
+    }
+    // Cumulative, not exclusive: EVERY tier at or below `count` applies, once each.
+    for (const [threshold, bonus] of row.tiers) {
+      if (count < threshold) continue;
+      for (const [key, value] of Object.entries(bonus)) terms.push({ setId, key, value });
     }
   }
   return terms;

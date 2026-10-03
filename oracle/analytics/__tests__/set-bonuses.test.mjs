@@ -175,3 +175,20 @@ test("a two-stat completion contributes one term per stat, each naming its set",
 test("setBonusTerms ignores a set the table grants no stats for", () => {
   expect(setBonusTerms(counts({ 1003: 3, 15: 6 }))).toEqual([]);
 });
+
+test("a tiered set's one-piece tier applies off a single piece", () => {
+  expect(setBonusTerms(counts({ 48: 1 }))).toEqual([{ setId: 48, key: "HP%", value: 8 }]);
+});
+
+test("crossing a tiered set's next threshold ADDS a tier rather than replacing one", () => {
+  expect(setBonusTerms(counts({ 48: 2 }))).toEqual([
+    { setId: 48, key: "HP%", value: 8 },
+    { setId: 48, key: "RES", value: 40 },
+  ]);
+});
+
+// A count between two thresholds earns exactly the lower one's tiers — the property usefulCounts
+// in speed-sets.mjs is built on.
+test("a count between two thresholds unlocks no further tier", () => {
+  expect(setBonusTerms(counts({ 48: 4 }))).toEqual(setBonusTerms(counts({ 48: 3 })));
+});
