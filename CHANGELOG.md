@@ -10,6 +10,7 @@ Each entry carries a severity tag indicating its semver impact: `[major]`, `[min
 ### Added
 
 - [minor] Add `oracle/analytics/power-solve.mjs`: the gear assignment that maximizes a champion's in-game power, out of the whole vault. Power's crit term is a product of two build totals, so the solver freezes it at reference levels, solves exactly with `build-solve.mjs`, re-linearizes at the answer and iterates to a fixed point — then certifies the result with a McCormick upper bound, so the output says how far from the maximum it could be rather than claiming optimality. The gear already worn is always in the candidate pool, so the answer is never a downgrade (#45)
+- [minor] Add `oracle/analytics/power.mjs`, the champion-power CLI, with four modes: `solve` reports a champion's current and best power with the gear to reach it and a proven ceiling on what is still left on the table; `log` records an in-game power reading against Gestal's live stats; `fit` calibrates one champion's weights from its logged readings; and `verify` checks the set table against the game's own per-champion set bonuses. It reads Gestal snapshots only, since an RSL Helper DB carries neither per-copy base stats nor the per-source bonus breakdown. The wearer helpers move to a new `wearers.mjs` that `speed.mjs` re-exports unchanged (#46)
 
 ## [0.4.0] - 2026-10-03
 
