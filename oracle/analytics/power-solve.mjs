@@ -160,7 +160,6 @@ export function solvePower({ items, faction, champStats, current, weights, top =
 
   let rounds = 0;
   let converged = false;
-  let best = start;
   while (rounds < maxRounds) {
     rounds++;
     const ranked = solveAt(linearizedWeights(weights, reference.cr, reference.cd), top);
@@ -174,7 +173,6 @@ export function solvePower({ items, faction, champStats, current, weights, top =
       const scored = record(buildItems);
       if (!roundBest || scored.lin > roundBest.lin) roundBest = scored;
     }
-    best = roundBest;
     const key = itemsKey(roundBest.items);
     // Repeating the PREVIOUS round's build is a fixed point. Repeating any EARLIER one is a
     // cycle, and there is no fixed point to report — the iteration would alternate forever.
@@ -188,6 +186,9 @@ export function solvePower({ items, faction, champStats, current, weights, top =
   // rather than an eslint-disable.
   void nonGear;
 
-  const builds = [best];
+  // The whole POOL, not the last round: the best build may have come from any round, or be the
+  // gear already worn. Stable sort, so a tie falls to insertion order — round order, then
+  // build-solve's own deterministic ranking — and a rerun returns the same list.
+  const builds = [...pool.values()].sort((a, b) => b.lin - a.lin);
   return { builds, rounds, converged, upperBound: 0, gap: 0 };
 }

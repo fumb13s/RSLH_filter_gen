@@ -398,3 +398,38 @@ test("maxRounds of zero runs no round at all", () => {
   expect(got.rounds).toBe(0);
   expect(got.converged).toBe(false);
 });
+
+// Cutting the cycle off mid-flight must still answer from the POOL, not from the round that
+// happened to be last: round 1's own pick is the all-C.DMG build worth nothing.
+test("maxRounds still answers from the whole pool", () => {
+  const got = solvePower({ ...CYCLE_ARGS, maxRounds: 1 });
+  expect(idsOf(got.builds[0])).toEqual([1, 3]);
+  expect(got.builds[0].lin).toBeCloseTo(12500, 6);
+});
+
+// --- solvePower: never worse than the gear already worn ---------------------------------------
+
+// A cycle every member of which is WORSE than what is worn. Without round 0 in the pool the
+// answer is C.RATE 60 at 7,500 — a downgrade, reported as a result. Same weights and same
+// non-gear crit as the cycle case above.
+//
+//   worn   id 1  C.RATE 50, C.DMG 50  true 50 * (100 +  75) = 8,750
+//   lure   id 2  C.DMG 300            true  0 * (100 + 325) =     0
+//   second id 3  C.RATE 60            true 60 * (100 +  25) = 7,500
+//
+//   round 1 at (50,  75): C.RATE x 175, C.DMG x 50 -> lure 15,000 > worn 11,250 > second 10,500
+//   round 2 at ( 0, 325): C.RATE x 425, C.DMG x  0 -> second 25,500 > worn 21,250 > lure 0
+//   round 3 at (60,  25): C.RATE x 125, C.DMG x 60 -> lure 18,000 > worn 9,250 > second 7,500
+//                         lure is ROUND 1's build, so this is a cycle whose own best is 7,500.
+const BELOW_WORN = [crit(1, 1, 50, 50), crit(2, 1, 0, 300), crit(3, 1, 60, 0)];
+
+test("the answer is never worse than the worn gear, even when every round is", () => {
+  const got = solvePower({
+    items: BELOW_WORN, faction: 0, champStats: champStats(),
+    current: [BELOW_WORN[0]], weights: CRIT_ONLY,
+  });
+  expect(got.converged).toBe(false);
+  expect(got.rounds).toBe(3);
+  expect(got.builds[0].items.map((it) => it.id)).toEqual([1]);
+  expect(got.builds[0].lin).toBeCloseTo(8750, 6);
+});
