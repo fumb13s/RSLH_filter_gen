@@ -184,3 +184,22 @@ test("a stat that is constant within every copy leaves its parameter undetermine
   expect(close(fit.constants.get(11), C11)).toBeLessThan(1e-6);
   expect(close(fit.constants.get(22), C22)).toBeLessThan(1e-6);
 });
+
+// The same identity as above, on a fit that HAS an undetermined parameter: `predicted` is power()
+// with the undetermined weights at their prior. Rebuilt from `params`, `undetermined` and
+// `constants` alone, which is all a caller gets.
+test("predicted is power() rebuilt from the returned values, undetermined ones at their prior", () => {
+  const w = { ...W, s: PRIOR.s };
+  const readings = [
+    ...copy(11, w, C11, { SPD: 200 }, NO_SPD_STEPS),
+    ...copy(22, w, C22, { ...OVER_22, SPD: 260 }, NO_SPD_STEPS),
+  ];
+  const fit = fitWeights(readings);
+  expect(fit.undetermined).toEqual(["s"]);
+  const rebuilt = { ...fit.params };
+  for (const name of fit.undetermined) rebuilt[name] = PRIOR[name];
+  fit.residuals.forEach((res, i) => {
+    const want = power(readings[i].totals, rebuilt, fit.constants.get(res.heroId));
+    expect(close(res.predicted, want), res.t).toBeLessThan(1e-12);
+  });
+});
