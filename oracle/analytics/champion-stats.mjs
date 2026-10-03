@@ -1,4 +1,5 @@
 // The champion stat model: the game's Total Stats screen for a copy and a gear assignment.
+import { setBonusTotals, setCounts } from "./set-bonuses.mjs";
 
 // The eight stats the screen shows, in its column order.
 export const STATS = ["HP", "ATK", "DEF", "SPD", "C.RATE", "C.DMG", "RES", "ACC"];
@@ -55,4 +56,43 @@ export function itemEntries(item) {
   for (const s of item.substats) push(s, s.value + s.glyph);
   if (item.ascStat) push(item.ascStat, item.ascStat.value);
   return out;
+}
+
+const zeros = () => Object.fromEntries(STATS.map((stat) => [stat, 0]));
+
+// The game's Total Stats screen for one copy and one gear assignment: its nine columns, each an
+// unrounded vector over STATS, and the totals.
+//
+// TOTALS ROUND PER COLUMN, then sum. That is what the game does, and it is where the ±1
+// differences against a plain sum of the unrounded columns come from. Reproducing it is the point.
+export function statBreakdown(champStats, items) {
+  const { base, sources, loreOfSteel } = champStats;
+  const vector = (entries) => {
+    const out = zeros();
+    for (const [key, value] of entries) {
+      const [stat, amount] = contribution(key, value, base);
+      out[stat] += amount;
+    }
+    return out;
+  };
+  const setTotals = [...setBonusTotals(setCounts(items))];
+  const columns = [
+    ["Basic", { ...zeros(), ...base }],
+    ["Artifacts", vector([...items.flatMap(itemEntries), ...setTotals])],
+    ["Affinity", vector(GREAT_HALL)],
+    ["Classic Arena", vector(ARENA)],
+    // Lore of Steel scales EVERY set's bonus, not only the eight basic sets, and the game shows
+    // that extra here rather than inside the set bonus. Verified on a champion with the mastery,
+    // whose Merciless, Zeal and Pinpoint bonuses were all scaled. Scaling the summed totals is
+    // the same number as scaling each term: with no flooring, k * Σ terms == Σ (k * terms).
+    ["Masteries", vector([...sources.mastery,
+      ...setTotals.map(([key, value]) => [key, value * loreOfSteel])])],
+    ["Faction Guardians", vector(sources.factionGuardian)],
+    ["Empowerment", vector(sources.empower)],
+    ["Blessing", vector(sources.blessing)],
+    ["Relic", vector(sources.relic)],
+  ];
+  const totals = Object.fromEntries(STATS.map((stat) =>
+    [stat, columns.reduce((sum, [, v]) => sum + Math.round(v[stat]), 0)]));
+  return { columns, totals };
 }
