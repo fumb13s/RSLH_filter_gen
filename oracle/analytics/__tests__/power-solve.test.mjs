@@ -153,3 +153,34 @@ test("every set's vectors are non-decreasing in piece count on every stat", () =
     }
   }
 });
+
+// --- nonGearTotals -----------------------------------------------------------------------------
+
+// The Great Hall's C.DMG +25 is the whole of a zero-base champion's non-gear crit, and every crit
+// case further down is built around it. Classic Arena grants no crit at all.
+test("nonGearTotals carries the Great Hall's crit, resistance and accuracy", () => {
+  const got = nonGearTotals(champStats());
+  expect(got["C.DMG"]).toBeCloseTo(25, 9);
+  expect(got["C.RATE"]).toBe(0);
+  expect(got.RES).toBeCloseTo(80, 9);
+  expect(got.ACC).toBeCloseTo(80, 9);
+});
+
+// Base plus 20% Great Hall plus 22% Classic Arena on HP, and the two flat per-source bonuses
+// landing on their own stats.
+test("nonGearTotals sums the champion's base with every per-source bonus", () => {
+  const got = nonGearTotals(champStats({
+    base: { HP: 20000, SPD: 100 },
+    sources: { blessing: [["SPD", 7]], relic: [["ACC", 50]] },
+  }));
+  expect(got.HP).toBeCloseTo(20000 + 4000 + 4400, 9);
+  expect(got.SPD).toBeCloseTo(107, 9);
+  expect(got.ACC).toBeCloseTo(80 + 50, 9);
+});
+
+// No gear means no set bonus, so Lore of Steel has nothing to scale and must not appear.
+test("nonGearTotals is unaffected by Lore of Steel", () => {
+  const withMastery = nonGearTotals(champStats({ base: { HP: 20000 }, loreOfSteel: 0.15 }));
+  const without = nonGearTotals(champStats({ base: { HP: 20000 } }));
+  expect(withMastery).toEqual(without);
+});

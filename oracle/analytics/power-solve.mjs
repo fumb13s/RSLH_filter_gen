@@ -70,6 +70,16 @@ export function setVectors(setId, base, loreOfSteel) {
   });
 }
 
-export const nonGearTotals = () => { throw new Error("not implemented"); };
+// Everything a copy has before any gear: its base, the Great Hall, Classic Arena, masteries,
+// faction guardians, empowerment, blessing and relic. Read off statBreakdown with NO items, so
+// the two models can never drift apart, and summed WITHOUT rounding — statBreakdown's own
+// `totals` rounds each column to reproduce the game's screen, which is not what an objective
+// should be evaluated on.
+export function nonGearTotals(champStats) {
+  const out = zeros();
+  for (const [, vector] of statBreakdown(champStats, []).columns) addInto(out, vector);
+  return out;
+}
+
 export const buildTotals = () => { throw new Error("not implemented"); };
 export const solvePower = () => { throw new Error("not implemented"); };
