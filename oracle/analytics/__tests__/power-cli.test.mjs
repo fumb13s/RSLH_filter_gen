@@ -729,3 +729,88 @@ test("solve reports every main copy a selector matches", () => {
   expect(res.stdout).toMatch(/^Elhain #100 /m);
   expect(res.stdout).toMatch(/^Dark Elhain #200 /m);
 });
+
+// --- solve: BEST -----------------------------------------------------------------
+
+// One line per slot, named the way the game names them — the slot, the set, the level and the id —
+// plus `on <champion>` for a piece that would have to come off someone. The solver's pool is the
+// whole vault, worn gear included, so that last part is what decides whether the build is
+// actionable.
+test("solve prints BEST slot by slot, with its sets and totals", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR })]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {2}BEST /m);
+  // Three slots, which are our 1 Helmet, 5 Weapon and 6 Shield — Gestal's 1, 0 and 2.
+  expect(res.stdout).toMatch(/^ {4}Helmet {2}/m);
+  expect(res.stdout).toMatch(/^ {4}Weapon {2}/m);
+  expect(res.stdout).toMatch(/^ {4}Shield {2}/m);
+  // The optimum is MIXED, not three of either set, and the crit product is why. At the role-default
+  // k of 0.00154, with non-gear C.RATE 15 and C.DMG 75 (base 50 + the Great Hall's 25):
+  //   2 CR + 1 CD  C.RATE 15+32+12 = 59, C.DMG 75+120     = 195 -> 59 * 295 = 17,405
+  //   3 CR         C.RATE 15+36+12 = 63, C.DMG 75+90      = 165 -> 63 * 265 = 16,695
+  //   3 CD         C.RATE 15+24    = 39, C.DMG 75+180+20  = 275 -> 39 * 375 = 14,625
+  // So the mixed build wins outright, and pinning an `x3` line here would pin a worse build.
+  expect(res.stdout).toMatch(/^ {4}sets: Critical Rate x2 · Crit Damage x1$/m);
+  expect(res.stdout).toMatch(/^ {4}totals: HP \d+ {2}ATK \d+ {2}DEF \d+ {2}SPD \d+ {2}C\.RATE /m);
+});
+
+// Nothing in this fixture is on another champion except the three pieces already on Elhain, and a
+// piece already on the copy being solved for costs nothing to fit. The line is printed anyway,
+// `none` included: silence would be indistinguishable from a report that does not check.
+test("solve prints the borrowed-pieces line even when nothing is borrowed", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR })]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {4}on other champions: none$/m);
+});
+
+// A piece on someone else has to be named twice over: beside its own line, and once for the build.
+test("solve names the champion a borrowed piece would come off", () => {
+  const champions = [champion(), champion({ heroId: 200, baseTypeId: 1491, name: "Kael" })];
+  // Give Kael the three Crit Damage pieces, so whichever build BEST picks borrows from someone.
+  const artifacts = GEAR.map((p) => (p.gearSetId === CD_SET ? { ...p, equippedOnHeroId: 200 } : p));
+  const res = run(["Elhain", snapshotFile({ artifacts, champions })]);
+  expect(res.status, res.stderr).toBe(0);
+  // BEST is the mixed build (see the arithmetic above), so it borrows exactly ONE of Kael's Crit
+  // Damage pieces — the helmet. Named in both places a reader looks: beside the piece, and once for
+  // the build.
+  expect(res.stdout).toMatch(/^ {4}Helmet {2}Crit Damage {4}\+16 {3}#5 {3}on Kael$/m);
+  expect(res.stdout).toMatch(/^ {4}on other champions: 1 of 3 — Kael$/m);
+});
+
+// What the solver PROVED, as against what it found. A fixed point of the linearize-and-resolve map
+// is not an optimum, so the headline number is the proven CEILING on what is left on the table.
+test("solve closes each build with the certificate line", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR })]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout)
+    .toMatch(/^ {4}at most -?[\d.]+ √power \([\d.]+%\) below the true maximum {3}\[\d+ rounds?, (converged|no fixed point)\]$/m);
+});
+
+// With a constant the whole report switches to power, the number the game shows — the certificate
+// line included, so it can be compared with the power printed above it.
+test("solve states the certificate in power once the constant is known", () => {
+  const dir = powerOut({ readings: [READING] });
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR })], { powerDir: dir });
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {4}at most -?\d+ power \([\d.]+%\) below the true maximum/m);
+  expect(res.stdout).toMatch(/^ {2}BEST {2}\d+ power {2}\(\+-?\d+ over current\)$/m);
+});
+
+// Without one, the gain is a ratio marked `≈` and said to be missing a constant, rather than a
+// power number computed from a constant that is not there.
+test("solve reports the gain as a marked percentage when the constant is unknown", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR })]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout)
+    .toMatch(/^ {2}BEST {2}≈ \+[\d.]+% \(per-copy constant unknown: log a reading or pass --power\)$/m);
+});
+
+// A champion wearing nothing is a real state, and solvePower seeds the worn gear as round 0, so an
+// empty vault still produces one build rather than no report at all.
+test("solve still reports a champion with no gear and an empty vault", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: [] })]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {2}CURRENT$/m);
+  expect(res.stdout).toMatch(/^ {2}BEST /m);
+  expect(res.stdout).toMatch(/below the true maximum/);
+});

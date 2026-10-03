@@ -39,9 +39,10 @@ import { isRealChamp, selectChamps, suggestNames } from "./champs.mjs";
 import { gestalChampRows, gestalChampStats, gestalItems, isGestalPath,
   readGestalSnapshot } from "./gestal.mjs";
 import { constantFrom, lin, weightsFor } from "./power-model.mjs";
-import { buildTotals } from "./power-solve.mjs";
-import { SET_BONUSES } from "./set-bonuses.mjs";
+import { buildTotals, solvePower } from "./power-solve.mjs";
+import { SET_BONUSES, setCounts } from "./set-bonuses.mjs";
 import { isSnapshotArg, resolveSnapshot } from "./snapshots.mjs";
+import { describeWearers, otherWearers } from "./wearers.mjs";
 
 // --- CLI: pure helpers ------------------------------------------------------
 
@@ -445,6 +446,23 @@ function resolveConstant(args, weights, currentTotals, readings, heroId) {
   return { c: null, source: "none" };
 }
 
+// One build: its gear slot by slot, the sets it completes, the pieces it would have to take off
+// someone, and its totals.
+//
+// The sets line is computed from the ITEMS rather than read off the build, because solvePower
+// returns no counts — and computing it here is the honest version anyway: a free pick carries an
+// item that belongs to some set and can complete one by accident, which has to count.
+function printBuild(build, wearers) {
+  for (const it of [...build.items].sort((a, b) => a.slot - b.slot)) {
+    const on = wearers.get(it.id);
+    console.log(`    ${slotName(it.slot).padEnd(7)} ${setLabel(it.set).padEnd(14)}`
+      + ` +${String(it.level).padStart(2)}   #${it.id}${on ? `   on ${on}` : ""}`);
+  }
+  console.log(`    sets: ${formatSets(setCounts(build.items))}`);
+  console.log(`    on other champions: ${describeWearers(build.items, wearers)}`);
+  console.log(formatTotals(build.totals));
+}
+
 function printCopy(row, { items, rows, statsById, fitted, readings, args }) {
   const champStats = statsById.get(row.ID);
   const { weights, source, fromDefaults } = weightsFor(
@@ -465,7 +483,17 @@ function printCopy(row, { items, rows, statsById, fitted, readings, args }) {
   console.log("  CURRENT");
   console.log(formatBreakdown(statBreakdown(champStats, current)));
   if (c !== null) console.log(`    ${Math.round((currentLin + c) ** 2)} power`);
-  void rows;
+
+  const result = solvePower({ items, faction: row.Fraction, champStats, current, weights,
+    top: args.top });
+  // builds[0] always exists: solvePower records the worn gear as round 0 before it iterates.
+  const [best] = result.builds;
+  // One wearer map per copy, shared by every build printed for it, because --top draws them all
+  // from the same vault-wide pool.
+  const wearers = otherWearers(items, row.ID, rows);
+  console.log(`\n${formatGain(currentLin, best.lin, c)}`);
+  printBuild(best, wearers);
+  console.log(formatCertificate(result, best.lin, c));
 }
 
 function runSolve(args) {
