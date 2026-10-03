@@ -11,7 +11,7 @@
 // reading log, and one whose own assertions would depend on whatever is already in it.
 import { expect, test } from "vitest";
 import { formatBreakdown, formatCertificate, formatGain, formatOffBest, formatSets, formatTotals,
-  mainCopies, parsePowerArgs } from "../power.mjs";
+  latestReading, mainCopies, parsePowerArgs, readingsFor } from "../power.mjs";
 import { STATS } from "../champion-stats.mjs";
 
 // --- parsePowerArgs: modes and positionals ------------------------------------
@@ -384,4 +384,60 @@ test("formatSets leaves out the sets that grant no stats", () => {
 test("formatSets names every set when asked for all of them", () => {
   expect(formatSets(new Map([[12, 4], [59, 2]]), true)).toBe("Cursed x4 · Merciless x2");
   expect(formatSets(new Map(), true)).toBe("no sets");
+});
+
+// --- readingsFor / latestReading ------------------------------------------------
+//
+// A reading record, in power-fit.mjs's format. Only the four fields these two helpers read are
+// filled in; the fit's own tests cover `totals` and `power`.
+const rec = (o = {}) => ({ t: "2026-10-03T12:00:00.000Z", heroId: 11, baseTypeId: 999001,
+  name: "Synthetic", roleId: 0, ...o });
+
+// fit reads NO snapshot, so its selector is matched against the readings themselves rather than
+// against a roster. Same two rules selectChamps uses: all digits is an exact copy id, anything else
+// is a case-insensitive name substring.
+test("readingsFor matches an all-digit selector against heroId", () => {
+  const log = [rec({ heroId: 11 }), rec({ heroId: 22 })];
+  expect(readingsFor(log, "22").map((r) => r.heroId)).toEqual([22]);
+  expect(readingsFor(log, "99")).toEqual([]);
+});
+
+test("readingsFor matches anything else as a case-insensitive name substring", () => {
+  const log = [rec({ name: "Thor Faehammer" }), rec({ name: "Madame Serris" })];
+  expect(readingsFor(log, "faeham").map((r) => r.name)).toEqual(["Thor Faehammer"]);
+  expect(readingsFor(log, "SERRIS").map((r) => r.name)).toEqual(["Madame Serris"]);
+});
+
+// An empty selector would match every reading by substring and fit two champions together, which
+// fitWeights refuses — but with a message about mixed baseTypeIds rather than about the missing
+// selector that caused it.
+test("readingsFor matches nothing without a selector", () => {
+  expect(readingsFor([rec()], null)).toEqual([]);
+  expect(readingsFor([rec()], "")).toEqual([]);
+});
+
+// The constant is a property of the COPY, so the reading it is measured from has to be that copy's.
+// The MOST RECENT one, because the copy's non-stat investment (a blessing, a relic) only grows.
+test("latestReading takes the newest reading for one copy", () => {
+  const log = [
+    rec({ heroId: 11, t: "2026-10-01T09:00:00.000Z" }),
+    rec({ heroId: 22, t: "2026-10-09T09:00:00.000Z" }),
+    rec({ heroId: 11, t: "2026-10-03T09:00:00.000Z" }),
+  ];
+  expect(latestReading(log, 11).t).toBe("2026-10-03T09:00:00.000Z");
+  expect(latestReading(log, 22).t).toBe("2026-10-09T09:00:00.000Z");
+});
+
+// No reading for this copy is the state before the first log, not an error: solve falls back to
+// reporting a ratio.
+test("latestReading returns null when the copy has no reading", () => {
+  expect(latestReading([rec({ heroId: 11 })], 99)).toBe(null);
+  expect(latestReading([], 11)).toBe(null);
+});
+
+// The log is appended in time order, but it is a plain text file a user can edit or concatenate, so
+// the newest is taken by comparing timestamps rather than by reading the last line.
+test("latestReading compares timestamps rather than trusting the file order", () => {
+  const log = [rec({ t: "2026-10-09T09:00:00.000Z" }), rec({ t: "2026-10-01T09:00:00.000Z" })];
+  expect(latestReading(log, 11).t).toBe("2026-10-09T09:00:00.000Z");
 });

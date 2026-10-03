@@ -273,3 +273,37 @@ export function formatSets(counts, all = false) {
   if (parts.length) return parts.join(" · ");
   return all ? "no sets" : "no stat sets";
 }
+
+// --- the reading log ------------------------------------------------------------
+
+// Which logged readings a fit selector names. fit reads no snapshot, so there is no roster to match
+// against — the readings carry their own `heroId` and `name`, and the two rules are selectChamps':
+// all digits is an exact copy id, anything else is a case-insensitive substring of the name the
+// reading was logged under.
+//
+// No selector matches NOTHING, not everything. An empty substring would match every reading and
+// hand fitWeights two champions, which it refuses — but with a message about mixed baseTypeIds
+// rather than about the missing selector that caused it.
+export function readingsFor(readings, selector) {
+  if (!selector) return [];
+  if (/^\d+$/.test(selector)) {
+    return readings.filter((r) => Number(r.heroId) === Number(selector));
+  }
+  const needle = selector.toLowerCase();
+  return readings.filter((r) => String(r.name).toLowerCase().includes(needle));
+}
+
+// The most recent reading for ONE copy, or null. The constant is a property of the copy, and the
+// copy's non-stat investment only grows, so the newest reading is the one that still describes it.
+//
+// By TIMESTAMP rather than by file order: readings are appended in time order, but the log is a
+// plain text file a user can edit or concatenate two of. ISO-8601 strings in UTC compare
+// lexicographically in time order, which is why no Date is constructed here.
+export function latestReading(readings, heroId) {
+  let best = null;
+  for (const r of readings) {
+    if (r.heroId !== heroId) continue;
+    if (!best || String(r.t) > String(best.t)) best = r;
+  }
+  return best;
+}
