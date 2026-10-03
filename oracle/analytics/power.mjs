@@ -580,11 +580,19 @@ function resolveConstant(args, weights, currentTotals, readings, heroId) {
 // The sets line is computed from the ITEMS rather than read off the build, because solvePower
 // returns no counts — and computing it here is the honest version anyway: a free pick carries an
 // item that belongs to some set and can complete one by accident, which has to count.
-function printBuild(build, wearers) {
+//
+// `linesById` is extra lines to print UNDER a given piece, which is how the glyph block puts each
+// glyph to apply beside the piece that needs it: a glyph is an instruction about one piece, and a
+// reader works down the list slot by slot rather than matching a trailing list back to ids.
+// Omitted by every other caller, which prints the build unchanged.
+function printBuild(build, wearers, linesById) {
   for (const it of [...build.items].sort((a, b) => a.slot - b.slot)) {
     const on = wearers.get(it.id);
     console.log(`    ${slotName(it.slot).padEnd(7)} ${setLabel(it.set).padEnd(14)}`
       + ` +${String(it.level).padStart(2)}   #${it.id}${on ? `   on ${on}` : ""}`);
+    // Each line is printed verbatim: the formatter owns its own indentation, exactly as
+    // formatTotals below does.
+    for (const line of linesById?.get(it.id) ?? []) console.log(line);
   }
   console.log(`    sets: ${formatSets(setCounts(build.items))}`);
   console.log(`    on other champions: ${describeWearers(build.items, wearers)}`);
@@ -603,7 +611,7 @@ function printBuild(build, wearers) {
 // the same slots.
 function printGlyphBlock({ items, champStats, weights, faction, current, plainBest, c, args,
   wearers }) {
-  const { items: pool } = liftVault(items, args.glyph);
+  const { items: pool, liftsById } = liftVault(items, args.glyph);
   const byId = new Map(pool.map((it) => [it.id, it]));
   // A build's pieces as the LIFTED pool's own objects. power-solve keys its per-item stat vectors
   // by object IDENTITY, and its header requires `current` to be drawn from the pool it searches —
@@ -620,13 +628,27 @@ function printGlyphBlock({ items, champStats, weights, faction, current, plainBe
   // says "over BEST".
   const floor = score(asLifted(plainBest.items));
 
+  // Each lift the build would have to pay for, and the lines that say so. Only the pieces the
+  // build HOLDS: a vault full of lifts would otherwise bury the handful this answer needs.
+  const liftsOf = (build) => build.items.flatMap((it) => liftsById.get(it.id) ?? []);
+  const linesFor = (build) => new Map(build.items
+    .filter((it) => liftsById.has(it.id))
+    .map((it) => [it.id, liftsById.get(it.id).map((lift) =>
+      formatLift(lift, liftDelta(lift, champStats.base, weights), build.lin, c))]));
+  // Each lift is valued against THIS build's own `lin`, because power is a square and the same
+  // delta is worth more on a stronger build — so a runner-up's lines are not the reported build's.
+  const printOne = (build) => {
+    printBuild(build, wearers, linesFor(build));
+    console.log(`    glyphs to apply: ${liftsOf(build).length}`);
+  };
+
   const result = solvePower({ items: pool, faction, champStats, current: asLifted(current),
     weights, top: args.top });
   // A TIE goes to the lifted solve, which is the answer the block was asked for; the floor is the
   // guarantee behind it rather than the preferred reading of it.
   const reported = result.builds[0].lin >= floor.lin ? result.builds[0] : floor;
   console.log(`\n${formatGlyphGain(plainBest.lin, reported.lin, c, args.glyph)}`);
-  printBuild(reported, wearers);
+  printOne(reported);
 }
 
 function printCopy(row, { items, rows, statsById, fitted, readings, args }) {

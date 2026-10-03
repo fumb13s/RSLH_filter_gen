@@ -1182,6 +1182,26 @@ test("--glyph reports a build at least as strong as the plain BEST", () => {
   expect(glyphed).toBeGreaterThanOrEqual(best);
 });
 
+// The one lift this vault has, under the piece it belongs to, with what that one glyph is worth.
+// Elhain is in no BUILT_IN row, so every weight falls through to a role default — the Attack
+// row's s = 0.022 — and the whole value is one multiplication:
+//   12 points of SPD x 0.022 = 0.264 -> +0.26 in sqrt(power), the unit with no constant to use
+test("--glyph names each glyph to apply and what it is worth", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--glyph", "legendary"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {6}glyph SPD 0→12 {2}\(\+0\.26\)$/m);
+});
+
+// The count is of the lifts in the REPORTED BUILD, not in the vault: a glyph on a piece the build
+// does not wear is not work this answer asks for. Here the one lifted piece is in the build, so
+// the two happen to agree — and the plain block above prints no count at all.
+test("--glyph counts the glyphs the reported build would need", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--glyph", "legendary"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {4}glyphs to apply: 1$/m);
+  expect(res.stdout.match(/^ {4}glyphs to apply: /gm)).toHaveLength(1);
+});
+
 // --- verify ----------------------------------------------------------------------
 //
 // The set table is GAME DATA and will drift on a patch. verify is the guard: it diffs the table
