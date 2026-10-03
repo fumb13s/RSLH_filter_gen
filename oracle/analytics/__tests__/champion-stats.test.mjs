@@ -59,3 +59,58 @@ test("a contribution is left unrounded", () => {
   expect(contribution("ATK%", 2.25, BASE)).toEqual(["ATK", 22.5]);
   expect(contribution("DEF%", 0.05, BASE)).toEqual(["DEF", 0.5]);
 });
+
+// --- itemEntries ------------------------------------------------------------------------
+
+const sub = (statId, value, glyph = 0, isFlat = false) => ({ statId, isFlat, rolls: 0, value, glyph });
+const item = (o = {}) => ({
+  id: 1, slot: 4, set: 0, rank: 6, rarity: 5, level: 16, faction: 0, isAccessory: false,
+  mainStat: { statId: 4, isFlat: true, value: 30 }, substats: [], ascStat: null,
+  ascLevel: -1, equippedChampId: 0, ...o,
+});
+
+test("the main stat is the first entry", () => {
+  expect(itemEntries(item())).toEqual([["SPD", 30]]);
+});
+
+// The ITEM stat ids are STAT_NAMES order, NOT the statKindId enum bonusesV2 uses: here 5 is
+// C.RATE and 7 is RES, where a statKindId 5 is RES and 7 is C.RATE.
+test("item stat ids 4-8 map onto SPD, C.RATE, C.DMG, RES and ACC", () => {
+  const main = (statId) => itemEntries(item({ mainStat: { statId, isFlat: true, value: 11 } }))[0][0];
+  expect([4, 5, 6, 7, 8].map(main)).toEqual(["SPD", "C.RATE", "C.DMG", "RES", "ACC"]);
+});
+
+test("HP, ATK and DEF take a flat or a percent key from the isFlat flag", () => {
+  const main = (statId, isFlat) => itemEntries(item({ mainStat: { statId, isFlat, value: 7 } }))[0][0];
+  expect([1, 2, 3].map((id) => main(id, true))).toEqual(["HP", "ATK", "DEF"]);
+  expect([1, 2, 3].map((id) => main(id, false))).toEqual(["HP%", "ATK%", "DEF%"]);
+});
+
+// The glyph is ADDITIVE: substat.value does not already include it, as itemSpeed established.
+test("a substat contributes its value plus its glyph", () => {
+  const it = item({ mainStat: { statId: 1, isFlat: true, value: 500 }, substats: [sub(4, 10, 5, true)] });
+  expect(itemEntries(it)).toEqual([["HP", 500], ["SPD", 15]]);
+});
+
+test("the ascension stat contributes like any other", () => {
+  const it = item({ mainStat: { statId: 1, isFlat: true, value: 500 },
+    ascStat: { statId: 6, isFlat: false, value: 12 } });
+  expect(itemEntries(it)).toEqual([["HP", 500], ["C.DMG", 12]]);
+});
+
+test("an item with no substats and no ascension stat yields its main stat alone", () => {
+  expect(itemEntries(item({ substats: [], ascStat: null }))).toHaveLength(1);
+});
+
+// The damage-type substats (PvE/PvP/Boss/Dungeon DMG +/-) reflect on no Total Stats column, so
+// they are skipped rather than refused — unlike a genuinely unknown id.
+test("a damage-type substat is skipped, and does not stop the rest of the item", () => {
+  const it = item({ mainStat: { statId: 1, isFlat: true, value: 500 },
+    substats: [sub(11, 5), sub(18, 5), sub(4, 10, 0, true)] });
+  expect(itemEntries(it)).toEqual([["HP", 500], ["SPD", 10]]);
+});
+
+test("an unknown item stat id is refused rather than silently dropped", () => {
+  expect(() => itemEntries(item({ substats: [sub(99, 5)] }))).toThrow(/unknown item stat id 99/);
+  expect(() => itemEntries(item({ substats: [sub(10, 5)] }))).toThrow(/unknown item stat id 10/);
+});
