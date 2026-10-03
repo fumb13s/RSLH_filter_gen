@@ -125,3 +125,14 @@ export function setBonusTerms(counts) {
   }
   return terms;
 }
+
+// The same bonuses summed per stat. Fine for percentage-point and flat stats, which add; a caller
+// applying a PERCENTAGE stat to a base must use setBonusTerms instead, because the game floors each
+// term separately and the sum has already lost that structure.
+export function setBonusTotals(counts) {
+  const totals = new Map();
+  for (const { key, value } of setBonusTerms(counts)) {
+    totals.set(key, (totals.get(key) ?? 0) + value);
+  }
+  return totals;
+}

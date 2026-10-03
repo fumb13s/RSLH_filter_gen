@@ -1,6 +1,7 @@
 // oracle/analytics/__tests__/set-bonuses.test.mjs
 import { test, expect } from "vitest";
-import { SET_BONUSES, NO_STAT_SETS, setCounts, setBonusTerms } from "../set-bonuses.mjs";
+import { SET_BONUSES, NO_STAT_SETS, setCounts, setBonusTerms, setBonusTotals }
+  from "../set-bonuses.mjs";
 import { setCounts as setCountsFromSpeedModel } from "../speed-model.mjs";
 import { SETS } from "../sets.mjs";
 import { ARTIFACT_SET_NAMES } from "@rslh/core";
@@ -13,6 +14,8 @@ const ROWS = () => Object.entries(SET_BONUSES).map(([id, row]) => [Number(id), r
 const KEYS = ["HP%", "ATK%", "DEF%", "SPD%", "C.RATE", "C.DMG", "ACC", "RES"];
 
 const counts = (o) => new Map(Object.entries(o).map(([k, v]) => [Number(k), v]));
+// Totals as a plain object, so an assertion reads clearly and does not depend on Map key order.
+const totalsOf = (o) => Object.fromEntries(setBonusTotals(counts(o)));
 
 // --- Pinned rows ------------------------------------------------------------------------------
 //
@@ -191,4 +194,36 @@ test("crossing a tiered set's next threshold ADDS a tier rather than replacing o
 // in speed-sets.mjs is built on.
 test("a count between two thresholds unlocks no further tier", () => {
   expect(setBonusTerms(counts({ 48: 4 }))).toEqual(setBonusTerms(counts({ 48: 3 })));
+});
+
+// --- setBonusTotals ---------------------------------------------------------------------------
+
+test("setBonusTotals returns a Map keyed by stat", () => {
+  const totals = setBonusTotals(counts({ 4: 2 }));
+  expect(totals).toBeInstanceOf(Map);
+  expect(totals.get("SPD%")).toBe(12);
+});
+
+test("setBonusTotals sums a stacking set's completions", () => {
+  expect(totalsOf({ 1: 6 })).toEqual({ "HP%": 45 });
+});
+
+test("setBonusTotals sums two tiers of the same stat", () => {
+  expect(totalsOf({ 48: 5 })).toEqual({ "HP%": 8, "RES": 40, "DEF%": 30 });
+});
+
+test("Stone Skin at eight pieces has every one of its six tiers applied once", () => {
+  expect(totalsOf({ 48: 8 })).toEqual({ "HP%": 16, "RES": 80, "DEF%": 30 });
+});
+
+test("Merciless at all nine slots sums its three stats across six tiers", () => {
+  expect(totalsOf({ 59: 9 })).toEqual({ "ATK%": 25, "C.DMG": 30, "SPD%": 10 });
+});
+
+test("setBonusTotals sums across different sets", () => {
+  expect(totalsOf({ 4: 2, 38: 2 })).toEqual({ "SPD%": 17, "ACC": 40 });
+});
+
+test("setBonusTotals is empty for an ungeared build", () => {
+  expect(setBonusTotals(new Map()).size).toBe(0);
 });
