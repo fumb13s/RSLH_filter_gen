@@ -51,6 +51,10 @@ const W = { b: 0.0131, r: 0.2641, a: 0.0412, s: 0.0193, k: 0.00168 };
 const C11 = 37.5;
 const C22 = 51.25;
 
+// Relative, not absolute: these weights span 0.0017 to 0.26, so one absolute tolerance cannot
+// mean the same thing for all five.
+const close = (got, want) => Math.abs(got / want - 1);
+
 // --- input checks ------------------------------------------------------------------------------
 
 test("fitWeights refuses an empty reading list", () => {
@@ -90,4 +94,18 @@ test("fitWeights refuses readings from two champions, naming the ids found", () 
   expect(() => fitWeights(mixed)).toThrow(/999001/);
   expect(() => fitWeights(mixed)).toThrow(/7090/);
   expect(() => fitWeights(mixed)).toThrow(/baseTypeId/);
+});
+
+// --- the fit -----------------------------------------------------------------------------------
+
+// Eight readings of one copy, generated from the formula: a baseline plus one step per design
+// column. An exact solution exists, so least squares has to land on it.
+test("fitWeights recovers known weights and one copy's constant from eight readings", () => {
+  const fit = fitWeights(copy(11, W, C11));
+  expect(fit.undetermined).toEqual([]);
+  for (const name of ["b", "r", "a", "s", "k"]) {
+    expect(close(fit.params[name], W[name]), name).toBeLessThan(1e-6);
+  }
+  expect(fit.constants.size).toBe(1);
+  expect(close(fit.constants.get(11), C11)).toBeLessThan(1e-6);
 });
