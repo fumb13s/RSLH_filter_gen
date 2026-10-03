@@ -113,12 +113,57 @@ function checkWeights(weights) {
   }
 }
 
+// A build's identity: its item ids, sorted, so "the same set of items" is one string compare
+// however the solver happened to order them. Same key build-solve dedups on.
+const itemsKey = (items) => items.map((it) => it.id).sort((a, b) => a - b).join(",");
+
 export function solvePower({ items, faction, champStats, current, weights, top = 1,
   maxRounds = 20 }) {
   checkWeights(weights);
-  // The published signature is complete from the start, but only `weights` is read yet. These
-  // `void`s keep ESLint's no-unused-vars quiet without an eslint-disable; each one disappears as
-  // Tasks 9 to 15 consume its parameter.
-  void items; void faction; void champStats; void current; void top; void maxRounds;
-  return { builds: [], rounds: 0, converged: false, upperBound: 0, gap: 0 };
+  const { base, loreOfSteel } = champStats;
+
+  // Precomputed once: neither depends on the linearization, only on the champion. Rebuilding them
+  // per round would re-walk every item's substats and every set's tier table on each pass.
+  const vectorOf = new Map(items.map((item) => [item, itemVector(item, base)]));
+  const setVecs = new Map(Object.keys(SET_BONUSES).map(Number).sort((a, b) => a - b)
+    .map((setId) => [setId, setVectors(setId, base, loreOfSteel)]));
+  const nonGear = nonGearTotals(champStats);
+
+  // One linearized exact solve: value every piece and every (set, count) by `linWeights`, then
+  // hand the pair to build-solve. The score it returns is the GEAR part alone, and every build
+  // that comes back is re-scored on the true objective by the caller.
+  const solveAt = (linWeights, howMany) => {
+    const index = buildIndex(items, faction, (item) => dot(linWeights, vectorOf.get(item)));
+    const bonusAt = new Map([...setVecs]
+      .map(([setId, vectors]) => [setId, vectors.map((v) => dot(linWeights, v))]));
+    return solve(index, bonusAt, { top: howMany });
+  };
+
+  // The pool every answer comes out of, keyed on the sorted item ids so a build two rounds both
+  // reached is one entry.
+  const pool = new Map();
+  const record = (buildItems) => {
+    const key = itemsKey(buildItems);
+    if (!pool.has(key)) {
+      const totals = buildTotals(champStats, buildItems);
+      pool.set(key, { items: buildItems, totals, lin: lin(totals, weights) });
+    }
+    return pool.get(key);
+  };
+
+  // ROUND 0 is the gear already worn, scored on the true objective and entered FIRST. Without it
+  // a cycle can end on a build below what the champion is wearing, and the answer would be a
+  // downgrade reported as an improvement.
+  const start = record(current);
+  const roundOf = new Map([[itemsKey(current), 0]]);
+  let reference = { cr: start.totals["C.RATE"], cd: start.totals["C.DMG"] };
+
+  const rounds = 0;
+  const converged = false;
+  // Not read until Tasks 10 to 15 wire the round loop and the certificate. See the note in
+  // Task 8 on why these are `void`s rather than an eslint-disable.
+  void solveAt; void reference; void roundOf; void maxRounds; void top; void nonGear;
+
+  const builds = [start];
+  return { builds, rounds, converged, upperBound: 0, gap: 0 };
 }

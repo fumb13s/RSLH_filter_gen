@@ -267,3 +267,40 @@ test("solvePower refuses a weight that is not a finite number", () => {
 test("solvePower accepts a zero weight", () => {
   expect(callWith(CRIT_ONLY)).not.toThrow();
 });
+
+// --- solvePower: round 0, the gear already worn ------------------------------------------------
+
+// With a zero base the only crit a build has that did not come off gear is GREAT_HALL's C.DMG 25.
+// A worn C.RATE 50 piece therefore gives C.RATE 50, C.DMG 25 and lin = 50 * (100 + 25) = 6,250.
+test("the worn gear is scored on the true objective and reported", () => {
+  const got = solvePower({
+    items: ONE_PIECE, faction: 0, champStats: champStats(), current: ONE_PIECE,
+    weights: CRIT_ONLY, maxRounds: 0,
+  });
+  expect(got.builds).toHaveLength(1);
+  expect(got.builds[0].items.map((it) => it.id)).toEqual([1]);
+  expect(got.builds[0].lin).toBeCloseTo(6250, 6);
+});
+
+// The totals are the UNROUNDED build totals, and `lin` is that vector through power-model's own
+// formula — so a caller can re-derive the score rather than take the field on trust.
+test("each build carries its unrounded totals alongside its lin", () => {
+  const got = solvePower({
+    items: ONE_PIECE, faction: 0, champStats: champStats(), current: ONE_PIECE,
+    weights: CRIT_ONLY, maxRounds: 0,
+  });
+  expect(got.builds[0].totals["C.RATE"]).toBeCloseTo(50, 9);
+  expect(got.builds[0].totals["C.DMG"]).toBeCloseTo(25, 9);
+  expect(got.builds[0].lin).toBeCloseTo(lin(got.builds[0].totals, CRIT_ONLY), 9);
+});
+
+// An empty slot is a real state — a copy can be wearing nothing — and the worn "build" is then
+// the non-gear totals alone.
+test("an empty worn build is still round 0", () => {
+  const got = solvePower({
+    items: ONE_PIECE, faction: 0, champStats: champStats(), current: [],
+    weights: CRIT_ONLY, maxRounds: 0,
+  });
+  expect(got.builds[0].items).toEqual([]);
+  expect(got.builds[0].lin).toBe(0);   // C.RATE 0, so the crit term is 0 whatever C.DMG is
+});
