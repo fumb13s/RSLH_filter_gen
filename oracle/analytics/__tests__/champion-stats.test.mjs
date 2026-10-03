@@ -228,3 +228,29 @@ test("an ungeared champion totals its base plus the account-wide bonuses", () =>
     HP: 21300, ATK: 1420, DEF: 1420, SPD: 100, "C.RATE": 15, "C.DMG": 75, RES: 110, ACC: 80,
   });
 });
+
+// --- per-column rounding ------------------------------------------------------------------
+//
+// The whole reason totals are not a plain sum. The halves below are contrived to isolate the rule
+// on one stat; in real data it shows up as the ±1 by which a total can differ from the sum of the
+// unrounded columns, which is exactly what the game's own screen does.
+
+test("totals round EACH column before summing, which a plain sum does not reproduce", () => {
+  const halves = champStats({
+    base: { ACC: 0 },
+    sources: { blessing: [["ACC", 0.5]], relic: [["ACC", 0.5]] },
+  });
+  const breakdown = statBreakdown(halves, []);
+  expect(columnNamed(breakdown, "Blessing").ACC).toBe(0.5);
+  expect(columnNamed(breakdown, "Relic").ACC).toBe(0.5);
+  // Per column: round(0.5) + round(0.5) = 2, on top of the Great Hall's 80.
+  expect(breakdown.totals.ACC).toBe(82);
+  // Rounding the unrounded sum instead would give 81 — the ±1 this rule exists to reproduce.
+  const unrounded = breakdown.columns.reduce((sum, [, v]) => sum + v.ACC, 0);
+  expect(Math.round(unrounded)).toBe(81);
+});
+
+test("a column that sums to a whole number is unaffected by the rule", () => {
+  const whole = champStats({ sources: { blessing: [["ACC", 10]], relic: [["ACC", 10]] } });
+  expect(statBreakdown(whole, []).totals.ACC).toBe(100);   // 80 Great Hall + 10 + 10
+});
