@@ -813,6 +813,27 @@ const GEAR = [
   cdPiece(4, G_WEAPON), cdPiece(5, G_HELMET), cdPiece(6, G_SHIELD),
 ];
 
+// Gestal stat id 7 is SPD, which maps to our 4 and comes back flat. Values are stored x100, so
+// 1200 is SPD 12, and `glyphBonusValue: null` decodes to a glyph of 0.
+const G_SPD = 7;
+
+// GEAR plus ONE unglyphed SPD substat, on worn piece #1 — the Critical Rate weapon the plain BEST
+// keeps (see the mixed-build arithmetic above). Nothing else in GEAR is glyphable at all: every
+// other substat is C.RATE or C.DMG and every main stat is one of the two, so this is the only lift
+// in the whole vault — which is what makes `glyphs to apply: 1` and a single lift line checkable.
+//
+// A SEPARATE fixture rather than an edit to GEAR, so the existing BEST arithmetic stays valid. The
+// SPD substat adds 0.022 x 12 = 0.264 to any build holding piece #1, which both crit-rate-heavy
+// candidates do and the 3-Crit-Damage one does not — far below the gaps between them, so the
+// winner is unchanged.
+const GEAR_WITH_SPD = [
+  { ...GEAR[0], substats: [
+    { statId: G_CDMG, value: 3000, glyphBonusValue: null, rolls: 2, isMythicalRoll: false },
+    { statId: G_SPD, value: 1200, glyphBonusValue: null, rolls: 1, isMythicalRoll: false },
+  ] },
+  ...GEAR.slice(1),
+];
+
 // Two champions sharing a name substring and NOT a baseTypeId, so mainCopies keeps one of each and
 // a selector of "Elhain" is genuinely ambiguous.
 const TWO_CHAMPS = [champion(), champion({ heroId: 200, baseTypeId: 1491, name: "Dark Elhain" })];
@@ -1122,6 +1143,43 @@ test("--exact exits 1 outside solve mode and with --top", () => {
   const withTop = run(["Elhain", "--exact", "--top", "1"]);
   expect(withTop.status).toBe(1);
   expect(withTop.stderr).toMatch(/--top is not supported with --exact/);
+});
+
+// --- solve: --glyph ---------------------------------------------------------------
+//
+// The whole vault re-valued as if every glyphable substat held the grade's cap, solved again, and
+// printed as a second block under the plain BEST. GEAR_WITH_SPD has exactly one glyphable substat,
+// so every number in this section is one multiplication.
+
+// The headline names the GRADE's label rather than the grade, so "5" can never read as a count.
+test("--glyph adds a glyph block headed with the grade's label", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--glyph", "legendary"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {2}WITH 6★ Legendary GLYPHS /m);
+  // The plain BEST is still printed, above it: the block is measured against BEST, so it is an
+  // addition to the report rather than a replacement for it.
+  expect(res.stdout).toMatch(/^ {2}BEST /m);
+});
+
+// The default is no block at all, so an ordinary run is not made longer by a feature it did not
+// ask for.
+test("solve prints no glyph block without --glyph", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD })]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).not.toMatch(/GLYPHS/);
+  expect(res.stdout).not.toMatch(/glyphs to apply/);
+});
+
+// NEVER BELOW THE PLAIN BEST. A block headed "over BEST" that reported less than BEST would be
+// reporting a downgrade as an improvement. Both numbers are parsed out rather than pinned: they
+// depend on the role-default weights, which a later fit could legitimately change.
+test("--glyph reports a build at least as strong as the plain BEST", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--glyph", "legendary",
+    "--power", "412000"]);
+  expect(res.status, res.stderr).toBe(0);
+  const best = Number(res.stdout.match(/^ {2}BEST {2}(\d+) power/m)[1]);
+  const glyphed = Number(res.stdout.match(/^ {2}WITH 6★ Legendary GLYPHS {2}(\d+) power/m)[1]);
+  expect(glyphed).toBeGreaterThanOrEqual(best);
 });
 
 // --- verify ----------------------------------------------------------------------

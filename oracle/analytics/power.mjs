@@ -41,7 +41,7 @@ import { STATS, contribution, statBreakdown } from "./champion-stats.mjs";
 import { isRealChamp, selectChamps, suggestNames } from "./champs.mjs";
 import { gestalChampRows, gestalChampStats, gestalItems, isGestalPath,
   readGestalSnapshot } from "./gestal.mjs";
-import { GLYPH_GRADES, GLYPH_LABELS } from "./glyphs.mjs";
+import { GLYPH_GRADES, GLYPH_LABELS, liftVault } from "./glyphs.mjs";
 import { fitWeights } from "./power-fit.mjs";
 import { constantFrom, lin, weightsFor } from "./power-model.mjs";
 import { buildTotals, linearizedWeights, solvePower, solvePowerExact } from "./power-solve.mjs";
@@ -591,6 +591,44 @@ function printBuild(build, wearers) {
   console.log(formatTotals(build.totals));
 }
 
+// The glyph block: the whole vault re-valued as if every glyphable substat held `args.glyph`'s
+// cap, solved again, and printed under the plain BEST it is measured against.
+//
+// NEITHER SOLVER CHANGES, because a glyphed item is just a better item — champion-stats.mjs's
+// itemEntries already reads a substat as value + glyph, so glyphs.mjs lifts the pool and
+// everything here is the plain path over it.
+//
+// Reached only when the plain solve produced a build, so `plainBest` is real; the lifted pool
+// holds the same pieces in the same slots with the same sets and factions, so it can fill exactly
+// the same slots.
+function printGlyphBlock({ items, champStats, weights, faction, current, plainBest, c, args,
+  wearers }) {
+  const { items: pool } = liftVault(items, args.glyph);
+  const byId = new Map(pool.map((it) => [it.id, it]));
+  // A build's pieces as the LIFTED pool's own objects. power-solve keys its per-item stat vectors
+  // by object IDENTITY, and its header requires `current` to be drawn from the pool it searches —
+  // a worn piece that is not in that pool could sit outside the crit box every bound rests on.
+  const asLifted = (buildItems) => buildItems.map((it) => byId.get(it.id));
+  const score = (buildItems) => {
+    const totals = buildTotals(champStats, buildItems);
+    return { items: buildItems, totals, lin: lin(totals, weights) };
+  };
+  // NEVER BELOW THE PLAIN BEST. The lifted solve seeds round 0 with the lifted WORN gear, not with
+  // the plain BEST, so on a vault where the lift reorders the candidates it can come back with a
+  // build worth less than the plain BEST's own pieces are once glyphed. Scoring those and taking
+  // the better of the two makes the block monotone, which is what a reader assumes of a line that
+  // says "over BEST".
+  const floor = score(asLifted(plainBest.items));
+
+  const result = solvePower({ items: pool, faction, champStats, current: asLifted(current),
+    weights, top: args.top });
+  // A TIE goes to the lifted solve, which is the answer the block was asked for; the floor is the
+  // guarantee behind it rather than the preferred reading of it.
+  const reported = result.builds[0].lin >= floor.lin ? result.builds[0] : floor;
+  console.log(`\n${formatGlyphGain(plainBest.lin, reported.lin, c, args.glyph)}`);
+  printBuild(reported, wearers);
+}
+
 function printCopy(row, { items, rows, statsById, fitted, readings, args }) {
   const champStats = statsById.get(row.ID);
   const { weights, source, fromDefaults } = weightsFor(
@@ -643,6 +681,13 @@ function printCopy(row, { items, rows, statsById, fitted, readings, args }) {
     console.log(`\n${formatOffBest(i + 2, build, best, c)}`);
     printBuild(build, wearers);
   });
+
+  // The glyph block LAST, after the plain BEST and its runners-up: it is measured against BEST, so
+  // it has to come after the number it is measured against.
+  if (args.glyph) {
+    printGlyphBlock({ items, champStats, weights, faction: row.Fraction, current,
+      plainBest: best, c, args, wearers });
+  }
 }
 
 function runSolve(args) {
