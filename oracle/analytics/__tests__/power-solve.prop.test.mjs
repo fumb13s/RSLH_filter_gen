@@ -184,9 +184,10 @@ function bruteForceBest(items, champStats, weights) {
   return best;
 }
 
-// Measured locally: 1.0 s at the default 300 runs, and 31.3 s at 10,000 — so a fuzz shard's
-// 25,000 would overrun, and the 50 s interrupt above is a live limit there rather than a safety
-// net. A shard runs however many instances fit and passes.
+// Measured locally: 1.0 s at the default 300 runs, and 35.3 s at a fuzz shard's 25,000 — so all
+// 25,000 instances fit inside the 50 s interrupt above, which is a safety net here rather than a
+// live limit. A slower CI runner that does hit it stops at 50 s and passes on however many
+// instances fit, instead of running past vitest's 60 s birpc limit.
 //
 // All four assertions live in ONE property so an instance runs the brute force and the solver
 // once between them, rather than four times over four properties drawing four different vaults.
