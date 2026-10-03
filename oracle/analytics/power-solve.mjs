@@ -36,7 +36,20 @@ export function linearizedWeights(w, crRef, cdRef) {
   };
 }
 
-export const itemVector = () => { throw new Error("not implemented"); };
+// --- stat vectors ------------------------------------------------------------------------------
+
+// What one piece contributes, as an unrounded vector over STATS. UNROUNDED on purpose: the
+// objective is evaluated on unrounded totals, and champion-stats.mjs's per-column rounding exists
+// to reproduce the game's DISPLAY, not its arithmetic.
+export function itemVector(item, base) {
+  const out = zeros();
+  for (const [key, value] of itemEntries(item)) {
+    const [stat, amount] = contribution(key, value, base);
+    out[stat] += amount;
+  }
+  return out;
+}
+
 export const setVectors = () => { throw new Error("not implemented"); };
 export const nonGearTotals = () => { throw new Error("not implemented"); };
 export const buildTotals = () => { throw new Error("not implemented"); };

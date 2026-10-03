@@ -66,3 +66,36 @@ test("linearizedWeights is keyed by exactly the eight stats", () => {
   const got = linearizedWeights({ b: 1, r: 1, a: 1, s: 1, k: 1 }, 0, 0);
   expect(Object.keys(got).sort()).toEqual([...STATS].sort());
 });
+
+// --- itemVector --------------------------------------------------------------------------------
+
+test("itemVector sums the piece's main stat, substats and ascension stat", () => {
+  const piece = item({
+    mainStat: { statId: 2, isFlat: true, value: 150 },
+    substats: [sub(4, 10, true), sub(5, 20)],
+    ascStat: { statId: 6, isFlat: false, value: 12 },
+  });
+  const got = itemVector(piece, ZERO_BASE);
+  expect(got.ATK).toBe(150);
+  expect(got.SPD).toBe(10);
+  expect(got["C.RATE"]).toBe(20);
+  expect(got["C.DMG"]).toBe(12);
+  expect(got.HP).toBe(0);
+});
+
+// A percent main stat is a percentage of the champion's BASE, so the same piece is worth a
+// different amount on a different champion. Reading it as a flat value would pass with a zero base.
+test("itemVector scales a percent stat against the champion's base", () => {
+  const piece = item({ mainStat: { statId: 2, isFlat: false, value: 60 } });
+  expect(itemVector(piece, { ...ZERO_BASE, ATK: 1000 }).ATK).toBeCloseTo(600, 9);
+});
+
+// The glyph is ADDITIVE: substat.value does not already include it.
+test("itemVector adds a substat's glyph to its value", () => {
+  const piece = item({ substats: [{ statId: 4, isFlat: true, rolls: 0, value: 10, glyph: 5 }] });
+  expect(itemVector(piece, ZERO_BASE).SPD).toBe(15);
+});
+
+test("itemVector is keyed by all eight stats", () => {
+  expect(Object.keys(itemVector(item(), ZERO_BASE)).sort()).toEqual([...STATS].sort());
+});
