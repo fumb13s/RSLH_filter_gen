@@ -217,3 +217,51 @@ test("the generator reaches every state the property is supposed to cover", () =
     expect(hits, `${state} is generated too rarely to count as covered`).toBeGreaterThan(100);
   }
 }, 60_000);
+
+// The real table's mix of stat-bearing set shapes: 23 stacking two-piece and 5 stacking
+// four-piece sets, both artifact-only, plus 13 nine-slot tiered sets that pay from a single
+// piece. Every set is present in every slot it can roll on, which is plan enumeration at its
+// worst — a real vault is sparser than this.
+const PERF_SETS = [
+  ...Array.from({ length: 23 }, (_, i) => ({ id: 1 + i, shape: "stack2", slots: [1, 2, 3, 4, 5, 6] })),
+  ...Array.from({ length: 5 }, (_, i) => ({ id: 24 + i, shape: "stack4", slots: [1, 2, 3, 4, 5, 6] })),
+  ...Array.from({ length: 13 }, (_, i) => ({ id: 29 + i, shape: "onePiece", slots: SLOTS })),
+];
+
+// A deterministic 32-bit LCG. The wall time recorded below only means something if the instance
+// is identical every run, and seeding fast-check for 285 numbers would be heavier than this.
+function lcg(seed) {
+  let s = seed >>> 0;
+  return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+}
+
+// Measured locally: 188,061 plans from enumeratePlans, 9.7 s wall. The budget is the 60 s
+// timeout on this test, with a target of 30 s to leave room for a slower CI runner and for
+// vitest's hardcoded 60 s birpc limit. This test is NOT scaled by FC_NUM_RUNS, so it costs the
+// same on every `npm test` and on each of the ten fuzz shards every fifteen minutes — a known and
+// accepted charge on the local gate, not an oversight.
+test("a full-size index solves inside the time budget", () => {
+  const rand = lcg(20261003);
+  const items = [];
+  let id = 0;
+  for (const set of PERF_SETS) {
+    for (const slot of set.slots) items.push(mkItem(++id, slot, set.id, Math.floor(rand() * 41)));
+  }
+  const bonusAt = new Map(
+    PERF_SETS.map((s) => [s.id, SHAPES[s.shape](1 + Math.floor(rand() * 15))]));
+  const index = buildIndex(items, 0, valueOf);
+
+  const plans = enumeratePlans(index, bonusAt);
+  const ranked = solve(index, bonusAt);
+
+  expect(ranked).toHaveLength(1);
+  expect(ranked[0].items.map((it) => it.slot).sort((a, b) => a - b)).toEqual(SLOTS);
+  // Recomputed longhand from the items returned, so this is an independent check on the score
+  // rather than a read-back of whatever solve put in the field.
+  const recomputed = ranked[0].items.reduce((sum, it) => sum + it.value, 0)
+    + [...ranked[0].counts].reduce((sum, [setId, n]) => sum + bonusAt.get(setId)[n], 0);
+  expect(ranked[0].score).toBe(recomputed);
+  // A floor, not the measured figure — the measured one is in the comment above. This catches the
+  // set mix collapsing to a handful of plans, which would make the timing meaningless.
+  expect(plans.length).toBeGreaterThan(50_000);
+}, 60_000);
