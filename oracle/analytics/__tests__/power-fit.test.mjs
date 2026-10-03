@@ -109,3 +109,17 @@ test("fitWeights recovers known weights and one copy's constant from eight readi
   expect(fit.constants.size).toBe(1);
   expect(close(fit.constants.get(11), C11)).toBeLessThan(1e-6);
 });
+
+// The constants are per COPY, and the two copies here sit at different stat levels as well as
+// different constants — so the copy difference is NOT orthogonal to the design columns and a single
+// global mean biases every weight. Sixteen readings against seven unknowns, with an exact solution.
+test("fitWeights recovers both copies' constants when the copies sit at different stat levels", () => {
+  const fit = fitWeights([...copy(11, W, C11), ...copy(22, W, C22, OVER_22)]);
+  expect(fit.undetermined).toEqual([]);
+  for (const name of ["b", "r", "a", "s", "k"]) {
+    expect(close(fit.params[name], W[name]), name).toBeLessThan(1e-6);
+  }
+  expect(fit.constants.size).toBe(2);
+  expect(close(fit.constants.get(11), C11)).toBeLessThan(1e-6);
+  expect(close(fit.constants.get(22), C22)).toBeLessThan(1e-6);
+});
