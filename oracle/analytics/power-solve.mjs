@@ -1,8 +1,9 @@
 // oracle/analytics/power-solve.mjs
 //
-// The gear assignment, out of the whole vault, that maximizes a champion's in-game POWER. The
-// default mode: linearize the crit term, solve exactly, iterate to a fixed point, and certify how
-// far the answer could still be from the maximum. The provably exact search is a separate mode.
+// The gear assignment, out of the whole vault, that maximizes a champion's in-game POWER. Two
+// modes. The DEFAULT linearizes the crit term, solves exactly, iterates to a fixed point, and
+// certifies how far the answer could still be from the maximum. solvePowerExact PROVES the
+// maximum instead, and costs more.
 //
 // WHY MAXIMIZING `lin` MAXIMIZES POWER. power-model.mjs gives power = (lin + c)^2, where `lin` is
 // a weighted sum of stat totals and `c` is a property of the COPY that no gear change can move.
@@ -37,14 +38,73 @@
 // of the crit product over the box of C.RATE and C.DMG the vault can actually reach, each of
 // which is affine and therefore one more exact solve. The bound is LOOSE exactly when that box is
 // wide — a champion whose crit can swing from almost nothing to a fully stacked double-crit build
-// — and a wide `gap` is the signal to pay for the provably exact mode instead of trusting this
-// one.
+// — and a wide `gap` is the signal to pay for solvePowerExact instead of trusting this one.
 //
 // `current` IS ASSUMED DRAWN FROM `items`. Every bound rests on it: the crit box is the non-gear
 // totals plus the most any assignment of `items` can add, so a worn piece that is not in the pool
 // could sit outside that box and make `gap` negative rather than zero. Not checked, because the
 // one precondition worth paying for on every call is the weights; a vault that omits worn gear is
 // a caller bug upstream of here.
+//
+// WHY solvePowerExact IS EXACT. Four claims, in the order the code makes them.
+//
+// (1) FULL BUILDS ARE ENOUGH. With every weight >= 0 and every stat a piece or a set adds >= 0,
+// `lin` is non-decreasing in every stat total: its non-crit part is a non-negative combination,
+// and the crit product k * C.RATE * (100 + C.DMG) grows with each factor while both stay
+// non-negative. A set's bonus never shrinks with more pieces either — setVectors is
+// non-decreasing in count, which power-solve.test.mjs pins against the real table. So filling a
+// slot never lowers the objective, and the best build taking one piece in EVERY slot the pool can
+// fill is the best build over "at most one piece per slot". The search therefore enumerates full
+// builds only. This rests on CRlo >= 0 and 100 + CDlo >= 0 — true for every champion the game
+// has, and documented rather than checked, as `current` is.
+//
+// (2) A PIECE MATTERS THROUGH THREE NUMBERS. Fix a slot and a set. Then which piece of that set
+// fills the slot cannot change the build's set COUNTS, and the objective reads the piece only
+// through its non-crit linear value, its C.RATE and its C.DMG — because the non-crit part of
+// `lin` is a single linear functional of the stat vector, so a piece enters it as one scalar, and
+// the crit part reads those two stats and nothing else. Those three are a sufficient statistic
+// for a piece, so one that is no better than another of the same slot and set on all three can be
+// dropped with nothing lost. Of pieces equal on all three exactly one survives, the lowest id, as
+// buildIndex's tie-break does.
+//
+// (3) NO BOUND PRUNES THE OPTIMUM. Two bounds, both strict-only: a branch is cut when its
+// ceiling is STRICTLY below the incumbent, so the branch holding the optimum survives a ceiling
+// that merely equals it. The PLAN bound is valid for every build whose naming plan is that plan —
+// the build's true objective is at most its McCormick estimator value, that estimator value is
+// exactly what the assignment credits the build under its naming plan, and that credited value is
+// at most the plan's assignment maximum. Every build has a naming plan, so the surviving plans
+// cover every build that could beat the incumbent. The NODE bound is the smaller of three
+// ceilings on the final objective of any completion: the issue's product of three independently
+// maximized totals, and each McCormick estimator read as one affine lane. Each is sound alone
+// because every lane is a non-negative linear functional, so a per-slot maximum and a per-set
+// headroom are both upper bounds on what the remaining slots can add.
+//
+// (4) THE SEARCH IS OTHERWISE EXHAUSTIVE. Slot order and candidate order are speed choices: the
+// search visits every unpruned leaf whatever order it visits them in.
+//
+// WHAT THE PLAN COUNTS MEAN. `plansTotal` is every plan build-solve would enumerate for this
+// pool, the empty one included; `plansPruned` counts the ones that needed no search, because
+// either no assignment can fill them or their bound fell strictly below the incumbent. When every
+// plan is pruned the incumbent is already the maximum and no search runs at all. In practice the
+// EMPTY plan almost never prunes — its assignment is the best free pick in every slot plus every
+// one-piece bonus the pool can reach, which an estimator values above any real build — so the
+// counts are a diagnostic on how much of the plan space the bound could rule out, not usually an
+// early exit. Said plainly rather than claimed otherwise.
+//
+// The largest per-plan bound is also a global upper bound, and a tighter one than the
+// certificate's: both maximize the same estimator over the same plans, but this one uses each
+// plan's `credited`, which never exceeds the realized score solve() maximizes. It is not
+// reported, because `provenOptimal` makes it redundant.
+//
+// FLOAT ORDER, SAID PLAINLY. A leaf's ceiling is the same sum as the score the leaf is then
+// given, added in a different order, so the two can differ in the last bits. A leaf dropped that
+// way ties the incumbent to within rounding and cannot move the maximum by more than float noise;
+// the property test compares against an exhaustive search with a relative tolerance of 1e-9 for
+// exactly this reason. `provenOptimal` is a claim about the SEARCH, not about IEEE arithmetic.
+//
+// WHY NOT ALWAYS. Nothing here bounds the runtime. On a full vault the plan space runs to
+// hundreds of thousands of plans and the search to a branching factor per slot, which is why the
+// mode is opt-in and the default one certifies instead.
 import { assignPlan, buildIndex, enumeratePlans, SLOTS, solve } from "./build-solve.mjs";
 import { STATS, contribution, itemEntries, statBreakdown } from "./champion-stats.mjs";
 import { SET_BONUSES, setBonusTotals, setCounts } from "./set-bonuses.mjs";
