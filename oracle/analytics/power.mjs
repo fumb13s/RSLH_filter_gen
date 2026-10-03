@@ -190,3 +190,30 @@ export function formatBreakdown(breakdown) {
 export function formatTotals(totals) {
   return `    totals: ${STATS.map((s) => `${s} ${Math.round(totals[s])}`).join("  ")}`;
 }
+
+// --- the BEST headline, the certificate and the runners-up ----------------------
+
+// Power from a build's `lin` and the copy's constant. The one place the square is taken, so the
+// relationship between the solver's objective and the number the game shows is written once.
+const powerOf = (buildLin, c) => (buildLin + c) ** 2;
+
+// The BEST headline. With `c` it is in power, the number on the game's screen; without it neither
+// the power nor the gain exists, and the only honest thing left is the ratio at c = 0 — an
+// over-estimate, since a positive c raises both sides and shrinks it.
+export function formatGain(currentLin, bestLin, c) {
+  if (c !== null) {
+    const best = powerOf(bestLin, c);
+    return `  BEST  ${Math.round(best)} power`
+      + `  (+${Math.round(best - powerOf(currentLin, c))} over current)`;
+  }
+  // Nothing over nothing has no ratio, and at c = 0 it would come out as "+0.0%" for a build that is
+  // in fact an infinite improvement. Unreachable for a real champion — base stats alone put `lin`
+  // in the hundreds — so it is named rather than computed.
+  if (!(currentLin > 0)) {
+    return "  BEST  gain unknown (the current build scores zero and the per-copy constant is"
+      + " unknown: log a reading or pass --power)";
+  }
+  const pct = ((bestLin / currentLin) ** 2 - 1) * 100;
+  return `  BEST  ≈ +${pct.toFixed(1)}%`
+    + " (per-copy constant unknown: log a reading or pass --power)";
+}

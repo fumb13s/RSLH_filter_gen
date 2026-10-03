@@ -10,7 +10,8 @@
 // and append to the developer's real oracle/analytics/out/ — a test that pollutes a personal
 // reading log, and one whose own assertions would depend on whatever is already in it.
 import { expect, test } from "vitest";
-import { formatBreakdown, formatTotals, mainCopies, parsePowerArgs } from "../power.mjs";
+import { formatBreakdown, formatGain, formatTotals, mainCopies,
+  parsePowerArgs } from "../power.mjs";
 import { STATS } from "../champion-stats.mjs";
 
 // --- parsePowerArgs: modes and positionals ------------------------------------
@@ -268,4 +269,37 @@ test("formatBreakdown keeps the grid aligned under the longest source label", ()
 test("formatTotals names every stat with its rounded value on one line", () => {
   expect(formatTotals(vec({ HP: 42000.4, ATK: 2100, SPD: 240, "C.RATE": 100, "C.DMG": 220 })))
     .toBe("    totals: HP 42000  ATK 2100  DEF 0  SPD 240  C.RATE 100  C.DMG 220  RES 0  ACC 0");
+});
+
+// --- formatGain -----------------------------------------------------------------
+
+// With the constant the answer is in POWER, the number the game shows, and the gain is a difference
+// the reader can check against the screen.
+//   current (100 + 5)^2 = 11,025 · best (120 + 5)^2 = 15,625 · gain 4,600
+test("formatGain reports power and the gain over current when the constant is known", () => {
+  expect(formatGain(100, 120, 5)).toBe("  BEST  15625 power  (+4600 over current)");
+});
+
+// Power is (lin + c)^2, so without `c` every absolute number is unavailable and only the RATIO can
+// be stated — computed at c = 0, where it is an OVER-estimate, because a positive c raises both
+// sides and shrinks the ratio. Marked `≈` and told to the reader outright rather than dressed up as
+// a power number.
+//   (120 / 100)^2 - 1 = 0.44
+test("formatGain falls back to a percentage when the constant is unknown", () => {
+  expect(formatGain(100, 120, null))
+    .toBe("  BEST  ≈ +44.0% (per-copy constant unknown: log a reading or pass --power)");
+});
+
+// A negative constant is legal — constantFrom is signed and never clamped, so a disagreement
+// between the weights and the reading stays visible rather than being absorbed into a floor.
+//   current (100 - 20)^2 = 6,400 · best (120 - 20)^2 = 10,000 · gain 3,600
+test("formatGain handles a negative constant without losing the sign", () => {
+  expect(formatGain(100, 120, -20)).toBe("  BEST  10000 power  (+3600 over current)");
+});
+
+// Nothing over nothing has no ratio. It cannot arise from a real champion — base stats alone put
+// `lin` in the hundreds — so it is named rather than turned into a percentage, which at c = 0 would
+// read as "+0.0%" for a build that is in fact an infinite improvement.
+test("formatGain names a zero current rather than reporting a ratio for it", () => {
+  expect(formatGain(0, 120, null)).toMatch(/gain unknown/);
 });
