@@ -64,3 +64,63 @@ test("base copies the crit fields as points rather than scaling them", () => {
 test("a champion with no baseStats is named rather than silently read as zeroes", () => {
   expect(() => only({ baseStats: undefined })).toThrow(/champion Elhain 100 has no baseStats/);
 });
+
+// --- sources ----------------------------------------------------------------------
+
+// The five per-source breakdowns, in set-bonuses.mjs's key space. The statKindId enum here is
+// the GAME's (1 HP, 2 ATK, 3 DEF, 4 SPD, 5 RES, 6 ACC, 7 C.RATE, 8 C.DMG), which agrees with our
+// item stat ids on 1-4 and disagrees on 5-8.
+test("sources carries the five bonus breakdowns as [key, value] pairs", () => {
+  expect(only().sources).toEqual({
+    mastery: [["SPD", 8]],
+    blessing: [["RES", 40]],
+    relic: [["ACC", 50]],
+    empower: [],
+    factionGuardian: [["HP", 2000]],
+  });
+});
+
+test("an absolute bonus takes the flat key and keeps its value", () => {
+  const src = (statKindId, value) => ({ bonusesV2: { mastery: [{ statKindId, isAbsolute: true, value }] } });
+  expect(only(src(1, 2000)).sources.mastery).toEqual([["HP", 2000]]);
+  expect(only(src(2, 150)).sources.mastery).toEqual([["ATK", 150]]);
+  expect(only(src(3, 120)).sources.mastery).toEqual([["DEF", 120]]);
+  expect(only(src(4, 8)).sources.mastery).toEqual([["SPD", 8]]);
+  expect(only(src(5, 40)).sources.mastery).toEqual([["RES", 40]]);
+  expect(only(src(6, 50)).sources.mastery).toEqual([["ACC", 50]]);
+});
+
+// Gestal stores a relative bonus as a FRACTION. The model's key space is percentage points, so
+// every one of these is x100.
+test("a relative HP/ATK/DEF/SPD bonus becomes a percent key scaled by 100", () => {
+  const src = (statKindId, value) => ({ bonusesV2: { mastery: [{ statKindId, isAbsolute: false, value }] } });
+  expect(only(src(1, 0.15)).sources.mastery).toEqual([["HP%", 15]]);
+  expect(only(src(2, 0.15)).sources.mastery).toEqual([["ATK%", 15]]);
+  expect(only(src(3, 0.1)).sources.mastery).toEqual([["DEF%", 10]]);
+  expect(only(src(4, 0.12)).sources.mastery).toEqual([["SPD%", 12]]);
+});
+
+// C.RATE and C.DMG are percentage POINTS, not percentages of a base, so the x100 turns Gestal's
+// fraction into the number the screen shows and nothing scales it again later.
+test("a crit bonus is a fraction that becomes points, keeping the unsuffixed key", () => {
+  const src = (statKindId, value) => ({ bonusesV2: { mastery: [{ statKindId, isAbsolute: false, value }] } });
+  expect(only(src(7, 0.12)).sources.mastery).toEqual([["C.RATE", 12]]);
+  expect(only(src(8, 0.3)).sources.mastery).toEqual([["C.DMG", 30]]);
+});
+
+// Gestal's fractions carry float noise: 0.0799999998 is how it stores 8%.
+test("a fraction scaled to points is rounded to two decimals, clearing Gestal's float noise", () => {
+  const src = (value) => ({ bonusesV2: { mastery: [{ statKindId: 1, isAbsolute: false, value }] } });
+  expect(only(src(0.0799999998)).sources.mastery).toEqual([["HP%", 8]]);
+  expect(only(src(0.12345)).sources.mastery).toEqual([["HP%", 12.35]]);
+});
+
+test("a source that is null or missing reads as an empty list", () => {
+  expect(only({ bonusesV2: { mastery: null, relic: undefined } }).sources)
+    .toEqual({ mastery: [], blessing: [], relic: [], empower: [], factionGuardian: [] });
+});
+
+test("a champion with no bonusesV2 at all reads as five empty lists", () => {
+  expect(only({ bonusesV2: undefined }).sources)
+    .toEqual({ mastery: [], blessing: [], relic: [], empower: [], factionGuardian: [] });
+});

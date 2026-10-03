@@ -153,6 +153,35 @@ export function unlistedWearers(snapshot, items = gestalItems(snapshot)) {
   return [...new Set(items.map((it) => it.equippedChampId).filter((id) => id && !listed.has(id)))];
 }
 
+// Gestal's bonusesV2 stat enum -> the key a bonus lands on, in set-bonuses.mjs's key space. This
+// is the GAME's stat numbering (the same one RSLHelper.db's `mid` uses), which agrees with our
+// item stat ids on 1-4 and DISAGREES on 5-8: here 5 is RES and 7 is C.RATE, where an item's
+// statId 5 is C.RATE and 7 is RES. Two tables, deliberately not shared with champion-stats.mjs.
+//
+// The split is also a shape check. On a real capture HP/ATK/DEF arrive flat or relative, SPD flat
+// (relative only from sets), RES and ACC always flat, and both crits always as fractions. A gap in
+// either table is therefore a shape we have never seen, and throws rather than guessing.
+const ABSOLUTE_BONUS_KEY = { 1: "HP", 2: "ATK", 3: "DEF", 4: "SPD", 5: "RES", 6: "ACC" };
+const RELATIVE_BONUS_KEY = { 1: "HP%", 2: "ATK%", 3: "DEF%", 4: "SPD%", 7: "C.RATE", 8: "C.DMG" };
+
+// One bonusesV2 list -> [key, value] pairs. A relative value is a FRACTION, scaled to the
+// percentage points the model works in and rounded to the 0.01 the game displays — Gestal stores
+// 0.0799999998 for 8%, and 0.01 is the same precision diffSetBonuses tolerates.
+function bonusEntries(list, what) {
+  return (list ?? []).map((e) => {
+    const table = e.isAbsolute ? ABSOLUTE_BONUS_KEY : RELATIVE_BONUS_KEY;
+    const key = table[e.statKindId];
+    if (!key) {
+      const how = e.isAbsolute ? "absolute" : "relative";
+      if (e.statKindId >= 1 && e.statKindId <= 8) {
+        throw new Error(`${how} Gestal stat kind ${e.statKindId} (${what}) — the adapter needs updating`);
+      }
+      throw new Error(`unknown Gestal stat kind ${e.statKindId} (${what}) — the adapter needs updating`);
+    }
+    return [key, e.isAbsolute ? e.value : Math.round(e.value * 100 * 100) / 100];
+  });
+}
+
 // Gestal's per-champion stat records, keyed by heroId: the champion stat model's input. Unlike
 // gestalChampRows this covers the ROSTER DOCUMENT ONLY — a wearer the roster omits has no
 // baseStats to report, so it gets no entry here, and the two can legitimately disagree on
@@ -162,9 +191,16 @@ export function gestalChampStats(snapshot) {
   for (const c of snapshot.documents.champions.payload.champions) {
     const b = c.baseStats;
     if (!b) throw new Error(`champion ${c.name} ${c.heroId} has no baseStats — the adapter needs updating`);
+    const v2 = c.bonusesV2 ?? {};
+    const who = `champion ${c.name} ${c.heroId}`;
+    const from = (name) => bonusEntries(v2[name], `${name} bonus of ${who}`);
     out.set(c.heroId, {
       base: { HP: b.hp, ATK: b.atk, DEF: b.def, SPD: b.spd,
         "C.RATE": b.crate, "C.DMG": b.cdmg, RES: b.res, ACC: b.acc },
+      sources: {
+        mastery: from("mastery"), blessing: from("blessing"), relic: from("relic"),
+        empower: from("empower"), factionGuardian: from("factionGuardian"),
+      },
     });
   }
   return out;
