@@ -30,6 +30,7 @@
 // Advisory only for the game: nothing is written to a snapshot, to Gestal's folder or to the
 // game's own database. `log` and `fit` write to out/, which is personal account data and
 // gitignored.
+import { selectChamps } from "./champs.mjs";
 import { isSnapshotArg } from "./snapshots.mjs";
 
 // --- CLI: pure helpers ------------------------------------------------------
@@ -105,4 +106,47 @@ function positiveInt(what, raw) {
     throw new Error(`${what} needs a positive integer`);
   }
   return value;
+}
+
+// How many of these items a copy is wearing. A measure of INVESTMENT in the copy, not of what it
+// could hold — the solver's pool is the whole vault either way.
+const equippedCount = (items, champId) =>
+  items.filter((it) => it.equippedChampId === champId).length;
+
+// Investment order, most invested first: rank, level, empowerment, awakening, how many pieces it is
+// wearing, then the lower id so a rerun on one snapshot picks the same copy.
+//
+// spare-copies.mjs's compareCopies is the same idea in a different order — it weighs gear above
+// empowerment and carries a blessing marker Gestal has no column for — so the two are kept apart
+// rather than one being bent to serve both.
+function compareInvestment(a, b, awakenOf, items) {
+  return (b.Rang - a.Rang)
+    || (b.Lvl - a.Lvl)
+    || (b.EmpLvl - a.EmpLvl)
+    || (awakenOf(b) - awakenOf(a))
+    || (equippedCount(items, b.ID) - equippedCount(items, a.ID))
+    || (a.ID - b.ID);
+}
+
+// One copy per champion: the most invested one. Copies of a champion share a baseTypeId and
+// therefore one set of weights, but each has its own constant and its own gear, so solving all of
+// them would print the same answer several times over for the copies nobody plays.
+//
+// An ALL-DIGIT selector is an exact copy id and is never grouped: asking for #12059 by id is asking
+// for that copy, spare or not. Anything else is a name substring, which can match several champions
+// as well as several copies of one, so the grouping is by BaseHeroID.
+//
+// `rows` is expected to have been through isRealChamp. A placeholder row for a wearer the roster
+// has not listed yet has a null BaseHeroID and no stats record, and grouping those together would
+// put unrelated champions in one bucket.
+export function mainCopies(rows, statsById, items, selector) {
+  const matched = selectChamps(rows, selector);
+  if (/^\d+$/.test(String(selector ?? ""))) return matched;
+  const awakenOf = (r) => statsById.get(r.ID)?.awaken ?? 0;
+  const best = new Map();
+  for (const row of matched) {
+    const held = best.get(row.BaseHeroID);
+    if (!held || compareInvestment(row, held, awakenOf, items) < 0) best.set(row.BaseHeroID, row);
+  }
+  return [...best.values()].sort((a, b) => a.ID - b.ID);
 }

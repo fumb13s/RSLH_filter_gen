@@ -10,7 +10,7 @@
 // and append to the developer's real oracle/analytics/out/ — a test that pollutes a personal
 // reading log, and one whose own assertions would depend on whatever is already in it.
 import { expect, test } from "vitest";
-import { parsePowerArgs } from "../power.mjs";
+import { mainCopies, parsePowerArgs } from "../power.mjs";
 
 // --- parsePowerArgs: modes and positionals ------------------------------------
 
@@ -128,4 +128,78 @@ test("parsePowerArgs rejects a snapshot given to a mode that reads none", () => 
 // `solve` is the default mode and has no usage line to type, so the word is an ordinary selector.
 test("parsePowerArgs treats a mode word after the first positional as a selector", () => {
   expect(parsePowerArgs(["solve"])).toMatchObject({ mode: "solve", selector: "solve" });
+});
+
+// --- mainCopies -----------------------------------------------------------------
+//
+// Champion rows as gestalChampRows builds them, cut down to the columns mainCopies reads. Two
+// copies of one champion share a BaseHeroID; `awaken` is NOT a row column — Gestal carries it per
+// copy and the row shape mirrors RSL Helper's Champs table, which has none — so it arrives in the
+// separate stats map.
+const copyRow = (o = {}) => ({
+  ID: 1, Name: "Elhain", Role: 0, Rarity: 5, Rang: 6, Lvl: 60, Fraction: 0, EmpLvl: 0,
+  BaseHeroID: 1490, ...o,
+});
+const statsOf = (byId) => new Map(Object.entries(byId).map(([id, awaken]) => [Number(id), { awaken }]));
+const worn = (id, champId) => ({ id, equippedChampId: champId });
+const idsOf = (rows) => rows.map((r) => r.ID);
+
+// Rank first: a 6-star copy is the one being played however long the 5-star has been sitting at
+// level 60.
+test("mainCopies keeps the higher-ranked copy of a champion", () => {
+  const rows = [copyRow({ ID: 1, Rang: 5 }), copyRow({ ID: 2, Rang: 6 })];
+  expect(idsOf(mainCopies(rows, statsOf({}), [], "Elhain"))).toEqual([2]);
+});
+
+test("mainCopies falls to level when the rank ties", () => {
+  const rows = [copyRow({ ID: 1, Lvl: 60 }), copyRow({ ID: 2, Lvl: 50 })];
+  expect(idsOf(mainCopies(rows, statsOf({}), [], "Elhain"))).toEqual([1]);
+});
+
+test("mainCopies falls to empowerment when rank and level tie", () => {
+  const rows = [copyRow({ ID: 1, EmpLvl: 0 }), copyRow({ ID: 2, EmpLvl: 3 })];
+  expect(idsOf(mainCopies(rows, statsOf({}), [], "Elhain"))).toEqual([2]);
+});
+
+// Awakening comes off the stats map, not the row. A copy with no stats record reads as awaken 0
+// rather than crashing, which is what keeps the comparator total.
+test("mainCopies falls to awakening, which it reads from the stats map", () => {
+  const rows = [copyRow({ ID: 1 }), copyRow({ ID: 2 })];
+  expect(idsOf(mainCopies(rows, statsOf({ 1: 0, 2: 5 }), [], "Elhain"))).toEqual([2]);
+  expect(idsOf(mainCopies(rows, statsOf({ 1: 5 }), [], "Elhain"))).toEqual([1]);
+});
+
+test("mainCopies falls to how many pieces the copy is wearing", () => {
+  const rows = [copyRow({ ID: 1 }), copyRow({ ID: 2 })];
+  const items = [worn(10, 2), worn(11, 2), worn(12, 1)];
+  expect(idsOf(mainCopies(rows, statsOf({}), items, "Elhain"))).toEqual([2]);
+});
+
+// The last tiebreak, and the one that makes a rerun on one snapshot deterministic.
+test("mainCopies falls to the lower id when every other measure ties", () => {
+  const rows = [copyRow({ ID: 7 }), copyRow({ ID: 3 })];
+  expect(idsOf(mainCopies(rows, statsOf({}), [], "Elhain"))).toEqual([3]);
+});
+
+// Two different champions are two groups, not two copies, however alike their names.
+test("mainCopies keeps one copy per BaseHeroID and returns them in id order", () => {
+  const rows = [
+    copyRow({ ID: 1, BaseHeroID: 1490, Rang: 5 }),
+    copyRow({ ID: 2, BaseHeroID: 1490, Rang: 6 }),
+    copyRow({ ID: 9, BaseHeroID: 1491, Name: "Dark Elhain" }),
+    copyRow({ ID: 8, BaseHeroID: 1491, Name: "Dark Elhain", Rang: 4 }),
+  ];
+  expect(idsOf(mainCopies(rows, statsOf({}), [], "Elhain"))).toEqual([2, 9]);
+});
+
+// An id is a request for THAT copy. Grouping it would answer with a different one, which is the
+// single worst thing an exact selector can do.
+test("mainCopies returns the exact copy for an all-digit selector, spare or not", () => {
+  const rows = [copyRow({ ID: 1, Rang: 6 }), copyRow({ ID: 2, Rang: 2, Lvl: 1 })];
+  expect(idsOf(mainCopies(rows, statsOf({}), [], "2"))).toEqual([2]);
+  expect(idsOf(mainCopies(rows, statsOf({}), [], "99"))).toEqual([]);
+});
+
+test("mainCopies returns nothing when the selector matches nothing", () => {
+  expect(mainCopies([copyRow()], statsOf({}), [], "Kael")).toEqual([]);
 });
