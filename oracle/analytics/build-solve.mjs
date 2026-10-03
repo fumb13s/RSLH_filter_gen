@@ -348,6 +348,14 @@ export function assignPlan(index, bonusAt, plan) {
   return { picks, credited };
 }
 
+// Element by element as numbers. Comparing the joined ids as text answers [10, 20] < [9, 30],
+// which is the wrong build and a difference no score assertion can ever see.
+function compareIds(a, b) {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) if (a[i] !== b[i]) return a[i] - b[i];
+  return a.length - b.length;
+}
+
 // The model has to be a staircase from zero: zero pieces grant nothing, and a piece never takes a
 // bonus away. Checked once per solve rather than trusted, because both failures are quiet — a
 // non-zero [0] credits a set nobody wears, and a decreasing entry breaks the lower-bound argument
@@ -384,6 +392,9 @@ function checkBonusAt(bonusAt) {
 // guaranteed to be the true second- and third-best builds: they are the best each OTHER plan
 // could reach, and the true runner-up may be a second build under the winning plan, which is
 // never generated. Said plainly rather than claimed otherwise.
+//
+// Ties on score go to the numerically smaller sorted id list, compared ELEMENT BY ELEMENT. The
+// joined key above is right for equality and wrong for order: "9,30" sorts after "10,20" as text.
 export function solve(index, bonusAt, { top = 1 } = {}) {
   checkBonusAt(bonusAt);
   const slots = populated(index);
@@ -402,7 +413,8 @@ export function solve(index, bonusAt, { top = 1 } = {}) {
       itemIds,
     });
   }
-  const ranked = [...seen.values()].sort((a, b) => b.score - a.score);
+  const ranked = [...seen.values()]
+    .sort((a, b) => b.score - a.score || compareIds(a.itemIds, b.itemIds));
   return ranked.slice(0, Math.max(1, top))
     .map(({ score, items, counts }) => ({ score, items, counts }));
 }

@@ -544,3 +544,21 @@ test("solve rejects a model that is not ten entries long", () => {
   const index = indexOf([{ slot: 1, set: 4, value: 1 }]);
   expect(() => solve(index, new Map([[4, [0, 0, 5]]]))).toThrow(/10/);
 });
+
+// Two plans reach exactly 10, with items [9, 30] and [10, 20]. Set 11 sorts after set 10, so the
+// [10, 20] build is enumerated FIRST and keeping insertion order returns it — the tie-break is
+// the only thing that can move [9, 30] ahead.
+//
+// And the tie-break has to be element-wise NUMERIC. The dedup key is the joined id list, and as
+// text "9,30" sorts after "10,20"; reusing that key for ORDER answers [10, 20], and no score
+// assertion anywhere can see the difference.
+test("solve breaks a score tie on the element-wise smaller id list", () => {
+  const index = buildIndex([
+    item({ id: 9, slot: 1, set: 11, value: 0 }), item({ id: 10, slot: 1, set: 10, value: 0 }),
+    item({ id: 30, slot: 2, set: 11, value: 0 }), item({ id: 20, slot: 2, set: 10, value: 0 }),
+  ], 0, valueOf);
+  const result = best(index, bonusOf({ 10: { 2: 10 }, 11: { 2: 10 } }));
+  expect(result.score).toBe(10);
+  expect(result.items.map((it) => it.id).sort((a, b) => a - b)).toEqual([9, 30]);
+  expect("9,30" > "10,20").toBe(true);
+});
