@@ -1,6 +1,6 @@
 // oracle/analytics/__tests__/set-bonuses.test.mjs
 import { test, expect } from "vitest";
-import { SET_BONUSES, NO_STAT_SETS } from "../set-bonuses.mjs";
+import { SET_BONUSES, NO_STAT_SETS, setCounts } from "../set-bonuses.mjs";
 import { SETS } from "../sets.mjs";
 import { ARTIFACT_SET_NAMES } from "@rslh/core";
 
@@ -121,4 +121,17 @@ test("every name agrees with sets.mjs, or with ARTIFACT_SET_NAMES where sets.mjs
 // than letting the fallback quietly stop being reachable.
 test("ids 39 and 43 are exactly the rows sets.mjs does not carry", () => {
   expect(ROWS().filter(([id]) => !SETS[id]).map(([id]) => id)).toEqual([39, 43]);
+});
+
+// --- setCounts --------------------------------------------------------------------------------
+
+test("setCounts tallies how many of these items carry each set", () => {
+  const items = [{ set: 4 }, { set: 4 }, { set: 38 }];
+  expect(Object.fromEntries(setCounts(items))).toEqual({ 4: 2, 38: 1 });
+});
+
+// Set 0 is "no set", not a set numbered 0. Counting it would make a pile of setless items look
+// like a completion candidate to every caller that reads these counts.
+test("setCounts skips setless items", () => {
+  expect(setCounts([{ set: 4 }, { set: 0 }, { set: 0 }]).has(0)).toBe(false);
 });

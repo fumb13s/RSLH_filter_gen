@@ -92,3 +92,13 @@ export const NO_STAT_SETS = new Set([
   42, 44, 51,
   1000, 1001, 1002, 1003, 1004,
 ]);
+
+// setId -> how many of these items carry it. Setless items (set 0) belong to no set and are skipped.
+export function setCounts(items) {
+  const counts = new Map();
+  for (const item of items) {
+    if (!item.set) continue;
+    counts.set(item.set, (counts.get(item.set) ?? 0) + 1);
+  }
+  return counts;
+}
