@@ -158,12 +158,33 @@ export function solvePower({ items, faction, champStats, current, weights, top =
   const roundOf = new Map([[itemsKey(current), 0]]);
   let reference = { cr: start.totals["C.RATE"], cd: start.totals["C.DMG"] };
 
-  const rounds = 0;
-  const converged = false;
-  // Not read until Tasks 10 to 15 wire the round loop and the certificate. See the note in
-  // Task 8 on why these are `void`s rather than an eslint-disable.
-  void solveAt; void reference; void roundOf; void maxRounds; void top; void nonGear;
+  let rounds = 0;
+  let converged = false;
+  let best = start;
+  while (rounds < maxRounds) {
+    rounds++;
+    const ranked = solveAt(linearizedWeights(weights, reference.cr, reference.cd), top);
+    // No slot has an eligible item, so there is nothing to iterate on.
+    if (ranked.length === 0) break;
+    // Every build the round produced joins the pool, and the round's own best is chosen on the
+    // TRUE objective rather than on the linearized score it was found by. With top = 1 the two
+    // agree by construction; with top > 1 the linearized order is the wrong one.
+    let roundBest = null;
+    for (const { items: buildItems } of ranked) {
+      const scored = record(buildItems);
+      if (!roundBest || scored.lin > roundBest.lin) roundBest = scored;
+    }
+    best = roundBest;
+    const key = itemsKey(roundBest.items);
+    if (roundOf.get(key) === rounds - 1) { converged = true; break; }
+    roundOf.set(key, rounds);
+    reference = { cr: roundBest.totals["C.RATE"], cd: roundBest.totals["C.DMG"] };
+  }
 
-  const builds = [start];
+  // Not read until Task 15 wires the certificate. See the note in Task 8 on why this is a `void`
+  // rather than an eslint-disable.
+  void nonGear;
+
+  const builds = [best];
   return { builds, rounds, converged, upperBound: 0, gap: 0 };
 }

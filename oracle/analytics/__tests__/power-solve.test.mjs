@@ -304,3 +304,34 @@ test("an empty worn build is still round 0", () => {
   expect(got.builds[0].items).toEqual([]);
   expect(got.builds[0].lin).toBe(0);   // C.RATE 0, so the crit term is 0 whatever C.DMG is
 });
+
+// --- solvePower: convergence -------------------------------------------------------------------
+
+// Linearizing at the worn gear picks a build WORSE than what is worn — C.DMG 400 with no crit
+// rate at all scores zero — and only the next round's reference makes the crit-heavy optimum the
+// best linear pick. One slot and three setless pieces, so nothing but the crit term is in play.
+//
+//   non-gear crit: C.RATE 0, C.DMG 25 (the Great Hall)
+//   worn  id 1  C.RATE 20              true 20 * (100 +  25) =  2,500
+//   lure  id 2  C.DMG 400              true  0 * (100 + 425) =      0
+//   best  id 3  C.RATE 30, C.DMG 150   true 30 * (100 + 175) =  8,250
+//
+//   round 1 at (20,  25): C.RATE x 125, C.DMG x 20 -> lure 8,000 > best 6,750 > worn 2,500
+//   round 2 at ( 0, 425): C.RATE x 525, C.DMG x  0 -> best 15,750 > worn 10,500 > lure 0
+//   round 3 at (30, 175): C.RATE x 275, C.DMG x 30 -> best 12,750 > lure 12,000 > worn 5,500
+//                         best repeats round 2's build: a FIXED POINT.
+const CONVERGE = [crit(1, 1, 20, 0), crit(2, 1, 0, 400), crit(3, 1, 30, 150)];
+const CONVERGE_ARGS = {
+  items: CONVERGE, faction: 0, champStats: champStats(),
+  current: [CONVERGE[0]], weights: CRIT_ONLY,
+};
+
+// rounds > 1 is the assertion that matters: a solver that linearized ONCE around the worn gear
+// would stop at the lure and report a build worth nothing.
+test("the iteration walks off a low-crit linear pick onto the crit-heavy optimum", () => {
+  const got = solvePower(CONVERGE_ARGS);
+  expect(got.converged).toBe(true);
+  expect(got.rounds).toBe(3);
+  expect(got.builds[0].items.map((it) => it.id)).toEqual([3]);
+  expect(got.builds[0].lin).toBeCloseTo(8250, 6);
+});
