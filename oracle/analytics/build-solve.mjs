@@ -62,3 +62,24 @@ export function buildIndex(items, faction, valueOf) {
   }
   return index;
 }
+
+// How many distinct slots could contribute a piece of this set.
+export function slotsSupplying(index, setId) {
+  let n = 0;
+  for (const bySet of index.values()) if (bySet.has(setId)) n++;
+  return n;
+}
+
+// The piece counts worth planning around: those where one more piece actually pays. Counts start
+// at TWO. A one-piece bonus is never planned — it is bought by a singleton column instead, which
+// is the whole reason this solver exists — and a count between two paying counts grants exactly
+// the lower one's bonus, so planning it would enumerate the same build twice. `maxSlots` is
+// however many slots of this set the pool can actually supply.
+export function usefulCounts(bonusAt, setId, maxSlots) {
+  const bonus = bonusAt.get(setId);
+  const out = [];
+  if (!bonus) return out;
+  const top = Math.min(maxSlots, SLOTS.length);
+  for (let count = 2; count <= top; count++) if (bonus[count] > bonus[count - 1]) out.push(count);
+  return out;
+}

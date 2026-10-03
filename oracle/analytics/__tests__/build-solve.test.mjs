@@ -1,6 +1,6 @@
 // oracle/analytics/__tests__/build-solve.test.mjs
 import { test, expect } from "vitest";
-import { SLOTS, buildIndex } from "../build-solve.mjs";
+import { SLOTS, buildIndex, slotsSupplying, usefulCounts } from "../build-solve.mjs";
 
 // Every item carries a plain `value` the injected valuation reads back. The module is
 // stat-agnostic — it never looks at a stat — so a number on the item is the honest way to
@@ -16,6 +16,21 @@ const item = (o = {}) => ({
 
 const pool = (specs) => specs.map((s, i) => item({ id: i + 1, ...s }));
 const indexOf = (specs, faction = 0) => buildIndex(pool(specs), faction, valueOf);
+
+// A bonus profile over 0..9 pieces, as `bonusAt` wants it. `at` gives the TOTAL bonus from that
+// piece count upward, so tiers({ 2: 10, 4: 25 }) is [0,0,10,10,25,25,25,25,25,25]. A helper is
+// fine here because these are INPUTS; every expected score below is written out as arithmetic.
+const tiers = (at) => {
+  const out = [0];
+  let current = 0;
+  for (let n = 1; n <= 9; n++) {
+    if (at[n] !== undefined) current = at[n];
+    out.push(current);
+  }
+  return out;
+};
+
+const bonusOf = (byId) => new Map(Object.entries(byId).map(([id, at]) => [Number(id), tiers(at)]));
 
 test("SLOTS covers all nine equipment slots", () => {
   expect(SLOTS).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
@@ -70,4 +85,45 @@ test("buildIndex ranks by the injected valuation rather than any field of its ow
   ], 0, (it) => it.id);
   expect(index.get(1).get(4).item.id).toBe(2);
   expect(index.get(1).get(4).value).toBe(2);
+});
+
+test("slotsSupplying counts distinct slots that can supply a set", () => {
+  const index = indexOf([
+    { slot: 1, set: 4, value: 10 }, { slot: 2, set: 4, value: 10 },
+    { slot: 2, set: 4, value: 12 }, { slot: 3, set: 38, value: 10 },
+  ]);
+  expect(slotsSupplying(index, 4)).toBe(2);
+  expect(slotsSupplying(index, 38)).toBe(1);
+  expect(slotsSupplying(index, 66)).toBe(0);
+});
+
+// Only counts where one more piece actually pays are worth planning around: a count between two
+// paying counts grants exactly the lower one's bonus, so planning it enumerates the same build
+// twice.
+test("usefulCounts lists only the counts where one more piece pays", () => {
+  const bonusAt = bonusOf({ 4: { 2: 12, 4: 24, 6: 36 }, 58: { 3: 10, 5: 20, 8: 32 } });
+  expect(usefulCounts(bonusAt, 4, 9)).toEqual([2, 4, 6]);
+  expect(usefulCounts(bonusAt, 58, 9)).toEqual([3, 5, 8]);
+});
+
+// The cap is maxSlots, and it must INCLUDE a count landing exactly on it — off by one here
+// silently deletes the strongest plan a pool can reach rather than failing loudly.
+test("usefulCounts caps at maxSlots and includes a count landing exactly on it", () => {
+  const bonusAt = bonusOf({ 4: { 2: 12, 4: 24, 6: 36 }, 58: { 3: 10, 5: 20, 8: 32 } });
+  expect(usefulCounts(bonusAt, 4, 6)).toEqual([2, 4, 6]);
+  expect(usefulCounts(bonusAt, 4, 5)).toEqual([2, 4]);
+  expect(usefulCounts(bonusAt, 58, 2)).toEqual([]);
+});
+
+// THE case this solver exists for. A set that pays from one piece has no useful count at all
+// unless it also pays again later, because one-piece bonuses are bought by a singleton column
+// instead of being planned. A solver that planned them would need nine-set plans.
+test("usefulCounts never reports 1, so a one-piece bonus is never planned", () => {
+  const bonusAt = bonusOf({ 70: { 1: 9 }, 71: { 1: 9, 3: 20 } });
+  expect(usefulCounts(bonusAt, 70, 9)).toEqual([]);
+  expect(usefulCounts(bonusAt, 71, 9)).toEqual([3]);
+});
+
+test("usefulCounts is empty for a set the model says nothing about", () => {
+  expect(usefulCounts(new Map(), 4, 9)).toEqual([]);
 });
