@@ -9,11 +9,18 @@
 // EVERY spawned run sets RSLH_POWER_DIR to a fresh temp directory. Without it the tool would read
 // and append to the developer's real oracle/analytics/out/ — a test that pollutes a personal
 // reading log, and one whose own assertions would depend on whatever is already in it.
-import { expect, test } from "vitest";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, expect, test } from "vitest";
 import { formatBreakdown, formatCertificate, formatGain, formatOffBest, formatSets, formatTotals,
   latestReading, mainCopies, parsePowerArgs, powerDir, readingsFor, readingsPath,
   weightsPath } from "../power.mjs";
 import { STATS } from "../champion-stats.mjs";
+import { FORMAT, FORMAT_VERSION } from "../gestal.mjs";
+import { writeSnapshot } from "../refresh-gestal.mjs";
 
 // --- parsePowerArgs: modes and positionals ------------------------------------
 
@@ -472,4 +479,153 @@ test("powerDir honours $RSLH_POWER_DIR and the two file names hang off it", () =
     if (saved === undefined) delete process.env.RSLH_POWER_DIR;
     else process.env.RSLH_POWER_DIR = saved;
   }
+});
+
+// === end to end ==================================================================
+//
+// The CLI over throwaway synthetic snapshots, read back from its stdout and stderr.
+
+const SCRIPT = fileURLToPath(new URL("../power.mjs", import.meta.url));
+// node:sqlite needs the flag on Node 22 and refuses it on builds that no longer know it. power.mjs
+// opens no database, but its champion selector comes from champs.mjs, which imports node:sqlite for
+// the other snapshot kind. --no-warnings keeps that module's ExperimentalWarning off stderr, which
+// the message assertions below read.
+const FLAGS = Number(process.versions.node.split(".")[0]) < 23 ? ["--experimental-sqlite"] : [];
+
+const cleanups = [];
+afterEach(() => { while (cleanups.length) cleanups.pop()(); });
+const tmp = () => {
+  const dir = mkdtempSync(join(tmpdir(), "power-cli-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
+};
+
+// EVERY run gets a fresh RSLH_POWER_DIR, so no test ever reads or appends to the developer's real
+// oracle/analytics/out/. GESTAL_DATA_ROOT is always set too, and by default to a path that does not
+// exist: a test that reaches the live folder by mistake then fails loudly instead of reading a real
+// account. Only the `log` tests point it at a fixture.
+const run = (args, { powerDir = tmp(), dataRoot } = {}) => spawnSync(
+  process.execPath, [...FLAGS, "--no-warnings", SCRIPT, ...args],
+  { encoding: "utf8", env: { ...process.env,
+    RSLH_POWER_DIR: powerDir,
+    GESTAL_DATA_ROOT: dataRoot ?? join(powerDir, "no-gestal-folder-here") } });
+
+// --- Gestal fixtures ------------------------------------------------------------
+//
+// Synthetic and hand-built, as in gestal.test.mjs: a real Gestal folder holds personal account
+// data and never belongs in the repo.
+
+// Gestal's slot ids are 0-based and are NOT ours: 0 is the Weapon (our slot 5), 1 the Helmet
+// (our 1), 2 the Shield (our 6). Named here so the fixtures below read as gear rather than as
+// integers.
+const G_WEAPON = 0, G_HELMET = 1, G_SHIELD = 2;
+// Gestal stat ids, which are a third numbering again: 8 is C.RATE and 9 is C.DMG, both stored as
+// integers x100 of what the game displays.
+const G_CRATE = 8, G_CDMG = 9;
+// .hsf set ids, as ARTIFACT_SET_NAMES and SET_BONUSES key them. Both are `stack` sets completing
+// every 2 pieces: Critical Rate pays +12 C.RATE, Crit Damage +20 C.DMG.
+const CR_SET = 5, CD_SET = 6;
+
+// A Gestal artifact record: a Legendary 6★ +16 Weapon with a C.RATE 12 main and a C.DMG 30
+// substat, setless and unequipped.
+function piece(o = {}) {
+  return {
+    id: 1, slot: G_WEAPON, gearSetId: 0, factionId: null, rarityId: 5, rank: 6, level: 16,
+    ascensionLevel: 0,
+    mainStatId: G_CRATE, mainStatValue: 1200,
+    substats: [{ statId: G_CDMG, value: 3000, glyphBonusValue: null, rolls: 2, isMythicalRoll: false }],
+    ascensionStat: null, equippedOnHeroId: null, sellPrice: 0, isNew: false, isReworked: false,
+    isAnomalous: false, ...o,
+  };
+}
+
+// A Gestal champion record carrying the six stat fields gestalChampStats reads. The bonus shapes
+// are the ones a real capture shows (gestal-stats.test.mjs): HP/ATK/DEF flat or %, SPD flat, RES
+// and ACC flat, and both crits as FRACTIONS. Lore of Steel is off, which keeps the Masteries column
+// at zero and the set arithmetic below checkable by hand.
+function champion(o = {}) {
+  return {
+    heroId: 100, typeId: 1496, baseTypeId: 1490, grade: 6, level: 60, empowerLevel: 0,
+    blessingId: null, factionId: 0, rarityId: 5, roleId: 0, name: "Elhain", awakenLevel: 0,
+    baseStats: { hp: 15000, atk: 1000, def: 900, spd: 100, crate: 15, cdmg: 50, res: 30, acc: 0 },
+    loreOfSteelMultiplier: 0,
+    bonusesV2: { sets: [], mastery: [], blessing: [], relic: [], empower: [], factionGuardian: [] },
+    ...o,
+  };
+}
+
+const doc = (schemaVersion, payload) => ({ schemaVersion, payload });
+
+function snapshotOf({ artifacts = [], champions = [champion()] } = {}) {
+  return {
+    format: FORMAT, formatVersion: FORMAT_VERSION, capturedAt: "2026-10-03T12:05:00Z",
+    gestalVersion: "0.8.15",
+    documents: {
+      artifacts: doc(2, { extractedAt: "2026-10-03T12:00:00Z", gameVersion: "11.75.0", artifacts }),
+      champions: doc(2, { extractedAt: "2026-10-03T12:00:30Z", gameVersion: "11.75.0", champions }),
+    },
+  };
+}
+
+// A snapshot on disk, where the tool reads one. The .json.gz extension is load-bearing twice over:
+// the readers recognise a Gestal snapshot by it, and it is what .gitignore denies repo-wide.
+function snapshotFile(opts) {
+  const path = join(tmp(), "2026-10-03-Gestal.json.gz");
+  writeSnapshot(path, snapshotOf(opts));
+  return path;
+}
+
+// Six pieces over three slots: three Critical Rate and three Crit Damage. TWO sets over THREE
+// slots is what gives the solver more than one plan to rank — each set can reach its useful count
+// of 2, so the plans are {}, {Critical Rate: 2} and {Crit Damage: 2} — which is what --top needs.
+// The three Critical Rate pieces are worn, so CURRENT is a real build and BEST has somewhere to go.
+const cdPiece = (id, slot) => piece({
+  id, slot, gearSetId: CD_SET, mainStatId: G_CDMG, mainStatValue: 6000,
+  substats: [{ statId: G_CRATE, value: 800, glyphBonusValue: null, rolls: 1, isMythicalRoll: false }],
+});
+const GEAR = [
+  piece({ id: 1, slot: G_WEAPON, gearSetId: CR_SET, equippedOnHeroId: 100 }),
+  piece({ id: 2, slot: G_HELMET, gearSetId: CR_SET, equippedOnHeroId: 100 }),
+  piece({ id: 3, slot: G_SHIELD, gearSetId: CR_SET, equippedOnHeroId: 100 }),
+  cdPiece(4, G_WEAPON), cdPiece(5, G_HELMET), cdPiece(6, G_SHIELD),
+];
+
+// Two champions sharing a name substring and NOT a baseTypeId, so mainCopies keeps one of each and
+// a selector of "Elhain" is genuinely ambiguous.
+const TWO_CHAMPS = [champion(), champion({ heroId: 200, baseTypeId: 1491, name: "Dark Elhain" })];
+
+// --- solve: the arguments it refuses --------------------------------------------
+
+// The stat model needs each copy's base stats and its per-source bonus breakdown, and an RSL Helper
+// DB carries neither. Half-reading one would report a champion's power from base stats it had to
+// invent, which is a plausible wrong answer rather than a crash.
+test("solve refuses a non-Gestal snapshot, saying what it is missing", () => {
+  const res = run(["Elhain", "x/y.db"]);
+  expect(res.status).toBe(1);
+  expect(res.stderr).toMatch(/power\.mjs needs a Gestal snapshot \(\.json\.gz\)/);
+  expect(res.stderr).toMatch(/neither per-copy base stats nor the bonus breakdown/);
+});
+
+// The mode's OWN usage line, not all four: the answer to a missing argument is the one shape that
+// would have worked.
+test("solve without a selector exits 1 with solve's usage line", () => {
+  const res = run([]);
+  expect(res.status).toBe(1);
+  expect(res.stderr).toMatch(/usage: power\.mjs <name\|ID> \[snapshot\.json\.gz\]/);
+  expect(res.stderr).not.toMatch(/power\.mjs fit/);
+});
+
+// A half-typed name costs one rerun rather than a scroll through a 500-champion roster. Same shape
+// as speed.mjs.
+test("solve names the near misses when the selector matches nothing", () => {
+  const res = run(["Elhian", snapshotFile({ artifacts: GEAR })]);
+  expect(res.status).toBe(1);
+  expect(res.stderr).toMatch(/no champion matches "Elhian"/);
+  expect(res.stderr).toMatch(/did you mean: Elhain\?/);
+});
+
+test("solve heads the report with the snapshot it read", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR })]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^# Power — snapshot 2026-10-03-Gestal\.json\.gz$/m);
 });

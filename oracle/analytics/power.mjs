@@ -30,13 +30,16 @@
 // Advisory only for the game: nothing is written to a snapshot, to Gestal's folder or to the
 // game's own database. `log` and `fit` write to out/, which is personal account data and
 // gitignored.
+import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, lookupName } from "@rslh/core";
-import { STATS } from "./champion-stats.mjs";
-import { selectChamps } from "./champs.mjs";
+import { STATS, statBreakdown } from "./champion-stats.mjs";
+import { isRealChamp, selectChamps, suggestNames } from "./champs.mjs";
+import { gestalChampRows, gestalChampStats, gestalItems, isGestalPath,
+  readGestalSnapshot } from "./gestal.mjs";
 import { SET_BONUSES } from "./set-bonuses.mjs";
-import { isSnapshotArg } from "./snapshots.mjs";
+import { isSnapshotArg, resolveSnapshot } from "./snapshots.mjs";
 
 // --- CLI: pure helpers ------------------------------------------------------
 
@@ -327,3 +330,78 @@ export const readingsPath = () => join(powerDir(), "power-readings.jsonl");
 // baseTypeId -> { name, b, r, a, s, k, fittedAt, readings }. The whole object is the `fitted`
 // argument to weightsFor, which reads only the five weights and ignores the rest.
 export const weightsPath = () => join(powerDir(), "power-weights.json");
+
+// --- CLI: I/O and formatting ------------------------------------------------
+// Below this line nothing is unit-tested: snapshot reads, the local files, layout and printing.
+
+// parsePowerArgs, resolveAccount and captureSnapshot all throw messages written for this audience,
+// so a mistyped flag or a Gestal folder that is not there gets the message and nothing else.
+// Everything past here keeps its stack trace, because anything else that throws is a bug.
+function die(e) {
+  console.error(e.message);
+  process.exit(1);
+}
+
+function usage(mode) {
+  console.error(`usage: ${USAGE[mode]}`);
+  process.exit(1);
+}
+
+// Gestal only. The stat model needs each copy's base stats and its per-source bonus breakdown, and
+// an RSL Helper DB carries neither — so there is nothing to build a champion's totals from, and
+// half-reading one would report a power computed from base stats it had to invent.
+function readGestalOrDie(dbArg) {
+  const path = resolveSnapshot(dbArg);
+  if (!isGestalPath(path)) {
+    console.error("power.mjs needs a Gestal snapshot (.json.gz) — an RSL Helper DB has neither"
+      + " per-copy base stats nor the bonus breakdown");
+    process.exit(1);
+  }
+  return { path, snapshot: readGestalSnapshot(path) };
+}
+
+// Everything the snapshot-reading modes need, off ONE read. `items` is handed to gestalChampRows so
+// the wearer columns are built from the same item list the solver searches rather than from a second
+// decode of the same document.
+//
+// Rows go through isRealChamp, which drops the placeholder rows gestalChampRows appends for wearers
+// the roster has not listed yet. That is also what makes `statsById.get(row.ID)` total: every row
+// that survives came from the roster document, and so has a stat record.
+function accountState(snapshot) {
+  const items = gestalItems(snapshot);
+  return {
+    items,
+    rows: gestalChampRows(snapshot, items).filter(isRealChamp),
+    statsById: gestalChampStats(snapshot),
+  };
+}
+
+// Same shape as speed.mjs: the selector that found nothing, then the near misses, so a half-typed
+// name costs one rerun rather than a scroll through the roster.
+function noMatch(rows, selector) {
+  console.error(`no champion matches "${selector}".`);
+  const near = suggestNames(rows, selector);
+  if (near.length) console.error(`did you mean: ${near.join(", ")}?`);
+  process.exit(1);
+}
+
+function runSolve(args) {
+  const { path, snapshot } = readGestalOrDie(args.dbArg);
+  const { items, rows, statsById } = accountState(snapshot);
+  const copies = mainCopies(rows, statsById, items, args.selector);
+  if (!copies.length) return noMatch(rows, args.selector);
+  console.log(`# Power — snapshot ${path.split(/[\\/]/).pop()}`);
+}
+
+function main() {
+  let args;
+  try {
+    args = parsePowerArgs(process.argv.slice(2));
+  } catch (e) {
+    return die(e);
+  }
+  if (args.selector === null) return usage(args.mode);
+  return runSolve(args);
+}
+
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) main();
