@@ -1,4 +1,50 @@
-// oracle/analytics/power-solve.mjs — header completed in Task 19.
+// oracle/analytics/power-solve.mjs
+//
+// The gear assignment, out of the whole vault, that maximizes a champion's in-game POWER. The
+// default mode: linearize the crit term, solve exactly, iterate to a fixed point, and certify how
+// far the answer could still be from the maximum. The provably exact search is a separate mode.
+//
+// WHY MAXIMIZING `lin` MAXIMIZES POWER. power-model.mjs gives power = (lin + c)^2, where `lin` is
+// a weighted sum of stat totals and `c` is a property of the COPY that no gear change can move.
+// Squaring is increasing on the non-negative reals, so ranking builds by (lin + c)^2 is ranking
+// them by lin + c, and ranking them by lin + c is ranking them by lin. That argument needs
+// lin + c > 0, which holds for every build this module reports: the candidate pool is seeded with
+// the gear already worn, whose power is an observed in-game number and therefore positive, and
+// every build reported scores at or above it. So `c` never enters this module at all, and a
+// caller does not have to measure one to rank builds.
+//
+// THE LINEARIZATION. `lin` is additive over pieces and over set bonuses in every term but one:
+// k * C.RATE * (100 + C.DMG) is a PRODUCT of two build totals, so a piece's crit value depends on
+// what the other eight slots hold, and no per-item value can express it. Freeze C.RATE and C.DMG
+// at reference levels and that term splits into two per-stat scalars — C.RATE weighted by
+// k * (100 + cdRef) and C.DMG by k * crRef — leaving an objective that is a per-item value plus a
+// per-(set, count) bonus, which is exactly what build-solve.mjs solves exactly. So: linearize at
+// the gear already worn, solve exactly, re-linearize at the answer, and repeat.
+//
+// A FIXED POINT, NOT AN OPTIMUM. When the iteration stops because the build stopped changing
+// (`converged`), the answer is a fixed point of that map — the exact optimum of the objective
+// linearized at its own crit totals. That is NOT the optimum of the true objective, and nothing
+// here claims it is. The iteration can also CYCLE between two builds, or run out at `maxRounds`,
+// and then there is no fixed point either; both report `converged: false`. In every case the
+// answer is the best build on the TRUE objective out of every build any round produced, plus the
+// gear already worn as round 0 — which is what makes it never worse than what the champion is
+// wearing. Without that seed a cycle can end on a build below the worn gear, and the answer would
+// be a downgrade reported as an improvement.
+//
+// WHAT IS PROVED. `upperBound` is a genuine upper bound on the true objective over EVERY
+// assignment of this vault, so `gap` is a proven ceiling on how much the answer could be
+// improved — "within X of the maximum", never "the maximum". It comes from McCormick estimators
+// of the crit product over the box of C.RATE and C.DMG the vault can actually reach, each of
+// which is affine and therefore one more exact solve. The bound is LOOSE exactly when that box is
+// wide — a champion whose crit can swing from almost nothing to a fully stacked double-crit build
+// — and a wide `gap` is the signal to pay for the provably exact mode instead of trusting this
+// one.
+//
+// `current` IS ASSUMED DRAWN FROM `items`. Every bound rests on it: the crit box is the non-gear
+// totals plus the most any assignment of `items` can add, so a worn piece that is not in the pool
+// could sit outside that box and make `gap` negative rather than zero. Not checked, because the
+// one precondition worth paying for on every call is the weights; a vault that omits worn gear is
+// a caller bug upstream of here.
 import { buildIndex, SLOTS, solve } from "./build-solve.mjs";
 import { STATS, contribution, itemEntries, statBreakdown } from "./champion-stats.mjs";
 import { SET_BONUSES, setBonusTotals, setCounts } from "./set-bonuses.mjs";
