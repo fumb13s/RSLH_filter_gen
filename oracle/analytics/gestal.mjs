@@ -182,10 +182,27 @@ function bonusEntries(list, what) {
   });
 }
 
-// Gestal's per-champion stat records, keyed by heroId: the champion stat model's input. Unlike
-// gestalChampRows this covers the ROSTER DOCUMENT ONLY — a wearer the roster omits has no
-// baseStats to report, so it gets no entry here, and the two can legitimately disagree on
-// membership.
+// Gestal's per-champion stat records, keyed by heroId: everything champion-stats.mjs needs to
+// reproduce the game's Total Stats screen for a copy.
+//
+//   base          the copy's stats at its CURRENT rank and level, renamed onto the model's stat
+//                 names. crate and cdmg are already percentage points (15, 50), not fractions.
+//   sources       the five per-source bonus breakdowns, as [key, value] in set-bonuses.mjs's key
+//                 space. A missing or null source reads as [], as does a missing bonusesV2.
+//   observedSets  the game's OWN set bonus for the copy's current gear, as a Map, summed per key.
+//                 Nothing here reads it; a later power.mjs verify diffs it against the set table.
+//   loreOfSteel   the mastery's multiplier: 0.15 when taken, else 0.
+//   awaken        the copy's awaken level, for picking a champion's main copy later.
+//
+// SHAPES SEEN on a real capture, which the two key tables above encode and refuse to guess past:
+// stat kinds 1-8 only; HP/ATK/DEF flat or relative; SPD flat, or relative from SETS only; RES and
+// ACC always flat; C.RATE and C.DMG always fractions.
+//
+// ROSTER DOCUMENT ONLY, unlike gestalChampRows. That one appends a placeholder row for a wearer
+// the roster does not list, because its gear still has to be locatable; a champion with no roster
+// record has no baseStats to report, so it gets no entry here and the two can legitimately
+// disagree on membership. gestalChampRows is unaffected by any of this — its rows keep the
+// SQLite row shape.
 export function gestalChampStats(snapshot) {
   const out = new Map();
   for (const c of snapshot.documents.champions.payload.champions) {
