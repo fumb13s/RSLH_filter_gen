@@ -1242,6 +1242,33 @@ test("--glyph prints only one build in the block without --top", () => {
   expect(tail.match(/^ {4}glyphs to apply: /gm)).toHaveLength(1);
 });
 
+// --exact proves the LIFTED maximum exactly as it proves the plain one, so the block prints
+// `proven maximum` where its certificate would be. Asserted after the headline, because the plain
+// block prints the same line above.
+test("--glyph composes with --exact, proving the lifted maximum too", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--exact",
+    "--glyph", "epic"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toContain("WITH 6★ Epic GLYPHS");
+  const [, tail] = res.stdout.split("WITH 6★ Epic GLYPHS");
+  expect(tail).toMatch(/^ {4}proven maximum {3}\[\d+ ms, \d+\/\d+ plans pruned\]$/m);
+  // Asserting the ABSENCE matters as much: a block printing both would be claiming a ceiling on a
+  // number that has no ceiling left.
+  expect(tail).not.toMatch(/below the true maximum/);
+  // The build and its glyphs are still printed, with epic's SPD cap of 10 rather than 12.
+  expect(tail).toMatch(/^ {6}glyph SPD 0→10 {2}\(\+0\.22\)$/m);
+  expect(tail).toMatch(/^ {4}glyphs to apply: 1$/m);
+});
+
+// A champion with nothing wearable has no plain build, so there is nothing to lift toward and no
+// block to print — only --exact reaches this state, since solvePower always seeds the worn gear.
+test("--glyph prints no block when no slot can be filled", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: [] }), "--exact", "--glyph", "epic"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {2}no eligible items for any slot\.$/m);
+  expect(res.stdout).not.toMatch(/GLYPHS/);
+});
+
 // --- verify ----------------------------------------------------------------------
 //
 // The set table is GAME DATA and will drift on a patch. verify is the guard: it diffs the table

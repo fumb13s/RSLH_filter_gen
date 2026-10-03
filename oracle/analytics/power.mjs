@@ -647,6 +647,21 @@ function printGlyphBlock({ items, champStats, weights, faction, current, plainBe
     console.log(`    glyphs to apply: ${liftsOf(build).length}`);
   };
 
+  // --exact proves the lifted maximum, exactly as it proves the plain one. No runners-up — the
+  // parser has already refused --top — and `proven maximum` where the certificate would be.
+  //
+  // `proven.build` is never null here: the lifted pool holds the same pieces in the same slots,
+  // and the caller only reaches this function when the plain solve produced a build.
+  if (args.exact) {
+    const proven = solvePowerExact({ items: pool, faction, champStats,
+      current: asLifted(current), weights });
+    const reported = proven.build.lin >= floor.lin ? proven.build : floor;
+    console.log(`\n${formatGlyphGain(plainBest.lin, reported.lin, c, args.glyph)}`);
+    printOne(reported);
+    console.log(formatProven(proven));
+    return;
+  }
+
   const result = solvePower({ items: pool, faction, champStats, current: asLifted(current),
     weights, top: args.top });
   // A TIE goes to the lifted solve, which is the answer the block was asked for; the floor is the
@@ -707,11 +722,17 @@ function printCopy(row, { items, rows, statsById, fitted, readings, args }) {
     const proven = solvePowerExact({ items, faction: row.Fraction, champStats, current, weights });
     // No slot can be filled at all: the vault is empty, or every accessory is the wrong faction.
     // speed.mjs prints this same line for an empty index. There is no assignment to report, let
-    // alone one to prove anything about, and an empty BEST block would read as a build.
+    // alone one to prove anything about, and an empty BEST block would read as a build. No glyph
+    // block either: a lift makes a piece better, and there is no piece.
     if (!proven.build) return console.log("  no eligible items for any slot.");
     console.log(`\n${formatGain(currentLin, proven.build.lin, c)}`);
     printBuild(proven.build, wearers);
-    return console.log(formatProven(proven));
+    console.log(formatProven(proven));
+    if (args.glyph) {
+      printGlyphBlock({ items, champStats, weights, faction: row.Fraction, current,
+        plainBest: proven.build, c, args, wearers });
+    }
+    return;
   }
 
   const result = solvePower({ items, faction: row.Fraction, champStats, current, weights,
