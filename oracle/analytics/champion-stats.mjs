@@ -1,4 +1,34 @@
-// The champion stat model: the game's Total Stats screen for a copy and a gear assignment.
+// The game's TOTAL STATS screen, reproduced for any champion copy and any gear assignment. Pure
+// and weight-free: it reads a champion's stat record (gestal.mjs's gestalChampStats) and a plain
+// array of Items, and knows nothing about power, scoring or snapshots.
+//
+//   total(stat) = Σ over the nine columns of round(column(stat))
+//
+// VERIFIED column for column against the in-game screen on five champions — Ultimate Deathknight,
+// Helicath, Madame Serris, Thor Faehammer and Pelops the Victor — apart from ±1 on some totals,
+// which is the per-column rounding below and is reproduced rather than smoothed away.
+//
+// ROUNDING. The game rounds EACH COLUMN to a whole number and then sums. Column vectors are
+// therefore left unrounded and unfloored, and `totals` is the only place a number is rounded.
+// This is also why the Artifacts column uses setBonusTotals rather than setBonusTerms: the
+// warning on setBonusTotals is about the SPEED model, where the game floors each set term
+// against base separately (speed-sets.mjs's setEffect). The Total Stats screen does not — it
+// rounds per column — so the two genuinely differ, and statBreakdown's SPD column is NOT
+// speed.mjs's number. Do not reconcile them here.
+//
+// LORE OF STEEL multiplies EVERY set's stat bonus, not only the eight basic sets, and the game
+// shows that extra under Masteries rather than inside the set bonus. Verified on a champion with
+// the mastery, whose Merciless, Zeal and Pinpoint bonuses were all scaled. set-bonuses.mjs stays
+// multiplier-free and this module applies it, so a caller that forgets it under-counts rather
+// than double-counts.
+//
+// ACCOUNT-WIDE SOURCES ARE CONSTANTS. The Great Hall is assumed MAXED and the Classic Arena
+// league GOLD 5 — both named constants below, so changing either is a one-line edit. A snapshot
+// does carry great-hall-state.json and account-bonuses.json; nothing reads them yet.
+//
+// STAT IDS. itemEntries reads OUR item stat ids (STAT_NAMES order). They are NOT the statKindId
+// enum gestal.mjs uses for bonusesV2 — the two agree on 1-4 and swap on 5-8. The two tables are
+// deliberately separate.
 import { setBonusTotals, setCounts } from "./set-bonuses.mjs";
 
 // The eight stats the screen shows, in its column order.
