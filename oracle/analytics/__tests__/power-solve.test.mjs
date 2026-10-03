@@ -462,3 +462,58 @@ test("top does not list the same set of items twice", () => {
 test("top defaults to one build", () => {
   expect(solvePower(CONVERGE_ARGS).builds).toHaveLength(1);
 });
+
+// --- solvePower: the certificate ---------------------------------------------------------------
+
+// The box is the non-gear crit plus the most any assignment of the pool can ADD, each found by
+// one exact solve weighting that stat alone. On the cycle pool the most gear can add is C.RATE
+// 100 and C.DMG 300, so the box is C.RATE 0..100 and C.DMG 25..325, giving Dlo = 125 and
+// Dhi = 425. The two estimators then maximise to
+//
+//   UB_1 at (crRef, cdRef) = (CRhi, CDlo) = (100,  25)
+//     non-gear   125 * 0 + 100 *  25 =  2,500
+//     best gear  per slot max(50 * 125, 150 * 100) = 15,000, twice = 30,000
+//     constant   -k * CRhi * CDlo = -100 * 25 = -2,500
+//     UB_1 = 2,500 + 30,000 - 2,500 = 30,000
+//
+//   UB_2 at (crRef, cdRef) = (CRlo, CDhi) = (  0, 325)
+//     non-gear   425 * 0 + 0 * 25 = 0
+//     best gear  per slot max(50 * 425, 150 * 0) = 21,250, twice = 42,500
+//     constant   -k * CRlo * CDhi = 0
+//     UB_2 = 42,500
+//
+// and the bound is the smaller. Loose by design: a pool whose crit can swing that far is exactly
+// the case the provably exact mode exists for.
+test("the certificate is the smaller of the two McCormick bounds", () => {
+  const got = solvePower(CYCLE_ARGS);
+  expect(got.upperBound).toBeCloseTo(30000, 6);
+  expect(got.gap).toBeCloseTo(30000 - 12500, 6);
+});
+
+// The bound has to hold over EVERY assignment, including the mixed build the iteration never
+// reaches. A bound that only covered the builds the rounds happened to visit would certify
+// nothing.
+test("the bound covers the true optimum the iteration never reached", () => {
+  expect(solvePower(CYCLE_ARGS).upperBound).toBeGreaterThanOrEqual(13750);
+});
+
+// When the pool cannot move crit at all the box collapses to a point, both estimators become
+// exact, and the bound is the build's own value. This is the degenerate case the algebra has to
+// survive rather than divide by a zero-width box.
+test("a pool with no crit to gain certifies a zero gap", () => {
+  const flat = [item({ id: 1, slot: 1, mainStat: { statId: 4, isFlat: true, value: 30 } })];
+  const got = solvePower({
+    items: flat, faction: 0, champStats: champStats(), current: flat,
+    weights: { b: 0, r: 0, a: 0, s: 1, k: 1 },
+  });
+  expect(got.builds[0].lin).toBeCloseTo(30, 9);   // s * SPD 30; C.RATE is 0, so no crit term
+  expect(got.gap).toBeCloseTo(0, 9);
+});
+
+// gap is a difference the caller does not have to recompute, and it must match the two fields it
+// is derived from.
+test("gap is upperBound less the best build's lin", () => {
+  const got = solvePower(CONVERGE_ARGS);
+  expect(got.gap).toBeCloseTo(got.upperBound - got.builds[0].lin, 9);
+  expect(got.gap).toBeGreaterThanOrEqual(0);
+});

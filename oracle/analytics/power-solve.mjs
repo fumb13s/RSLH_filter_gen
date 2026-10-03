@@ -182,9 +182,43 @@ export function solvePower({ items, faction, champStats, current, weights, top =
     reference = { cr: roundBest.totals["C.RATE"], cd: roundBest.totals["C.DMG"] };
   }
 
-  // Not read until Task 15 wires the certificate. See the note in Task 8 on why this is a `void`
-  // rather than an eslint-disable.
-  void nonGear;
+  // --- the certificate ------------------------------------------------------------------------
+
+  // THE BOX. Gear only ADDS crit — every item stat and every set bonus is non-negative — so the
+  // non-gear totals are the floor, and the ceiling is that floor plus the most any assignment can
+  // add, which is one exact solve weighting that stat alone. Those two solves are cheap: a set
+  // with no crit gets an all-zero column, which build-solve's usefulCounts skips (no increase)
+  // and singletonSets skips (bonus[1] > 0 fails), so plan enumeration collapses onto the crit
+  // sets alone rather than walking all 41.
+  const maxGear = (stat) => {
+    const index = buildIndex(items, faction, (item) => vectorOf.get(item)[stat]);
+    const bonusAt = new Map([...setVecs]
+      .map(([setId, vectors]) => [setId, vectors.map((v) => v[stat])]));
+    const ranked = solve(index, bonusAt, { top: 1 });
+    return ranked.length ? ranked[0].score : 0;
+  };
+  const CRlo = nonGear["C.RATE"];
+  const CDlo = nonGear["C.DMG"];
+  const CRhi = CRlo + maxGear("C.RATE");
+  const CDhi = CDlo + maxGear("C.DMG");
+
+  // McCORMICK. With x = C.RATE in [CRlo, CRhi] and y = 100 + C.DMG in [Dlo, Dhi], both
+  // (CRhi - x)(y - Dlo) >= 0 and (x - CRlo)(Dhi - y) >= 0, which rearrange to
+  //
+  //   x*y <= CRhi*y + Dlo*x - CRhi*Dlo        and        x*y <= CRlo*y + Dhi*x - CRlo*Dhi
+  //
+  // valid for EVERY build. Each is AFFINE in the build's C.RATE and C.DMG, so each is the crit
+  // term of a linearization plus a constant — the first at (crRef, cdRef) = (CRhi, CDlo), the
+  // second at (CRlo, CDhi). Substituting y = 100 + C.DMG, that constant is -k * crRef * cdRef in
+  // both cases, so each bound is ONE MORE call of the same solve, with a scalar correction. No
+  // bespoke machinery, which is the whole reason the references are written this way round.
+  const upperAt = (crRef, cdRef) => {
+    const linWeights = linearizedWeights(weights, crRef, cdRef);
+    const ranked = solveAt(linWeights, 1);
+    const gear = ranked.length ? ranked[0].score : 0;
+    return dot(linWeights, nonGear) + gear - weights.k * crRef * cdRef;
+  };
+  const upperBound = Math.min(upperAt(CRhi, CDlo), upperAt(CRlo, CDhi));
 
   // The whole POOL, not the last round: the best build may have come from any round, or be the
   // gear already worn. Stable sort, so a tie falls to insertion order — round order, then
@@ -196,5 +230,5 @@ export function solvePower({ items, faction, champStats, current, weights, top =
   const builds = [...pool.values()]
     .sort((a, b) => b.lin - a.lin)
     .slice(0, Math.max(1, top));
-  return { builds, rounds, converged, upperBound: 0, gap: 0 };
+  return { builds, rounds, converged, upperBound, gap: upperBound - builds[0].lin };
 }
