@@ -5,6 +5,8 @@
 //     --top N        print the N best builds rather than only the winner
 //     --exact        prove the maximum instead of certifying a fixed point. Slower, and takes no
 //                    --top: it proves one build and keeps no runner-up to rank.
+//     --glyph G      also solve with every glyphable substat at the cap of glyph grade G
+//                    (5, normal, rare, epic, legendary)
 //
 //   node --experimental-sqlite oracle/analytics/power.mjs log <name|ID> <in-game power>
 //     record a power reading against Gestal's LIVE stats, for `fit` to calibrate from.
@@ -37,13 +39,14 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync,
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, lookupName } from "@rslh/core";
-import { STATS, statBreakdown } from "./champion-stats.mjs";
+import { STATS, contribution, statBreakdown } from "./champion-stats.mjs";
 import { isRealChamp, selectChamps, suggestNames } from "./champs.mjs";
 import { gestalChampRows, gestalChampStats, gestalItems, isGestalPath,
   readGestalSnapshot } from "./gestal.mjs";
+import { GLYPH_GRADES, GLYPH_LABELS, liftVault } from "./glyphs.mjs";
 import { fitWeights } from "./power-fit.mjs";
 import { constantFrom, lin, weightsFor } from "./power-model.mjs";
-import { buildTotals, solvePower, solvePowerExact } from "./power-solve.mjs";
+import { buildTotals, linearizedWeights, solvePower, solvePowerExact } from "./power-solve.mjs";
 import { captureSnapshot, dataRoot, freshnessWarnings, resolveAccount } from "./refresh-gestal.mjs";
 import { SET_BONUSES, diffSetBonuses, setCounts } from "./set-bonuses.mjs";
 import { isSnapshotArg, resolveSnapshot } from "./snapshots.mjs";
@@ -54,7 +57,7 @@ import { describeWearers, otherWearers } from "./wearers.mjs";
 // What each mode's usage line shows. Printed back on a missing argument, so the answer is the one
 // shape that would have worked rather than all four.
 export const USAGE = {
-  solve: "power.mjs <name|ID> [snapshot.json.gz] [--power N] [--top N] [--exact]",
+  solve: "power.mjs <name|ID> [snapshot.json.gz] [--power N] [--top N] [--exact] [--glyph G]",
   log: "power.mjs log <name|ID> <in-game power>",
   fit: "power.mjs fit <name|ID>",
   verify: "power.mjs verify [snapshot.json.gz]",
@@ -72,7 +75,7 @@ const TAKES = { solve: 1, log: 2, fit: 1, verify: 0 };
 // they are read, so `--top 3 Elhain` still finds Elhain rather than reading 3 as the selector.
 export function parsePowerArgs(argv) {
   const out = { mode: "solve", selector: null, dbArg: undefined, power: null, top: 1,
-    topGiven: false, exact: false, logPower: null };
+    topGiven: false, exact: false, glyph: null, logPower: null };
   const positional = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -86,6 +89,10 @@ export function parsePowerArgs(argv) {
     }
     // A bare flag: it consumes no value, so `--exact Elhain` still finds Elhain.
     if (arg === "--exact") { out.exact = true; continue; }
+    // A GRADE rather than a number, so it is validated against the five names rather than by
+    // positiveInt — and its value is consumed as it is read, because `--glyph 5 Elhain` would
+    // otherwise read "5" as an all-digit selector, which mainCopies treats as an exact copy id.
+    if (arg === "--glyph") { out.glyph = glyphGrade(argv[++i]); continue; }
     // Anything else beginning `--` is a typo, not a champion, and swallowing it as a positional is
     // the worst outcome on offer: `--tpo 3` loses the option-value race, prints one build, exits 0,
     // and says nothing about the two it dropped. A plausible wrong answer, not a crash.
@@ -111,6 +118,11 @@ export function parsePowerArgs(argv) {
   if (out.exact && out.topGiven) {
     throw new Error(`--top is not supported with --exact — the exact mode proves one maximum and`
       + " keeps no runner-up to rank");
+  }
+  // The same refusal, for the same reason: log, fit and verify run no solver, so a lifted vault
+  // has nothing to be solved over and ignoring the flag would look like it had been.
+  if (out.glyph !== null && out.mode !== "solve") {
+    throw new Error(`--glyph is only supported in solve mode — usage: ${USAGE.solve}`);
   }
   if (READS_SNAPSHOT.has(out.mode)) out.dbArg = positional.find(isSnapshotArg);
   if (!READS_SNAPSHOT.has(out.mode)) {
@@ -140,6 +152,26 @@ function positiveInt(what, raw) {
     throw new Error(`${what} needs a positive integer`);
   }
   return value;
+}
+
+// A glyph GRADE, not a number. Glyph values differ per stat — a SPD glyph tops out at 12 and a
+// flat HP one at 1,150 — so one number cannot cover every stat, and "every glyphable substat at
+// the cap of a 6★ Epic glyph" is the assumption a reader can state and control. glyphs.mjs's
+// header has the provenance.
+//
+// Blank is checked BEFORE the lookup, for the reason positiveInt checks it before Number(): an
+// option whose value went missing would otherwise be reported as an unknown grade of "", which
+// names the symptom rather than the mistake. The grade list comes off GLYPH_GRADES, so the names
+// in this message cannot drift from the table they index.
+function glyphGrade(raw) {
+  const valid = `use one of ${GLYPH_GRADES.join(", ")}`;
+  if (raw === undefined || raw.trim() === "") {
+    throw new Error(`--glyph needs a grade — ${valid}`);
+  }
+  if (!GLYPH_GRADES.includes(raw)) {
+    throw new Error(`unknown glyph grade "${raw}" — ${valid}`);
+  }
+  return raw;
 }
 
 // How many of these items a copy is wearing. A measure of INVESTMENT in the copy, not of what it
@@ -251,6 +283,34 @@ export function formatGain(currentLin, bestLin, c) {
     + " (per-copy constant unknown: log a reading or pass --power)";
 }
 
+// The glyph block's headline, measured against the PLAIN BEST rather than against current: the
+// question the block answers is what glyphing the gear would add on top of the best build the
+// vault already allows, and the gain over current is the line above it.
+//
+// The grade is printed through GLYPH_LABELS and never raw, because "WITH 5 GLYPHS" reads as a
+// count of glyphs rather than as the star level it is.
+//
+// Same two branches as formatGain, for the same reason: without `c` no absolute power exists and
+// the only honest thing left is the ratio at c = 0, an over-estimate.
+export function formatGlyphGain(bestLin, glyphLin, c, grade) {
+  const label = GLYPH_LABELS[grade];
+  if (c !== null) {
+    const glyph = powerOf(glyphLin, c);
+    return `  WITH ${label} GLYPHS  ${Math.round(glyph)} power`
+      + `  (+${Math.round(glyph - powerOf(bestLin, c))} over BEST)`;
+  }
+  // The guard formatGain carries, unreachable for the same reason: BEST is a real build, and base
+  // stats alone put `lin` in the hundreds. At bestLin = 0 the ratio would read "+0.0%" for a lift
+  // that is in fact an infinite improvement.
+  if (!(bestLin > 0)) {
+    return `  WITH ${label} GLYPHS  gain unknown (BEST scores zero and the per-copy constant is`
+      + " unknown: log a reading or pass --power)";
+  }
+  const pct = ((glyphLin / bestLin) ** 2 - 1) * 100;
+  return `  WITH ${label} GLYPHS  ≈ +${pct.toFixed(1)}% over BEST`
+    + " (per-copy constant unknown: log a reading or pass --power)";
+}
+
 // What the solver PROVED, as opposed to what it found. power-solve's `upperBound` is a genuine
 // upper bound on the objective over EVERY assignment of this vault, so the gap is a proven ceiling
 // on how much the answer could still be improved — "within X of the maximum", never "the maximum".
@@ -295,6 +355,39 @@ export function formatOffBest(index, build, best, c) {
   const delta = c === null ? build.lin - best.lin : powerOf(build.lin, c) - powerOf(best.lin, c);
   const shown = c === null ? delta.toFixed(2) : String(Math.round(delta));
   return `  #${index}  (${shown} ${c === null ? "√power" : "power"} off BEST)`;
+}
+
+// --- the glyph block's per-lift values -------------------------------------------
+
+// What the reported build would LOSE if one lift alone were undone, in sqrt(power). Exact, and
+// additive across lifts, because every glyphable stat enters `lin` LINEARLY — the one term that is
+// not linear is the crit product, and no lift is ever crit (glyphs.mjs's crit rule).
+//
+// linearizedWeights at (0, 0) is read here as a plain per-stat scalar table, NOT as a
+// linearization: at that reference its C.RATE scalar is k * 100 rather than 0, which a search
+// would double-count. That cannot bite, because `lift.key` is never a crit key — nonCritWeights
+// is the function to reach for the day one could be.
+//
+// `contribution` is what makes a "%" lift a percentage of the champion's BASE stat rather than a
+// flat addition, which is the difference between 10 points of HP and 10% of 15,000.
+export function liftDelta(lift, base, weights) {
+  const [stat, amount] = contribution(lift.key, lift.to - lift.from, base);
+  return linearizedWeights(weights, 0, 0)[stat] * amount;
+}
+
+// One glyph to apply, printed under the piece it belongs to. Six spaces, one level deeper than the
+// four-space piece line above it, so a build reads as a list of pieces each with its glyphs rather
+// than as two interleaved lists.
+//
+// The value is what this ONE glyph is worth to the build it sits in. In power when `c` is known,
+// which needs the build's own `lin`: power is a square, so a fixed delta in sqrt(power) is worth
+// more on a stronger build and the two units are not interchangeable. In sqrt(power) otherwise,
+// where `delta` is already the answer.
+export function formatLift(lift, delta, buildLin, c) {
+  const shown = c === null
+    ? delta.toFixed(2)
+    : String(Math.round(powerOf(buildLin, c) - powerOf(buildLin - delta, c)));
+  return `      glyph ${lift.key} ${lift.from}→${lift.to}  (+${shown})`;
 }
 
 // --- labels ---------------------------------------------------------------------
@@ -489,15 +582,115 @@ function resolveConstant(args, weights, currentTotals, readings, heroId) {
 // The sets line is computed from the ITEMS rather than read off the build, because solvePower
 // returns no counts — and computing it here is the honest version anyway: a free pick carries an
 // item that belongs to some set and can complete one by accident, which has to count.
-function printBuild(build, wearers) {
+//
+// `linesById` is extra lines to print UNDER a given piece, which is how the glyph block puts each
+// glyph to apply beside the piece that needs it: a glyph is an instruction about one piece, and a
+// reader works down the list slot by slot rather than matching a trailing list back to ids.
+// Omitted by every other caller, which prints the build unchanged.
+function printBuild(build, wearers, linesById) {
   for (const it of [...build.items].sort((a, b) => a.slot - b.slot)) {
     const on = wearers.get(it.id);
     console.log(`    ${slotName(it.slot).padEnd(7)} ${setLabel(it.set).padEnd(14)}`
       + ` +${String(it.level).padStart(2)}   #${it.id}${on ? `   on ${on}` : ""}`);
+    // Each line is printed verbatim: the formatter owns its own indentation, exactly as
+    // formatTotals below does.
+    for (const line of linesById?.get(it.id) ?? []) console.log(line);
   }
   console.log(`    sets: ${formatSets(setCounts(build.items))}`);
   console.log(`    on other champions: ${describeWearers(build.items, wearers)}`);
   console.log(formatTotals(build.totals));
+}
+
+// A build's identity: its item ids, sorted, so "the same set of items" is one string compare
+// however the solver ordered them. The same key power-solve.mjs dedups its own pool on, which is
+// module-private there.
+const itemsKey = (buildItems) => buildItems.map((it) => it.id).sort((a, b) => a - b).join(",");
+
+// The glyph block: the whole vault re-valued as if every glyphable substat held `args.glyph`'s
+// cap, solved again, and printed under the plain BEST it is measured against.
+//
+// NEITHER SOLVER CHANGES, because a glyphed item is just a better item — champion-stats.mjs's
+// itemEntries already reads a substat as value + glyph, so glyphs.mjs lifts the pool and
+// everything here is the plain path over it.
+//
+// Reached only when the plain solve produced a build, so `plainBest` is real; the lifted pool
+// holds the same pieces in the same slots with the same sets and factions, so it can fill exactly
+// the same slots.
+function printGlyphBlock({ items, champStats, weights, faction, current, plainBest, c, args,
+  wearers }) {
+  const { items: pool, liftsById } = liftVault(items, args.glyph);
+  const byId = new Map(pool.map((it) => [it.id, it]));
+  // A build's pieces as the LIFTED pool's own objects. power-solve keys its per-item stat vectors
+  // by object IDENTITY, and its header requires `current` to be drawn from the pool it searches —
+  // a worn piece that is not in that pool could sit outside the crit box every bound rests on.
+  const asLifted = (buildItems) => buildItems.map((it) => byId.get(it.id));
+  const score = (buildItems) => {
+    const totals = buildTotals(champStats, buildItems);
+    return { items: buildItems, totals, lin: lin(totals, weights) };
+  };
+  // NEVER BELOW THE PLAIN BEST. The lifted solve seeds round 0 with the lifted WORN gear, not with
+  // the plain BEST, so on a vault where the lift reorders the candidates it can come back with a
+  // build worth less than the plain BEST's own pieces are once glyphed. Scoring those and taking
+  // the better of the two makes the block monotone, which is what a reader assumes of a line that
+  // says "over BEST".
+  const floor = score(asLifted(plainBest.items));
+
+  // Each lift the build would have to pay for, and the lines that say so. Only the pieces the
+  // build HOLDS: a vault full of lifts would otherwise bury the handful this answer needs.
+  const liftsOf = (build) => build.items.flatMap((it) => liftsById.get(it.id) ?? []);
+  const linesFor = (build) => new Map(build.items
+    .filter((it) => liftsById.has(it.id))
+    .map((it) => [it.id, liftsById.get(it.id).map((lift) =>
+      formatLift(lift, liftDelta(lift, champStats.base, weights), build.lin, c))]));
+  // Each lift is valued against THIS build's own `lin`, because power is a square and the same
+  // delta is worth more on a stronger build — so a runner-up's lines are not the reported build's.
+  const printOne = (build) => {
+    printBuild(build, wearers, linesFor(build));
+    console.log(`    glyphs to apply: ${liftsOf(build).length}`);
+  };
+
+  // --exact proves the lifted maximum, exactly as it proves the plain one. No runners-up — the
+  // parser has already refused --top — and `proven maximum` where the certificate would be.
+  //
+  // `proven.build` is never null here: the lifted pool holds the same pieces in the same slots,
+  // and the caller only reaches this function when the plain solve produced a build.
+  if (args.exact) {
+    const proven = solvePowerExact({ items: pool, faction, champStats,
+      current: asLifted(current), weights });
+    const reported = proven.build.lin >= floor.lin ? proven.build : floor;
+    console.log(`\n${formatGlyphGain(plainBest.lin, reported.lin, c, args.glyph)}`);
+    printOne(reported);
+    console.log(formatProven(proven));
+    return;
+  }
+
+  const result = solvePower({ items: pool, faction, champStats, current: asLifted(current),
+    weights, top: args.top });
+  // A TIE goes to the lifted solve, which is the answer the block was asked for; the floor is the
+  // guarantee behind it rather than the preferred reading of it.
+  const reported = result.builds[0].lin >= floor.lin ? result.builds[0] : floor;
+  console.log(`\n${formatGlyphGain(plainBest.lin, reported.lin, c, args.glyph)}`);
+  printOne(reported);
+  // The certificate against the REPORTED build, so the two numbers on this block describe one
+  // answer. The gap stays non-negative either way: `upperBound` bounds every assignment of the
+  // LIFTED pool, and the floor build is one of them.
+  console.log(formatCertificate({ ...result, gap: result.upperBound - reported.lin },
+    reported.lin, c));
+
+  // The lifted solve's own builds, in its order, each measured against the REPORTED build. ALL of
+  // them rather than builds[1..], because when the floor won the lifted solve's best is itself a
+  // runner-up; the one build that must not appear twice is the reported one, skipped by its items.
+  //
+  // Up to --top - 1 of them, as the plain path prints, so `--top 2` is two builds in each block.
+  const reportedKey = itemsKey(reported.items);
+  let rank = 1;
+  for (const build of result.builds) {
+    if (rank >= args.top) break;
+    if (itemsKey(build.items) === reportedKey) continue;
+    rank++;
+    console.log(`\n${formatOffBest(rank, build, reported, c)}`);
+    printOne(build);
+  }
 }
 
 function printCopy(row, { items, rows, statsById, fitted, readings, args }) {
@@ -531,11 +724,17 @@ function printCopy(row, { items, rows, statsById, fitted, readings, args }) {
     const proven = solvePowerExact({ items, faction: row.Fraction, champStats, current, weights });
     // No slot can be filled at all: the vault is empty, or every accessory is the wrong faction.
     // speed.mjs prints this same line for an empty index. There is no assignment to report, let
-    // alone one to prove anything about, and an empty BEST block would read as a build.
+    // alone one to prove anything about, and an empty BEST block would read as a build. No glyph
+    // block either: a lift makes a piece better, and there is no piece.
     if (!proven.build) return console.log("  no eligible items for any slot.");
     console.log(`\n${formatGain(currentLin, proven.build.lin, c)}`);
     printBuild(proven.build, wearers);
-    return console.log(formatProven(proven));
+    console.log(formatProven(proven));
+    if (args.glyph) {
+      printGlyphBlock({ items, champStats, weights, faction: row.Fraction, current,
+        plainBest: proven.build, c, args, wearers });
+    }
+    return;
   }
 
   const result = solvePower({ items, faction: row.Fraction, champStats, current, weights,
@@ -552,6 +751,13 @@ function printCopy(row, { items, rows, statsById, fitted, readings, args }) {
     console.log(`\n${formatOffBest(i + 2, build, best, c)}`);
     printBuild(build, wearers);
   });
+
+  // The glyph block LAST, after the plain BEST and its runners-up: it is measured against BEST, so
+  // it has to come after the number it is measured against.
+  if (args.glyph) {
+    printGlyphBlock({ items, champStats, weights, faction: row.Fraction, current,
+      plainBest: best, c, args, wearers });
+  }
 }
 
 function runSolve(args) {

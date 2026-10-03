@@ -15,9 +15,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, test } from "vitest";
-import { formatBreakdown, formatCertificate, formatGain, formatOffBest, formatProven, formatSets,
-  formatTotals, latestReading, mainCopies, parsePowerArgs, powerDir, readingsFor, readingsPath,
-  weightsPath } from "../power.mjs";
+import { formatBreakdown, formatCertificate, formatGain, formatGlyphGain, formatLift,
+  formatOffBest, formatProven, formatSets, formatTotals, latestReading, liftDelta, mainCopies,
+  parsePowerArgs, powerDir, readingsFor, readingsPath, weightsPath } from "../power.mjs";
 import { STATS } from "../champion-stats.mjs";
 import { FORMAT, FORMAT_VERSION } from "../gestal.mjs";
 import { power as powerOf } from "../power-model.mjs";
@@ -49,7 +49,7 @@ test("parsePowerArgs recognises the three subcommands as the first positional", 
 test("parsePowerArgs defaults top to 1 and leaves the rest null", () => {
   expect(parsePowerArgs(["Elhain"])).toEqual({
     mode: "solve", selector: "Elhain", dbArg: undefined, power: null, top: 1, topGiven: false,
-    exact: false, logPower: null,
+    exact: false, glyph: null, logPower: null,
   });
 });
 
@@ -178,6 +178,61 @@ test("parsePowerArgs rejects --exact combined with any --top", () => {
     .toThrow(/--top is not supported with --exact/);
   // Without --exact the same --top is ordinary.
   expect(parsePowerArgs(["Elhain", "--top", "1"])).toMatchObject({ top: 1, topGiven: true });
+});
+
+// --- parsePowerArgs: --glyph ----------------------------------------------------
+
+// A GRADE, not a number: glyph values differ per stat, so one number could not cover both a SPD
+// glyph that tops out at 12 and a flat HP one at 1,150.
+//
+// The second case is the one that matters most. `--glyph 5` carries an ALL-DIGIT value, and an
+// all-digit selector is an exact copy id to mainCopies — so a value that leaked into the
+// positionals would not merely be ignored, it would silently report a different champion.
+test("parsePowerArgs reads --glyph in solve mode and consumes its value", () => {
+  expect(parsePowerArgs(["Elhain", "--glyph", "epic"]))
+    .toMatchObject({ mode: "solve", glyph: "epic" });
+  expect(parsePowerArgs(["--glyph", "5", "Elhain"]))
+    .toMatchObject({ selector: "Elhain", glyph: "5" });
+  expect(parsePowerArgs(["Elhain"]).glyph).toBe(null);
+});
+
+// The five grades are the whole vocabulary, and a near miss has to name them rather than being
+// guessed at: `--glyph 6` is someone reading the labels and typing the star level, and lifting a
+// vault by a table nobody chose is a plausible wrong answer rather than a crash.
+test("parsePowerArgs rejects an unknown glyph grade, naming the five", () => {
+  expect(() => parsePowerArgs(["Elhain", "--glyph", "mythical"]))
+    .toThrow(/unknown glyph grade "mythical" — use one of 5, normal, rare, epic, legendary/);
+  expect(() => parsePowerArgs(["Elhain", "--glyph", "6"])).toThrow(/unknown glyph grade "6"/);
+  expect(() => parsePowerArgs(["Elhain", "--glyph", "EPIC"]))
+    .toThrow(/unknown glyph grade "EPIC"/);
+});
+
+// Same reason positiveInt checks blank before Number(): an option whose value went missing must
+// not read as something legal. Here a blank would fall through to the grade lookup and report
+// `unknown glyph grade ""`, which describes the symptom rather than the mistake.
+test("parsePowerArgs rejects a missing or blank glyph grade", () => {
+  const wanted = /--glyph needs a grade — use one of 5, normal, rare, epic, legendary/;
+  expect(() => parsePowerArgs(["Elhain", "--glyph"]), "missing").toThrow(wanted);
+  expect(() => parsePowerArgs(["Elhain", "--glyph", ""]), "empty").toThrow(wanted);
+  expect(() => parsePowerArgs(["Elhain", "--glyph", "  "]), "blank").toThrow(wanted);
+});
+
+// The other three modes run no solver at all, so --glyph there is a reader expecting a different
+// command to do something it cannot. Answering anyway — running `fit` and ignoring the flag —
+// would look like the lifted solve had been run.
+test("parsePowerArgs rejects --glyph outside solve mode", () => {
+  for (const mode of ["log", "fit", "verify"]) {
+    expect(() => parsePowerArgs([mode, "Elhain", "100", "--glyph", "epic"]), mode)
+      .toThrow(/--glyph is only supported in solve mode/);
+  }
+});
+
+// The grade is validated where it is READ, as --power and --top are, so a bad grade in the wrong
+// mode reports the grade. Pinned because the opposite order is just as defensible and a reader of
+// either message should not have to guess which one a run will give.
+test("parsePowerArgs reports a bad grade before it reports the wrong mode", () => {
+  expect(() => parsePowerArgs(["fit", "Elhain", "--glyph", "bogus"]))
+    .toThrow(/unknown glyph grade "bogus"/);
 });
 
 // --- mainCopies -----------------------------------------------------------------
@@ -352,6 +407,42 @@ test("formatGain names a zero current rather than reporting a ratio for it", () 
   expect(formatGain(0, 120, null)).toMatch(/gain unknown/);
 });
 
+// --- formatGlyphGain ------------------------------------------------------------
+
+// Measured against the plain BEST rather than against current: the question the block answers is
+// what glyphing the gear would add ON TOP of the best build the vault already allows, and the
+// gain over current is the line above it.
+//
+// The grade is printed through GLYPH_LABELS, never raw — a headline reading "WITH 5 GLYPHS" would
+// be read as a count of glyphs rather than as a star level.
+//   best (100 + 5)^2 = 11,025 · glyphed (120 + 5)^2 = 15,625 · gain 4,600
+test("formatGlyphGain reports power and the gain over BEST when the constant is known", () => {
+  expect(formatGlyphGain(100, 120, 5, "epic"))
+    .toBe("  WITH 6★ Epic GLYPHS  15625 power  (+4600 over BEST)");
+});
+
+// Same fallback as formatGain and for the same reason: power is (lin + c)^2, so without `c` every
+// absolute number is unavailable and only the ratio can be stated — computed at c = 0, where it
+// is an OVER-estimate, because a positive c raises both sides and shrinks it.
+//   (120 / 100)^2 - 1 = 0.44
+test("formatGlyphGain falls back to a percentage when the constant is unknown", () => {
+  expect(formatGlyphGain(100, 120, null, "legendary")).toBe(
+    "  WITH 6★ Legendary GLYPHS  ≈ +44.0% over BEST"
+    + " (per-copy constant unknown: log a reading or pass --power)");
+});
+
+// The 5★ grade's label is the one that must never print as a bare "5".
+test("formatGlyphGain labels the 5★ grade as a star level, not a number", () => {
+  expect(formatGlyphGain(100, 120, 5, "5")).toMatch(/^ {2}WITH 5★ GLYPHS {2}15625 power/);
+});
+
+// The guard formatGain carries, for the same reason: at bestLin = 0 the ratio would read "+0.0%"
+// for a lift that is in fact an infinite improvement. Unreachable for a real champion — BEST is a
+// real build and base stats alone put `lin` in the hundreds — so it is named rather than computed.
+test("formatGlyphGain names a zero BEST rather than reporting a ratio for it", () => {
+  expect(formatGlyphGain(0, 120, null, "epic")).toMatch(/gain unknown/);
+});
+
 // --- formatCertificate ----------------------------------------------------------
 //
 // `gap` and `upperBound` come out of power-solve in sqrt(power) units — it maximizes `lin`, and its
@@ -420,6 +511,79 @@ test("formatOffBest measures a runner-up against BEST in power when the constant
 test("formatOffBest measures it in sqrt(power) when the constant is unknown", () => {
   expect(formatOffBest(3, { lin: 110 }, { lin: 120 }, null))
     .toBe("  #3  (-10.00 √power off BEST)");
+});
+
+// --- liftDelta ------------------------------------------------------------------
+//
+// What the build loses if ONE lift alone is undone, in sqrt(power). Every expected number below is
+// written out as the two multiplications a reader can check, the way power-solve.test.mjs pins
+// linearizedWeights — reading it back off the module would assert nothing.
+
+const LIFT_W = { b: 0.012, r: 0.28, a: 0.039, s: 0.022, k: 0.0015 };
+const LIFT_BASE = { HP: 15000, ATK: 1000, DEF: 1000, SPD: 100, "C.RATE": 15, "C.DMG": 50,
+  RES: 30, ACC: 0 };
+
+// A flat key lands on its own stat as-is, so the delta is the glyph's rise times that stat's
+// scalar.
+//   12 points of SPD at s = 0.022 -> 0.264
+test("liftDelta values a flat lift at its stat's weight", () => {
+  expect(liftDelta({ key: "SPD", from: 0, to: 12 }, LIFT_BASE, LIFT_W))
+    .toBeCloseTo(0.264, 9);
+});
+
+// A percent key is a percentage of the champion's BASE stat, so the same rise is worth more on a
+// champion with more base. This is the trap: reading "HP% 10" as ten points of HP rather than as
+// ten percent of 15,000 would under-value the lift by 150x.
+//   2 -> 12 is +10% of base HP 15,000 = 1,500 HP, at b/15 = 0.0008 -> 1.2
+test("liftDelta scales a percent lift by the champion's base stat", () => {
+  expect(liftDelta({ key: "HP%", from: 2, to: 12 }, LIFT_BASE, LIFT_W))
+    .toBeCloseTo(1.2, 9);
+});
+
+// Flat HP and HP% share a stat COLUMN but not a key, and the two land on the same column by
+// completely different arithmetic. Pinned beside the test above so a lift that read the wrong one
+// names itself.
+//   1,150 flat HP at b/15 = 0.0008 -> 0.92
+test("liftDelta does not scale a flat lift on a percent-capable stat", () => {
+  expect(liftDelta({ key: "HP", from: 0, to: 1150 }, LIFT_BASE, LIFT_W))
+    .toBeCloseTo(0.92, 9);
+});
+
+// Only the RISE is valued, never the whole new glyph: a substat already glyphed at 3 and lifted to
+// 10 costs one glyph and is worth the 7 points it gained, not the 10 it ends up with.
+//   10 - 3 = 7 points of RES at r = 0.28 -> 1.96
+test("liftDelta values only the rise, not the whole new glyph", () => {
+  expect(liftDelta({ key: "RES", from: 3, to: 10 }, LIFT_BASE, LIFT_W))
+    .toBeCloseTo(1.96, 9);
+});
+
+// --- formatLift -----------------------------------------------------------------
+
+// SIX spaces, one level deeper than printBuild's four-space piece line, so a build reads as a list
+// of pieces each with its glyphs rather than as two interleaved lists.
+//
+// With the constant the worth is in POWER, and that needs the BUILD's own `lin`: power is a
+// square, so a fixed delta in sqrt(power) is worth more on a stronger build. Reporting `delta`
+// itself here would print a sqrt(power) number labelled as power.
+//   (120 + 5)^2 - (110 + 5)^2 = 15,625 - 13,225 = 2,400
+test("formatLift states one glyph's worth in power when the constant is known", () => {
+  expect(formatLift({ key: "SPD", from: 0, to: 12 }, 10, 120, 5))
+    .toBe("      glyph SPD 0→12  (+2400)");
+});
+
+// Without it, `delta` is already the answer and is printed in its own unit — two decimals, where
+// the numbers are fractions of a point.
+test("formatLift states it in sqrt(power) when the constant is unknown", () => {
+  expect(formatLift({ key: "HP%", from: 2, to: 12 }, 1.2, 120, null))
+    .toBe("      glyph HP% 2→12  (+1.20)");
+});
+
+// The arrow carries the glyph the piece HAS and the one the grade assumes, so a reader can tell a
+// fresh glyph from an upgrade of one already on the piece — which is the difference between
+// spending a glyph and re-rolling one.
+test("formatLift shows an existing glyph as the arrow's left side", () => {
+  expect(formatLift({ key: "RES", from: 3, to: 10 }, 1.96, 300, null))
+    .toBe("      glyph RES 3→10  (+1.96)");
 });
 
 // --- formatSets -----------------------------------------------------------------
@@ -647,6 +811,27 @@ const GEAR = [
   piece({ id: 2, slot: G_HELMET, gearSetId: CR_SET, equippedOnHeroId: 100 }),
   piece({ id: 3, slot: G_SHIELD, gearSetId: CR_SET, equippedOnHeroId: 100 }),
   cdPiece(4, G_WEAPON), cdPiece(5, G_HELMET), cdPiece(6, G_SHIELD),
+];
+
+// Gestal stat id 7 is SPD, which maps to our 4 and comes back flat. Values are stored x100, so
+// 1200 is SPD 12, and `glyphBonusValue: null` decodes to a glyph of 0.
+const G_SPD = 7;
+
+// GEAR plus ONE unglyphed SPD substat, on worn piece #1 — the Critical Rate weapon the plain BEST
+// keeps (see the mixed-build arithmetic above). Nothing else in GEAR is glyphable at all: every
+// other substat is C.RATE or C.DMG and every main stat is one of the two, so this is the only lift
+// in the whole vault — which is what makes `glyphs to apply: 1` and a single lift line checkable.
+//
+// A SEPARATE fixture rather than an edit to GEAR, so the existing BEST arithmetic stays valid. The
+// SPD substat adds 0.022 x 12 = 0.264 to any build holding piece #1, which both crit-rate-heavy
+// candidates do and the 3-Crit-Damage one does not — far below the gaps between them, so the
+// winner is unchanged.
+const GEAR_WITH_SPD = [
+  { ...GEAR[0], substats: [
+    { statId: G_CDMG, value: 3000, glyphBonusValue: null, rolls: 2, isMythicalRoll: false },
+    { statId: G_SPD, value: 1200, glyphBonusValue: null, rolls: 1, isMythicalRoll: false },
+  ] },
+  ...GEAR.slice(1),
 ];
 
 // Two champions sharing a name substring and NOT a baseTypeId, so mainCopies keeps one of each and
@@ -958,6 +1143,130 @@ test("--exact exits 1 outside solve mode and with --top", () => {
   const withTop = run(["Elhain", "--exact", "--top", "1"]);
   expect(withTop.status).toBe(1);
   expect(withTop.stderr).toMatch(/--top is not supported with --exact/);
+});
+
+// --- solve: --glyph ---------------------------------------------------------------
+//
+// The whole vault re-valued as if every glyphable substat held the grade's cap, solved again, and
+// printed as a second block under the plain BEST. GEAR_WITH_SPD has exactly one glyphable substat,
+// so every number in this section is one multiplication.
+
+// The headline names the GRADE's label rather than the grade, so "5" can never read as a count.
+test("--glyph adds a glyph block headed with the grade's label", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--glyph", "legendary"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {2}WITH 6★ Legendary GLYPHS /m);
+  // The plain BEST is still printed, above it: the block is measured against BEST, so it is an
+  // addition to the report rather than a replacement for it.
+  expect(res.stdout).toMatch(/^ {2}BEST /m);
+});
+
+// The default is no block at all, so an ordinary run is not made longer by a feature it did not
+// ask for.
+test("solve prints no glyph block without --glyph", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD })]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).not.toMatch(/GLYPHS/);
+  expect(res.stdout).not.toMatch(/glyphs to apply/);
+});
+
+// NEVER BELOW THE PLAIN BEST. A block headed "over BEST" that reported less than BEST would be
+// reporting a downgrade as an improvement. Both numbers are parsed out rather than pinned: they
+// depend on the role-default weights, which a later fit could legitimately change.
+test("--glyph reports a build at least as strong as the plain BEST", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--glyph", "legendary",
+    "--power", "412000"]);
+  expect(res.status, res.stderr).toBe(0);
+  const best = Number(res.stdout.match(/^ {2}BEST {2}(\d+) power/m)[1]);
+  const glyphed = Number(res.stdout.match(/^ {2}WITH 6★ Legendary GLYPHS {2}(\d+) power/m)[1]);
+  expect(glyphed).toBeGreaterThanOrEqual(best);
+});
+
+// The one lift this vault has, under the piece it belongs to, with what that one glyph is worth.
+// Elhain is in no BUILT_IN row, so every weight falls through to a role default — the Attack
+// row's s = 0.022 — and the whole value is one multiplication:
+//   12 points of SPD x 0.022 = 0.264 -> +0.26 in sqrt(power), the unit with no constant to use
+test("--glyph names each glyph to apply and what it is worth", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--glyph", "legendary"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {6}glyph SPD 0→12 {2}\(\+0\.26\)$/m);
+});
+
+// The count is of the lifts in the REPORTED BUILD, not in the vault: a glyph on a piece the build
+// does not wear is not work this answer asks for. Here the one lifted piece is in the build, so
+// the two happen to agree — and the plain block above prints no count at all.
+test("--glyph counts the glyphs the reported build would need", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--glyph", "legendary"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {4}glyphs to apply: 1$/m);
+  expect(res.stdout.match(/^ {4}glyphs to apply: /gm)).toHaveLength(1);
+});
+
+// The block gets its OWN certificate, against the lifted vault and the build it reported. Without
+// one the block would be the only build in the report with no statement of what was proved about
+// it — and the plain certificate above says nothing about a pool it never saw.
+//
+// Asserted on the text AFTER the headline, because the plain block prints a certificate of its own
+// above: a line found there would not be this block's.
+test("--glyph closes the glyph block with its own certificate", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--glyph", "legendary"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toContain("WITH 6★ Legendary GLYPHS");
+  const [, tail] = res.stdout.split("WITH 6★ Legendary GLYPHS");
+  expect(tail)
+    .toMatch(/^ {4}at most -?[\d.]+ √power \([\d.]+%\) below the true maximum {3}\[\d+ rounds?, (converged|no fixed point)\]$/m);
+});
+
+// The block gets its own runners-up, measured against the build IT reported rather than against
+// the plain BEST: a glyphed runner-up compared with an unglyphed winner would not add up.
+//
+// Asserted on the text after the headline, because the plain path prints its own #2 above.
+test("--glyph --top 2 adds a runner-up inside the glyph block", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--glyph", "legendary",
+    "--top", "2"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toContain("WITH 6★ Legendary GLYPHS");
+  const [, tail] = res.stdout.split("WITH 6★ Legendary GLYPHS");
+  expect(tail).toMatch(/^ {2}#2 {2}\(-?[\d.]+ √power off BEST\)$/m);
+  // The runner-up gets the same per-build detail as the winner, its glyph count included, so it
+  // can be acted on directly.
+  expect(tail.match(/^ {4}glyphs to apply: /gm)).toHaveLength(2);
+});
+
+// The default is one build in the block, matching the plain path's default.
+test("--glyph prints only one build in the block without --top", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--glyph", "legendary"]);
+  expect(res.status, res.stderr).toBe(0);
+  const [, tail] = res.stdout.split("WITH 6★ Legendary GLYPHS");
+  expect(tail).not.toMatch(/off BEST/);
+  expect(tail.match(/^ {4}glyphs to apply: /gm)).toHaveLength(1);
+});
+
+// --exact proves the LIFTED maximum exactly as it proves the plain one, so the block prints
+// `proven maximum` where its certificate would be. Asserted after the headline, because the plain
+// block prints the same line above.
+test("--glyph composes with --exact, proving the lifted maximum too", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--exact",
+    "--glyph", "epic"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toContain("WITH 6★ Epic GLYPHS");
+  const [, tail] = res.stdout.split("WITH 6★ Epic GLYPHS");
+  expect(tail).toMatch(/^ {4}proven maximum {3}\[\d+ ms, \d+\/\d+ plans pruned\]$/m);
+  // Asserting the ABSENCE matters as much: a block printing both would be claiming a ceiling on a
+  // number that has no ceiling left.
+  expect(tail).not.toMatch(/below the true maximum/);
+  // The build and its glyphs are still printed, with epic's SPD cap of 10 rather than 12.
+  expect(tail).toMatch(/^ {6}glyph SPD 0→10 {2}\(\+0\.22\)$/m);
+  expect(tail).toMatch(/^ {4}glyphs to apply: 1$/m);
+});
+
+// A champion with nothing wearable has no plain build, so there is nothing to lift toward and no
+// block to print — only --exact reaches this state, since solvePower always seeds the worn gear.
+test("--glyph prints no block when no slot can be filled", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: [] }), "--exact", "--glyph", "epic"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/^ {2}no eligible items for any slot\.$/m);
+  expect(res.stdout).not.toMatch(/GLYPHS/);
 });
 
 // --- verify ----------------------------------------------------------------------
