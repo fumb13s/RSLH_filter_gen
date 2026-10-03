@@ -5,9 +5,12 @@
 // session with two snapshots and this turns the delta into a worklist.
 //
 //   node oracle/analytics/restore.mjs [before.db] [after.db] [-o out.md]
-//     before.db   the pre-session snapshot (default: the newest *-pre-driver.db)
-//     after.db    the post-session snapshot (default: the newest *-post-driver.db)
+//     before.db   the pre-session snapshot (default: the newest *-pre-driver.db or .json.gz)
+//     after.db    the post-session snapshot (default: the newest *-post-driver.db or .json.gz)
 //     -o          output path (default: findings/<after's date>-driver-restore.md)
+//   Either may be a Gestal capture: from the repo root,
+//   `node oracle/analytics/refresh-gestal.mjs --out oracle/resources/<date>-pre-driver.json.gz`. A
+//   Gestal snapshot carries no champion speed, so the SPD line is left out wherever one side lacks it.
 //
 // Two views of the same moves, because the restore is done by hand in the game and the round trips
 // are the cost: §1 keyed by OWNER (open a champion, see its changed slots) and §2 keyed by CURRENT
@@ -20,10 +23,10 @@
 
 import { readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, FACTION_NAMES, ITEM_RARITIES, lookupName,
   statDisplayName } from "@rslh/core";
 import { readArtifacts } from "./decode.mjs";
+import { readAllChampRows } from "./champs.mjs";
 // SLOT_COLUMNS, fingerprint and collisionCounts are shared with gear-moves.mjs, which diffs the same
 // snapshot pair. Two tools disagreeing about which pieces look alike is worse than either alone, since
 // the owner has no way to adjudicate — so neither keeps its own copy. SLOT_LABEL stays here: it is
@@ -74,31 +77,22 @@ export function diffSlots(before, after) {
 const RESOURCES = fileURLToPath(new URL("../resources", import.meta.url));
 const FINDINGS = fileURLToPath(new URL("./findings", import.meta.url));
 
-// Newest snapshot matching a suffix. These names sit deliberately outside the /-RSLHelper\.db$/
-// glob the other tools default to, so a bracketing snapshot is never picked up by accident.
-function newest(suffix) {
-  const hits = readdirSync(RESOURCES).filter((f) => f.endsWith(suffix)).sort();
+// Newest snapshot matching a stem, in either format (<stem>.db from RSL Helper, <stem>.json.gz from
+// Gestal). These names sit deliberately outside the default-discovery patterns the other tools use
+// (snapshots.mjs), so a bracketing snapshot is never picked up by accident.
+function newest(stem) {
+  const hits = readdirSync(RESOURCES)
+    .filter((f) => f.endsWith(`${stem}.db`) || f.endsWith(`${stem}.json.gz`)).sort();
   return hits.length ? `${RESOURCES}/${hits[hits.length - 1]}` : null;
-}
-
-function readChamps(dbPath) {
-  const db = new DatabaseSync(dbPath, { readOnly: true });
-  try {
-    const st = db.prepare(`SELECT ID, Name, SPD, ${SLOT_COLUMNS.join(", ")} FROM Champs`);
-    st.setReadBigInts(true);
-    return st.all().map((r) => Object.fromEntries(Object.entries(r)
-      .map(([k, v]) => [k, typeof v === "bigint" ? Number(v) : v])));
-  } finally {
-    db.close();
-  }
 }
 
 // A snapshot as the diff wants it. `loc` is built from the Champs slot columns and NOT from
 // Artifacts.cID: cID keeps naming the last wearer after a piece is unequipped, so it reports gear as
-// still worn when it is sitting in the vault.
+// still worn when it is sitting in the vault. (A Gestal snapshot's slot columns are built from each
+// piece's current wearer, so they mean the same thing.)
 export function load(dbPath) {
   const { items } = readArtifacts(dbPath);
-  const champs = readChamps(dbPath);
+  const champs = readAllChampRows(dbPath);
   const loc = new Map();
   for (const c of champs) {
     for (const col of SLOT_COLUMNS) {
@@ -159,7 +153,7 @@ export function buildReport(before, after, meta) {
   };
   const spd = (id) => {
     const a = before.champs.get(id), b = after.champs.get(id);
-    return a && b ? ` · SPD ${a.SPD} → ${b.SPD}` : "";
+    return a?.SPD != null && b?.SPD != null ? ` · SPD ${a.SPD} → ${b.SPD}` : "";
   };
   const bySize = (pick) => (x, y) => y[1].length - x[1].length || (pick(x[0]) > pick(y[0]) ? 1 : -1);
 
@@ -258,11 +252,11 @@ function parseArgs(argv) {
 
 function main() {
   const { dbs, o } = parseArgs(process.argv.slice(2));
-  const beforePath = dbs[0] ?? newest("-pre-driver.db");
-  const afterPath = dbs[1] ?? newest("-post-driver.db");
+  const beforePath = dbs[0] ?? newest("-pre-driver");
+  const afterPath = dbs[1] ?? newest("-post-driver");
   if (!beforePath || !afterPath) {
     console.error("need two snapshots: node oracle/analytics/restore.mjs before.db after.db\n"
-      + `looked for *-pre-driver.db and *-post-driver.db in ${RESOURCES}`);
+      + `looked for *-pre-driver and *-post-driver (.db or .json.gz) in ${RESOURCES}`);
     process.exit(1);
   }
   const meta = { before: stampOf(beforePath), after: stampOf(afterPath) };

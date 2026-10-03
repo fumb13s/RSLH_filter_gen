@@ -5,9 +5,8 @@
 // a re-aimable "gem" (reroll it onto a top stat); a spread piece (max roll low) can't be made elite
 // even by a perfect ore. Scarce slots (Chest, Gloves) relax the bar to a double-roll, supply-permitting.
 //   node oracle/analytics/set-analysis.mjs <set name|id> [snapshot.db]
-import { readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { readArtifacts } from "./decode.mjs";
+import { resolveSnapshot } from "./snapshots.mjs";
 import { quality } from "./score.mjs";
 import { bucketCounts, atOrBelowFloor } from "./supply.mjs";
 import { ARTIFACT_SLOT_NAMES, ARTIFACT_SET_NAMES, FACTION_NAMES, statDisplayName, lookupName } from "@rslh/core";
@@ -18,14 +17,6 @@ const ORE_ROLLS = 3;                   // a substat with >= this many rolls = re
 const SCARCE_SLOTS = new Set([2, 3]);  // Chest, Gloves — hardest slots to replace
 const SCARCE_ORE_ROLLS = 2;            // ...where even a double-roll is an acceptable ore target
 
-const here = (p) => fileURLToPath(new URL(p, import.meta.url));
-function resolveDb(arg) {
-  if (arg) return arg;
-  const dir = here("../resources");
-  const snaps = readdirSync(dir).filter((f) => /-RSLHelper\.db$/.test(f)).sort();
-  if (!snaps.length) { console.error("no snapshot found; run refresh.sh"); process.exit(1); }
-  return `${dir}/${snaps[snaps.length - 1]}`;
-}
 function setIdOf(arg) {
   if (arg !== undefined && !Number.isNaN(Number(arg))) return Number(arg);
   for (let id = 0; id < 1100; id++) if ((lookupName(ARTIFACT_SET_NAMES, id) || "").toLowerCase() === String(arg).toLowerCase()) return id;
@@ -35,7 +26,7 @@ function setIdOf(arg) {
 const setArg = process.argv[2];
 if (!setArg) { console.error("usage: set-analysis.mjs <set name|id> [snapshot.db]"); process.exit(1); }
 const setId = setIdOf(setArg);
-const dbPath = resolveDb(process.argv[3]);
+const dbPath = resolveSnapshot(process.argv[3]);
 const { items } = readArtifacts(dbPath);
 const pieces = items.filter((i) => i.set === setId);
 if (!pieces.length) { console.error(`no pieces of set ${setId} (${lookupName(ARTIFACT_SET_NAMES, setId)})`); process.exit(1); }

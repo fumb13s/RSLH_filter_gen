@@ -8,13 +8,15 @@
 //   node --experimental-sqlite oracle/analytics/champion-gear.mjs [name|ID] [snapshot.db]
 //     name|ID     all digits -> exact Champs.ID; otherwise a case-insensitive Name substring.
 //                 Omit for summary mode: one line per geared champion, most sellable first.
-//     snapshot.db an arg ending in .db or containing a path separator (default: newest snapshot).
+//     snapshot.db an arg ending in .db or .json.gz, or containing a path separator (default: newest
+//                 snapshot of either kind).
 
-import { readdirSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, FACTION_NAMES, lookupName } from "@rslh/core";
 import { isRealChamp, parseArgs, readChampRows, selectChamps, suggestNames } from "./champs.mjs";
 import { readArtifacts } from "./decode.mjs";
+import { resolveSnapshot } from "./snapshots.mjs";
 import { keepPremium, triage } from "./triage.mjs";
 import { quality, qualityAtRole } from "./score.mjs";
 import { rollStats } from "./rollquality.mjs";
@@ -233,14 +235,6 @@ const RARITY = { 0: "?", 1: "Common", 2: "Uncommon", 3: "Rare", 4: "Epic", 5: "L
 const slotName = (s) => lookupName(ARTIFACT_SLOT_NAMES, s);
 const setName = (s) => (s === 0 ? "(setless)" : lookupName(ARTIFACT_SET_NAMES, s) || `#${s}`);
 
-function resolveDb(arg) {
-  if (arg) return arg;
-  const dir = fileURLToPath(new URL("../resources", import.meta.url));
-  const snaps = readdirSync(dir).filter((f) => /-RSLHelper\.db$/.test(f)).sort();
-  if (!snaps.length) { console.error(`no snapshot found in ${dir}; run refresh.sh`); process.exit(1); }
-  return `${dir}/${snaps[snaps.length - 1]}`;
-}
-
 function printChampion(g) {
   const c = g.champ;
   console.log(`\n${c.Name} #${c.ID} — ${champLabel(c)} (${g.role ?? "?"})`
@@ -258,7 +252,7 @@ function printChampion(g) {
 
 function main() {
   const { selector, dbArg } = parseArgs(process.argv.slice(2));
-  const dbPath = resolveDb(dbArg);
+  const dbPath = resolveSnapshot(dbArg);
   const rows = readChampRows(dbPath);
   const { items } = readArtifacts(dbPath);
   const scored = triage(items);

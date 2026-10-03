@@ -14,3 +14,10 @@ Expected contents (copy these in on a fresh machine before running the probe / r
   `%APPDATA%/RslHelper/Config/` (live) or the RSL Helper install dir.
 
 `build-known-db.py` reads the source DB from this folder.
+
+The analytics tools (`../analytics/`) also read dated vault snapshots from here, of two kinds:
+
+- `<date>-RSLHelper.db` — written by `../analytics/refresh.sh` from RSL Helper's live DB (Windows).
+- `<date>-Gestal.json.gz` (~0.5 MB) — written by `../analytics/refresh-gestal.mjs` from Gestal
+  Desktop's account documents (macOS, where RSL Helper does not run). Same personal data — gear and
+  roster — though no account id or display name is kept in it.

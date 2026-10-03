@@ -10,12 +10,16 @@
 //   node --experimental-sqlite oracle/analytics/speed.mjs verify [snapshot.db] [--corpus PATH]
 //     model health check: the distribution of the unexplained constant across geared champions.
 //
+// A Gestal snapshot (.json.gz) carries no current speed, so there the constant cannot be measured:
+// pass --constant N, and verify is unavailable.
+//
 // Advisory only; nothing is written to any database.
-import { readdirSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, lookupName } from "@rslh/core";
 import { readArtifacts } from "./decode.mjs";
 import { readChampRows, selectChamps, suggestNames } from "./champs.mjs";
+import { isSnapshotArg, resolveSnapshot } from "./snapshots.mjs";
 import { SPD, glyphCeilings, clampFloor, speedOfWith, measureConstant, itemSpeed, buildSpeed,
   setCounts } from "./speed-model.mjs";
 import { SLOTS, buildIndex, solve, enumeratePlans, assign, viableSets } from "./speed-solve.mjs";
@@ -52,7 +56,7 @@ export function parseSpeedArgs(argv) {
     if (arg.startsWith("--")) throw new Error(`unknown option ${arg}`);
     positional.push(arg);
   }
-  out.dbArg = positional.find((a) => a.endsWith(".db") || a.includes("/") || a.includes("\\"));
+  out.dbArg = positional.find(isSnapshotArg);
   out.selector = positional.find((a) => a !== out.dbArg) ?? null;
   return out;
 }
@@ -191,14 +195,6 @@ export function rankBuilds(index, base, constant, speedOf, top) {
 // --- CLI: I/O and formatting ------------------------------------------------
 // Below this line nothing is unit-tested: DB reads, layout and printing.
 
-function resolveDb(arg) {
-  if (arg) return arg;
-  const dir = fileURLToPath(new URL("../resources", import.meta.url));
-  const snaps = readdirSync(dir).filter((f) => /-RSLHelper\.db$/.test(f)).sort();
-  if (!snaps.length) { console.error(`no snapshot found in ${dir}; run refresh.sh`); process.exit(1); }
-  return `${dir}/${snaps[snaps.length - 1]}`;
-}
-
 // loadCorpus and parseSpeedArgs both throw messages written for this audience, so a mistyped flag or
 // a --corpus pointed one directory too high gets the message and nothing else. Everything past here
 // keeps its stack trace, because anything else that throws is a bug rather than a typo.
@@ -250,20 +246,29 @@ function runVerify(items, rows, corpus) {
   const ceilings = glyphCeilings(items);
   const speedOf = speedOfWith(0, ceilings);
   const buckets = new Map();
-  let covered = 0, missing = 0;
+  let covered = 0, missing = 0, noSpeed = 0;
   for (const champ of rows) {
     const gear = gearOf(items, champ.ID);
     if (!gear.length) continue;
+    // A constant is measured against the champion's current speed. A row without one — every row of a
+    // Gestal snapshot, or a NULL in RSL Helper's nullable column — has nothing to measure, and letting
+    // it through would add a NaN bucket to the distribution.
+    if (champ.SPD == null) { noSpeed++; continue; }
     const base = lookupBase(corpus, champ.Name);
     if (base === null) { missing++; continue; }
     covered++;
     const c = measureConstant(champ.SPD, base, gear, speedOf);
     buckets.set(c, (buckets.get(c) ?? 0) + 1);
   }
+  if (covered === 0 && missing === 0 && noSpeed > 0) {
+    console.error("verify needs each champion's current speed, which this snapshot does not carry"
+      + " (a Gestal snapshot) — run it on an RSL Helper snapshot.");
+    process.exit(1);
+  }
   const sorted = [...buckets].sort((a, b) => a[0] - b[0]);
   const zero = buckets.get(0) ?? 0;
   console.log(`# Speed model verify — ${covered} geared champions in the corpus`
-    + ` (${missing} not in it)`);
+    + ` (${missing} not in it${noSpeed ? `, ${noSpeed} with no current speed` : ""})`);
   // A corpus that matches nothing is a wrong --corpus, not a model result, and dividing by it would
   // report "NaN%" as if it were one.
   if (covered === 0) {
@@ -290,7 +295,7 @@ function main() {
   } catch (e) {
     return die(e);
   }
-  const dbPath = resolveDb(args.dbArg);
+  const dbPath = resolveSnapshot(args.dbArg);
   const { items } = readArtifacts(dbPath);
   const rows = readChampRows(dbPath);
   const corpus = resolveCorpus(args);
@@ -320,20 +325,27 @@ function main() {
     }
     const gear = gearOf(items, champ.ID);
     const plainSpeed = speedOfWith(0, ceilings);
-    const constant = args.constant ?? measureConstant(champ.SPD, base, gear, plainSpeed);
+    // The constant is measured against current speed, which a Gestal snapshot does not carry.
+    const current = champ.SPD ?? null;
+    if (current === null && args.constant === null) {
+      console.error(`\n${champ.Name} #${champ.ID}: this snapshot has no current speed to measure the`
+        + " constant from (a Gestal snapshot) — pass --constant N");
+      continue;
+    }
+    const constant = args.constant ?? measureConstant(current, base, gear, plainSpeed);
 
     console.log(`\n${champ.Name} #${champ.ID}`
       + `  base ${base}${args.base === null ? " (corpus)" : " (--base)"}`
       + ` · constant ${constant >= 0 ? "+" : ""}${constant}`
       + `${args.constant === null ? " (observed)" : " (--constant)"}`
-      + ` · current ${champ.SPD}`);
+      + ` · current ${current ?? "unknown"}`);
 
     const index = buildIndex(items, champ.Fraction, plainSpeed);
     const ranked = rankBuilds(index, base, constant, plainSpeed, args.top);
     if (!ranked.length) { console.log("  no eligible items for any slot."); continue; }
     // Same pool for every build printed for this champion, plain and glyph-lifted alike.
     const wearers = otherWearers(items, champ.ID, rows);
-    console.log(`  BEST  (+${ranked[0].speed - champ.SPD} over current)`);
+    console.log(current === null ? "  BEST" : `  BEST  (+${ranked[0].speed - current} over current)`);
     printRanked(ranked, base, constant, 0, ceilings, wearers);
 
     if (args.glyph > 0) {

@@ -2,6 +2,8 @@
 // speed.mjs so the champion-selection UX (exact ID vs name substring, "did you mean") is written
 // once.
 import { DatabaseSync } from "node:sqlite";
+import { gestalChampRows, isGestalPath, readGestalSnapshot } from "./gestal.mjs";
+import { isSnapshotArg } from "./snapshots.mjs";
 
 // Empty-Name rows are placeholders: there is no name to match a selector against or to print, and they
 // are the one place Role disagrees across copies of a name, so they never reach the matcher. What this
@@ -10,14 +12,15 @@ import { DatabaseSync } from "node:sqlite";
 // constraint, and `null.trim()` throws.
 export const isRealChamp = (r) => typeof r.Name === "string" && r.Name.trim() !== "";
 
-// An arg ending .db or containing a separator is the snapshot; the first other arg is the selector.
+// An arg ending .db or .json.gz, or containing a separator, is the snapshot; the first other arg is
+// the selector.
 //
 // An EMPTY arg is no arg. `speed.mjs ""` reaches here as [""], and an empty selector matches every
 // champion by substring. Dropped here rather than in selectChamps because callers gate their mode on
 // the parse result, not on the matcher.
 export function parseArgs(argv) {
   const args = argv.filter((a) => a !== "");
-  const dbArg = args.find((a) => a.endsWith(".db") || a.includes("/") || a.includes("\\"));
+  const dbArg = args.find(isSnapshotArg);
   return { selector: args.find((a) => a !== dbArg) ?? null, dbArg };
 }
 
@@ -59,7 +62,7 @@ export function readChampRows(dbPath) {
 // refuses to CREATE the file: without it a typo'd snapshot path leaves a stray 0-byte .db behind
 // before failing on the missing table.
 //
-// The column list is the union of what three consumers want, and each ignores the rest:
+// The column list is the union of what the consumers want, and each ignores the rest:
 // Fraction/SPD/EmpLvl are speed.mjs's, and the nine gear-slot columns are gear-moves.mjs's.
 // Those nine carry the schema's own misspellings (Glouves, Amulett) and must be copied verbatim.
 // Their ORDER IS NOT SLOT-ID ORDER — Weapon is slot 5, Helmet is 1, Shield 6, Glouves 3, Chest 2,
@@ -68,15 +71,27 @@ export function readChampRows(dbPath) {
 //
 // Naming the columns is load-bearing, not stylistic: SELECT * throws RangeError ERR_OUT_OF_RANGE
 // because RecentBattleTicks holds values beyond JS number range.
+//
+// A Gestal capture (.json.gz) yields rows with the same columns, built by gestal.mjs from its roster
+// and each piece's current wearer. Its SPD and Br are always null: Gestal has no source for either.
+const REQUIRED_COLUMNS = ["ID", "Name", "Role", "Rarity", "Rang", "Lvl", "Fraction", "SPD", "EmpLvl",
+  "Weapon", "Helmet", "Shield", "Glouves", "Chest", "Shoes", "Ring", "Amulett", "Banner"];
+// spare-copies.mjs's grouping and blessing marker. Read only when the table has them — hand-built test
+// snapshots carry a minimal Champs table — and null otherwise, the same as a Gestal row's missing Br.
+const OPTIONAL_COLUMNS = ["HeroID", "BaseHeroID", "BId", "Br"];
+
 export function readAllChampRows(dbPath) {
+  if (isGestalPath(dbPath)) return gestalChampRows(readGestalSnapshot(dbPath));
   const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
-    const st = db.prepare(
-      "SELECT ID, Name, Role, Rarity, Rang, Lvl, Fraction, SPD, EmpLvl,"
-      + " Weapon, Helmet, Shield, Glouves, Chest, Shoes, Ring, Amulett, Banner FROM Champs");
+    const present = new Set(db.prepare("PRAGMA table_info(Champs)").all().map((c) => c.name));
+    const optional = OPTIONAL_COLUMNS.filter((c) => present.has(c));
+    const st = db.prepare(`SELECT ${[...REQUIRED_COLUMNS, ...optional].join(", ")} FROM Champs`);
     st.setReadBigInts(true);
-    return st.all().map((r) => Object.fromEntries(
-      Object.entries(r).map(([k, v]) => [k, typeof v === "bigint" ? Number(v) : v])));
+    return st.all().map((r) => ({
+      ...Object.fromEntries(OPTIONAL_COLUMNS.map((c) => [c, null])),
+      ...Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "bigint" ? Number(v) : v])),
+    }));
   } finally {
     db.close();
   }
