@@ -20,6 +20,7 @@ import { formatBreakdown, formatCertificate, formatGain, formatOffBest, formatSe
   weightsPath } from "../power.mjs";
 import { STATS } from "../champion-stats.mjs";
 import { FORMAT, FORMAT_VERSION } from "../gestal.mjs";
+import { power as powerOf } from "../power-model.mjs";
 import { writeSnapshot } from "../refresh-gestal.mjs";
 
 // --- parsePowerArgs: modes and positionals ------------------------------------
@@ -1012,4 +1013,125 @@ test("log exits 1 with Gestal's own message when there is no data folder", () =>
   const res = run(["log", "Elhain", "12345"], { dataRoot: join(tmp(), "nothing-here") });
   expect(res.status).toBe(1);
   expect(res.stderr).toMatch(/Gestal data folder not found/);
+});
+
+// --- fit -------------------------------------------------------------------------
+//
+// The readings are generated FROM the formula, so a fit that recovers W is recovering what produced
+// the numbers rather than agreeing with itself. baseTypeId 999001 is in no BUILT_IN row, so every
+// prior is a role default. Same construction as power-fit.test.mjs.
+const FIT_BASE = 999001;
+const W = { b: 0.0131, r: 0.2641, a: 0.0412, s: 0.0193, k: 0.00168 };
+const C11 = 37.5;
+
+const fitTotals = (o = {}) => ({
+  HP: 30000, ATK: 2000, DEF: 1500, SPD: 200, "C.RATE": 60, "C.DMG": 150, RES: 100, ACC: 50, ...o });
+
+// A baseline plus one single-stat step per design column, which is what leaves all five centered
+// columns independent. X_B and X_K each get two steps, one from each stat that feeds them.
+const FIT_STEPS = [{}, { HP: 36000 }, { ATK: 2600 }, { RES: 160 }, { ACC: 90 }, { SPD: 240 },
+  { "C.RATE": 85 }, { "C.DMG": 220 }];
+
+const fitReadings = ({ name = "Synthetic", baseTypeId = FIT_BASE, heroId = 11 } = {}) =>
+  FIT_STEPS.map((step, i) => {
+    const totals = fitTotals(step);
+    return { t: new Date(Date.UTC(2026, 9, 3, 0, 0, i)).toISOString(),
+      heroId, baseTypeId, name, roleId: 0, totals, power: powerOf(totals, W, C11) };
+  });
+
+// Relative, not absolute: these weights span 0.0017 to 0.26, so one absolute tolerance cannot mean
+// the same thing for all five.
+const close = (got, want) => Math.abs(got / want - 1);
+const readFitted = (dir) => JSON.parse(readFileSync(join(dir, "power-weights.json"), "utf8"));
+
+test("fit recovers the weights that generated the readings and writes them", () => {
+  const dir = powerOut({ readings: fitReadings() });
+  const res = run(["fit", "Synthetic"], { powerDir: dir });
+  expect(res.status, res.stderr).toBe(0);
+  const row = readFitted(dir)[FIT_BASE];
+  for (const name of ["b", "r", "a", "s", "k"]) {
+    expect(close(row[name], W[name]), `${name} = ${row[name]}`).toBeLessThan(0.01);
+  }
+  expect(row).toMatchObject({ name: "Synthetic", readings: 8 });
+  expect(row.fittedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+});
+
+// The file holds one row per champion. A fit of one champion must not drop the others, or
+// calibrating a second champion would quietly un-calibrate the first.
+test("fit keeps an existing entry for another champion", () => {
+  const dir = powerOut({ readings: fitReadings(),
+    weights: { 7090: { name: "Ultimate Deathknight", b: 0.01936, r: 0.187, a: 0.03483,
+      s: 0.0038, k: 0.001245, fittedAt: "2026-10-01T09:00:00.000Z", readings: 12 } } });
+  const res = run(["fit", "Synthetic"], { powerDir: dir });
+  expect(res.status, res.stderr).toBe(0);
+  const fitted = readFitted(dir);
+  expect(Object.keys(fitted).sort()).toEqual(["7090", String(FIT_BASE)]);
+  expect(fitted[7090].name).toBe("Ultimate Deathknight");
+});
+
+test("fit prints the per-copy constants and a residual table", () => {
+  const dir = powerOut({ readings: fitReadings() });
+  const res = run(["fit", "Synthetic"], { powerDir: dir });
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toMatch(/per-copy constants:/);
+  expect(res.stdout).toMatch(/#11 {2}37\.5/);
+  expect(res.stdout).toMatch(/residuals:/);
+  // Eight readings, generated from the formula, so every residual is ~0%.
+  expect(res.stdout.match(/^ {4}#11 /gm)).toHaveLength(9);   // one constant line + eight residuals
+});
+
+// The weights are per champion. Fitting two together would average them into something that
+// describes neither, and nothing downstream could tell that had happened.
+test("fit refuses a selector matching two champions, naming both", () => {
+  const dir = powerOut({ readings: [
+    ...fitReadings({ name: "Synthetic A", baseTypeId: 999001, heroId: 11 }),
+    ...fitReadings({ name: "Synthetic B", baseTypeId: 999002, heroId: 22 }),
+  ] });
+  const res = run(["fit", "Synthetic"], { powerDir: dir });
+  expect(res.status).toBe(1);
+  expect(res.stderr).toMatch(/matches 2 champions in the reading log/);
+  expect(res.stderr).toMatch(/Synthetic A \(baseTypeId 999001\)/);
+  expect(res.stderr).toMatch(/Synthetic B \(baseTypeId 999002\)/);
+  expect(existsSync(join(dir, "power-weights.json"))).toBe(false);
+});
+
+// An empty log is the state before the first `log`, and the message has to point at the file so the
+// reader can tell "nothing logged yet" from "logged under another name".
+test("fit exits 1 when no reading matches, naming the log it looked in", () => {
+  const dir = powerOut({ readings: fitReadings() });
+  const res = run(["fit", "Nobody"], { powerDir: dir });
+  expect(res.status).toBe(1);
+  expect(res.stderr).toMatch(/no logged readings match "Nobody"/);
+  expect(res.stderr).toMatch(/power-readings\.jsonl/);
+});
+
+test("fit exits 1 when there is no reading log at all", () => {
+  const res = run(["fit", "Elhain"]);
+  expect(res.status).toBe(1);
+  expect(res.stderr).toMatch(/no logged readings match "Elhain"/);
+});
+
+// fitWeights' own message. Below copies + varying columns the system has fewer equations than
+// unknowns, and the answer would be arbitrary rather than wrong by a little.
+//
+// Under-determining it takes a reading that moves TWO design columns at once, not simply a shorter
+// log: the first three of FIT_STEPS move HP and ATK, which BOTH feed X_B, so they leave one varying
+// column and 3 >= 1 copy + 1 column solves cleanly. Here the second reading moves HP (X_B) and RES
+// (r) together, so it is 2 readings against 2 columns plus 1 copy constant — three unknowns.
+test("fit passes fitWeights' refusal through when there are too few readings", () => {
+  const [baseline] = fitReadings();
+  const bothAtOnce = fitTotals({ HP: 36000, RES: 160 });
+  const dir = powerOut({ readings: [baseline, { ...baseline,
+    t: "2026-10-03T00:01:00.000Z", totals: bothAtOnce, power: powerOf(bothAtOnce, W, C11) }] });
+  const res = run(["fit", "Synthetic"], { powerDir: dir });
+  expect(res.status).toBe(1);
+  expect(res.stderr).toMatch(/power-fit: too few readings/);
+  expect(res.stderr).toMatch(/readings=2, copies=1, varying stat columns=2/);
+  expect(existsSync(join(dir, "power-weights.json"))).toBe(false);
+});
+
+test("fit without a selector exits 1 with fit's usage line", () => {
+  const res = run(["fit"]);
+  expect(res.status).toBe(1);
+  expect(res.stderr).toMatch(/usage: power\.mjs fit <name\|ID>/);
 });

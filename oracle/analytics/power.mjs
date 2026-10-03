@@ -30,7 +30,8 @@
 // Advisory only for the game: nothing is written to a snapshot, to Gestal's folder or to the
 // game's own database. `log` and `fit` write to out/, which is personal account data and
 // gitignored.
-import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync,
+  writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_SET_NAMES, ARTIFACT_SLOT_NAMES, lookupName } from "@rslh/core";
@@ -38,6 +39,7 @@ import { STATS, statBreakdown } from "./champion-stats.mjs";
 import { isRealChamp, selectChamps, suggestNames } from "./champs.mjs";
 import { gestalChampRows, gestalChampStats, gestalItems, isGestalPath,
   readGestalSnapshot } from "./gestal.mjs";
+import { fitWeights } from "./power-fit.mjs";
 import { constantFrom, lin, weightsFor } from "./power-model.mjs";
 import { buildTotals, solvePower } from "./power-solve.mjs";
 import { captureSnapshot, dataRoot, freshnessWarnings, resolveAccount } from "./refresh-gestal.mjs";
@@ -608,6 +610,92 @@ function runLog(args) {
   console.log(`\nlogged to ${readingsPath()}`);
 }
 
+// The five parameters in the order power-model resolves them.
+const PARAMS = ["b", "r", "a", "s", "k"];
+
+function printFit(readings, fit) {
+  const copies = new Set(readings.map((r) => r.heroId));
+  console.log(`# Power fit — ${readings[0].name}`
+    + `  ·  ${readings.length} readings over ${copies.size}`
+    + ` cop${copies.size === 1 ? "y" : "ies"}`);
+  for (const name of PARAMS) {
+    const value = fit.params[name];
+    // A null parameter is one the readings cannot determine. A zero or negative one is a stat the
+    // fit barely saw — no weight measured so far is anything but positive, and a negative one would
+    // break the solvers. Both are reported as IGNORED rather than as a result, because weightsFor's
+    // own test is `> 0` and it will fall through to the built-in or role default for them: the value
+    // the solver actually uses is NOT the one on this line.
+    const note = value === null ? "   undetermined — weightsFor falls back for it"
+      : value <= 0 ? "   ignored, not positive — weightsFor falls back for it"
+      : "";
+    console.log(`  ${name}  ${value === null ? "—" : value.toPrecision(4)}${note}`);
+  }
+  // Each copy's own constant, which is what the centering removed and step 6 of the fit put back.
+  console.log("  per-copy constants:");
+  for (const [heroId, c] of fit.constants) console.log(`    #${heroId}  ${c.toFixed(2)}`);
+  // The fit's own error, per reading, so a single bad reading is visible rather than spread across
+  // five weights.
+  console.log("  residuals:");
+  console.log(`    ${"copy".padEnd(10)}${"power".padStart(12)}${"predicted".padStart(12)}`
+    + `${"error".padStart(9)}`);
+  for (const r of fit.residuals) {
+    console.log(`    ${`#${r.heroId}`.padEnd(10)}${String(r.power).padStart(12)}`
+      + `${String(Math.round(r.predicted)).padStart(12)}`
+      + `${`${r.errorPct.toFixed(2)}%`.padStart(9)}`);
+  }
+}
+
+// MERGED, not overwritten: the file holds one row per champion, and a fit of one must not drop the
+// others — calibrating a second champion would otherwise quietly un-calibrate the first.
+//
+// `name`, `fittedAt` and `readings` are carried for a reader. weightsFor reads only the five
+// weights and ignores the rest, which is what lets the row be both a record and its own input.
+function mergeWeights(baseTypeId, readings, fit) {
+  const path = weightsPath();
+  const table = readWeights(path);
+  table[baseTypeId] = {
+    name: readings[0].name,
+    ...fit.params,
+    fittedAt: new Date().toISOString(),
+    readings: readings.length,
+  };
+  mkdirSync(powerDir(), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(table, null, 2)}\n`);
+  console.log(`\nwrote ${path}`);
+}
+
+// Calibrate one champion's weights from its logged readings. Reads NO snapshot: the readings carry
+// the totals they were measured with, which is the whole point of logging them.
+function runFit(args) {
+  const readings = readReadings(readingsPath());
+  const matched = readingsFor(readings, args.selector);
+  if (!matched.length) {
+    console.error(`no logged readings match "${args.selector}" in ${readingsPath()}`);
+    process.exit(1);
+  }
+  const ids = [...new Set(matched.map((r) => r.baseTypeId))];
+  if (ids.length > 1) {
+    console.error(`"${args.selector}" matches ${ids.length} champions in the reading log:`);
+    for (const id of ids) {
+      console.error(`  ${matched.find((r) => r.baseTypeId === id).name} (baseTypeId ${id})`);
+    }
+    console.error("weights are per champion, so name one of them.");
+    process.exit(1);
+  }
+  // EVERY reading of this champion, across all its copies — not only the ones the selector matched.
+  // The weights are shared by every copy and fitWeights removes each copy's own constant exactly, so
+  // a second copy adds equations rather than noise.
+  const all = readings.filter((r) => r.baseTypeId === ids[0]);
+  let fit;
+  try {
+    fit = fitWeights(all);
+  } catch (e) {
+    return die(e);
+  }
+  printFit(all, fit);
+  mergeWeights(ids[0], all, fit);
+}
+
 function main() {
   let args;
   try {
@@ -623,6 +711,7 @@ function main() {
     if (args.logPower === null) return usage("log");
     return runLog(args);
   }
+  if (args.mode === "fit") return runFit(args);
   return runSolve(args);
 }
 
