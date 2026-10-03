@@ -1,7 +1,7 @@
 // oracle/analytics/__tests__/build-solve.test.mjs
 import { test, expect } from "vitest";
 import {
-  SLOTS, buildIndex, slotsSupplying, usefulCounts, enumeratePlans, scoreBuild, assignPlan,
+  SLOTS, buildIndex, slotsSupplying, usefulCounts, enumeratePlans, scoreBuild, assignPlan, solve,
 } from "../build-solve.mjs";
 
 // Every item carries a plain `value` the injected valuation reads back. The module is
@@ -385,4 +385,138 @@ test("set 0 never gets a singleton column", () => {
   const { picks, credited } = assignPlan(index, bonusAt, []);
   expect(credited).toBe(5);
   expect(scoreBuild(picks, bonusAt)).toBe(5);
+});
+
+const best = (index, bonusAt, opts) => solve(index, bonusAt, opts)[0];
+
+test("solve returns an empty list for an empty index", () => {
+  expect(solve(new Map(), new Map())).toEqual([]);
+});
+
+// The set bonus has to beat the value given up to earn it, and the solver has to notice both ways.
+test("solve commits slots to a set only when the bonus beats the value forgone", () => {
+  const index = indexOf([
+    { slot: 1, set: 4, value: 10 }, { slot: 1, set: 0, value: 11 },
+    { slot: 2, set: 4, value: 10 }, { slot: 2, set: 0, value: 11 },
+  ]);
+  expect(best(index, bonusOf({ 4: { 2: 12 } })).score).toBe(32);
+  expect(best(index, bonusOf({ 4: { 2: 1 } })).score).toBe(22);
+});
+
+// A free pick carries an item that belongs to some set and can complete one by accident. Scoring
+// the plan instead of the items would report 30 for a build worth 60.
+test("solve scores the items it picked, not the plan it picked them under", () => {
+  const index = indexOf([
+    { slot: 1, set: 40, value: 10 }, { slot: 2, set: 40, value: 10 },
+    { slot: 3, set: 40, value: 10 },
+  ]);
+  expect(best(index, bonusOf({ 40: { 2: 30 } })).score).toBe(60);
+});
+
+test("solve returns the item objects and a set-0-free count map", () => {
+  const index = indexOf([
+    { slot: 1, set: 4, value: 10 }, { slot: 2, set: 4, value: 10 }, { slot: 3, set: 0, value: 10 },
+  ]);
+  const result = best(index, bonusOf({ 4: { 2: 12 } }));
+  expect(result.items.map((it) => it.id).sort((a, b) => a - b)).toEqual([1, 2, 3]);
+  expect(result.items[0].slot).toBe(1);
+  expect(result.counts).toEqual(new Map([[4, 2]]));
+});
+
+// The floor under every answer: a solver that returned something worse than taking the best item
+// in each slot would be worse than no solver at all.
+test("solve is never worse than taking the best item in each slot", () => {
+  const index = indexOf([
+    { slot: 1, set: 4, value: 13 }, { slot: 1, set: 58, value: 20 },
+    { slot: 2, set: 4, value: 9 }, { slot: 2, set: 58, value: 4 },
+    { slot: 3, set: 58, value: 15 }, { slot: 3, set: 0, value: 2 },
+  ]);
+  const bonusAt = bonusOf({ 4: { 2: 6 }, 58: { 3: 40 } });
+  const greedy = [...index.values()]
+    .map((bySet) => [...bySet.values()].reduce((b, e) => (e.value > b.value ? e : b)).value)
+    .reduce((sum, v) => sum + v, 0);
+  expect(best(index, bonusAt).score).toBeGreaterThanOrEqual(greedy);
+});
+
+// Four plans, one build: every slot holds exactly one candidate, so naming set 10, set 11, both,
+// or neither all land on the same four items. Reporting them as four runners-up would be four
+// copies of one answer wearing different labels.
+test("solve deduplicates builds that several plans reach", () => {
+  const index = indexOf([
+    { slot: 1, set: 10, value: 0 }, { slot: 2, set: 10, value: 0 },
+    { slot: 3, set: 11, value: 0 }, { slot: 4, set: 11, value: 0 },
+  ]);
+  const bonusAt = bonusOf({ 10: { 2: 5 }, 11: { 2: 5 } });
+  expect(enumeratePlans(index, bonusAt)).toHaveLength(4);
+  const ranked = solve(index, bonusAt, { top: 5 });
+  expect(ranked).toHaveLength(1);
+  expect(ranked[0].score).toBe(10);
+});
+
+test("solve with top greater than one returns distinct builds, best first", () => {
+  const index = indexOf([
+    { slot: 1, set: 4, value: 10 }, { slot: 1, set: 0, value: 11 },
+    { slot: 2, set: 4, value: 10 }, { slot: 2, set: 0, value: 11 },
+  ]);
+  const ranked = solve(index, bonusOf({ 4: { 2: 12 } }), { top: 5 });
+  expect(ranked.map((r) => r.score)).toEqual([32, 22]);
+});
+
+// (a) Nine sets, each paying from one piece and each supplied by one slot. Every slot also offers
+// a setless item worth 5, so a slot takes its set only because the bonus beats that. The answer
+// is 11 + 12 + ... + 19 = 135. A solver that could credit only the four sets a plan can name
+// would answer 16+17+18+19 plus five setless at 5 = 95, and would look perfectly healthy doing it.
+test("solve credits nine distinct one-piece sets at once", () => {
+  const specs = [];
+  for (const slot of SLOTS) {
+    specs.push({ slot, set: 100 + slot, value: 0 });
+    specs.push({ slot, set: 0, value: 5 });
+  }
+  const bonusAt = bonusOf(Object.fromEntries(SLOTS.map((s) => [100 + s, { 1: 10 + s }])));
+  const result = best(indexOf(specs), bonusAt);
+  expect(result.score).toBe(135);
+  expect(result.counts.size).toBe(9);
+});
+
+// (b) Two sets at two pieces each, plus five more bought one piece at a time — seven active sets
+// under a plan that can name four. Each singleton slot offers a setless item worth 5 against the
+// set's 9, so the free columns would take the setless one: without singleton columns this is
+// 40 + 40 + 25 = 105.
+test("solve pairs two multi-piece sets with five singletons", () => {
+  const specs = [];
+  for (const [setId, slots] of [[10, [1, 2]], [11, [3, 4]]]) {
+    for (const slot of slots) specs.push({ slot, set: setId, value: 0 });
+  }
+  for (const slot of [1, 2, 3, 4]) specs.push({ slot, set: 0, value: 15 });
+  for (const slot of [5, 6, 7, 8, 9]) {
+    specs.push({ slot, set: 15 + slot, value: 0 });
+    specs.push({ slot, set: 0, value: 5 });
+  }
+  const bonusAt = bonusOf({
+    10: { 2: 40 }, 11: { 2: 40 },
+    ...Object.fromEntries([5, 6, 7, 8, 9].map((s) => [15 + s, { 1: 9 }])),
+  });
+  const result = best(indexOf(specs), bonusAt);
+  expect(result.score).toBe(125);
+  expect(result.counts).toEqual(new Map([
+    [10, 2], [11, 2], [20, 1], [21, 1], [22, 1], [23, 1], [24, 1],
+  ]));
+});
+
+// (c) The fourth multi-piece set and a pair of one-piece sets want the same two slots. Taking the
+// fourth set is 20+20+20+10 = 70 and four active sets; taking the pair instead is 60+9+9 = 78 and
+// five. A solver that maximised NAMED sets would stop at 70 and call it optimal.
+test("solve takes a fifth active set over a fourth multi-piece set", () => {
+  const specs = [];
+  for (const [setId, slots] of [[1, [1, 2]], [2, [3, 4]], [3, [5, 6]], [4, [7, 8]]]) {
+    for (const slot of slots) specs.push({ slot, set: setId, value: 0 });
+  }
+  specs.push({ slot: 7, set: 5, value: 0 });
+  specs.push({ slot: 8, set: 6, value: 0 });
+  const bonusAt = bonusOf({
+    1: { 2: 20 }, 2: { 2: 20 }, 3: { 2: 20 }, 4: { 2: 10 }, 5: { 1: 9 }, 6: { 1: 9 },
+  });
+  const result = best(indexOf(specs), bonusAt);
+  expect(result.score).toBe(78);
+  expect(result.counts).toEqual(new Map([[1, 2], [2, 2], [3, 2], [5, 1], [6, 1]]));
 });

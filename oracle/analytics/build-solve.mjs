@@ -347,3 +347,36 @@ export function assignPlan(index, bonusAt, plan) {
   for (const { setId, count } of plan) credited += bonusAt.get(setId)[count];
   return { picks, credited };
 }
+
+// Every plan, assigned and then scored on the items it actually produced, best first.
+//
+// Deduplicated on the sorted item ids, with the FIRST plan to reach a build keeping it, so a
+// build is listed under the least committed description of it — a build that completes a set only
+// because the best free pieces happened to carry it stays reported under the plan that never
+// named that set. Same rule as speed.mjs's topBuilds.
+//
+// `top` is per-PLAN bests, ranked. Entry 0 is the exact optimum. Entries after it are NOT
+// guaranteed to be the true second- and third-best builds: they are the best each OTHER plan
+// could reach, and the true runner-up may be a second build under the winning plan, which is
+// never generated. Said plainly rather than claimed otherwise.
+export function solve(index, bonusAt, { top = 1 } = {}) {
+  const slots = populated(index);
+  if (slots.length === 0) return [];
+  const seen = new Map();
+  for (const plan of enumeratePlans(index, bonusAt)) {
+    const assigned = assignPlan(index, bonusAt, plan);
+    if (!assigned) continue;
+    const itemIds = assigned.picks.map((p) => p.item.id).sort((a, b) => a - b);
+    const key = itemIds.join(",");
+    if (seen.has(key)) continue;
+    seen.set(key, {
+      score: scoreBuild(assigned.picks, bonusAt),
+      items: assigned.picks.map((p) => p.item),
+      counts: countsOf(assigned.picks),
+      itemIds,
+    });
+  }
+  const ranked = [...seen.values()].sort((a, b) => b.score - a.score);
+  return ranked.slice(0, Math.max(1, top))
+    .map(({ score, items, counts }) => ({ score, items, counts }));
+}
