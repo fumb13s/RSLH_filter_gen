@@ -229,24 +229,53 @@ function freeBest(bySet) {
   return best;
 }
 
-const PLAN = 0, FREE = 2;
+const PLAN = 0, SINGLE = 1, FREE = 2;
+
+// The sets worth a singleton column: they pay from a single piece, the plan does not already name
+// them, and the index can actually supply them.
+//
+// Dropping the sets no slot supplies cannot change the answer — every cell of such a column is
+// forbidden and a row always has its own free column to take instead — and it keeps the matrix at
+// nine rows by about thirty columns on a full vault, rather than growing with the size of the
+// bonus table. Set 0 is excluded for the same reason it is excluded from a plan: countsOf skips
+// it, so crediting it would make `credited` exceed the realized score.
+//
+// Ascending set id, so the column order is the same on a rerun.
+function singletonSets(index, bonusAt, inPlan) {
+  const out = [];
+  for (const setId of [...bonusAt.keys()].sort((a, b) => a - b)) {
+    if (setId === 0 || inPlan.has(setId)) continue;
+    if (!(bonusAt.get(setId)[1] > 0)) continue;
+    if (slotsSupplying(index, setId) === 0) continue;
+    out.push(setId);
+  }
+  return out;
+}
 
 // The best build this plan can reach, as a maximum-weight assignment of slots to columns.
 //
 // PLAN columns: `count` of them per named set, each taking that set's indexed item in whichever
-// slot it lands, and ALL of them must be filled or the plan is unfillable. FREE columns: one per
+// slot it lands, and ALL of them must be filled or the plan is unfillable. SINGLE columns: one
+// per set outside the plan that pays from a single piece, carrying that bonus and usable once,
+// which is how a build reaches more active sets than a plan can name. FREE columns: one per
 // slot, usable only by its own row, taking that slot's best item with no bonus at all.
 //
-// Column ORDER is fixed — plan pieces in plan order, then free columns in slot order — so two
-// runs over the same index return the same build.
+// Column ORDER is fixed — plan pieces in plan order, then singletons by ascending set id, then
+// free columns in slot order — so two runs over the same index return the same build.
 export function assignPlan(index, bonusAt, plan) {
   const slots = populated(index);
   const need = plan.reduce((sum, p) => sum + p.count, 0);
   if (need > slots.length) return null;
 
+  const inPlan = new Set(plan.map((p) => p.setId));
   const cols = [];
   for (const { setId, count } of plan) {
     for (let k = 0; k < count; k++) cols.push({ kind: PLAN, setId, bonus: 0 });
+  }
+  // SINGLE columns are what let a build hold more active sets than a plan can name: one per set
+  // outside the plan that pays from a single piece, carrying that bonus, usable once.
+  for (const setId of singletonSets(index, bonusAt, inPlan)) {
+    cols.push({ kind: SINGLE, setId, bonus: bonusAt.get(setId)[1] });
   }
   for (const slot of slots) cols.push({ kind: FREE, slot, bonus: 0 });
 

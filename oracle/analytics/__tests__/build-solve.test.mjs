@@ -327,3 +327,62 @@ test("assignPlan reports each pick's slot, set, item and value", () => {
   expect(picks[0].value).toBe(11);
   expect(picks[0].item.id).toBe(1);
 });
+
+// Two sets that each pay from a single piece, and nothing in the plan. Without a column apiece
+// the free picks take the higher RAW value in each slot and collect neither bonus: 6 + 3 = 9.
+// One column only reaches 11. Both of them is 12, and only crediting both gets there.
+test("assignPlan credits two singleton sets at once", () => {
+  const index = indexOf([
+    { slot: 1, set: 10, value: 0 }, { slot: 1, set: 0, value: 6 },
+    { slot: 2, set: 11, value: 0 }, { slot: 2, set: 0, value: 3 },
+  ]);
+  const bonusAt = bonusOf({ 10: { 1: 7 }, 11: { 1: 5 } });
+  const { picks, credited } = assignPlan(index, bonusAt, []);
+  expect(credited).toBe(12);
+  expect(scoreBuild(picks, bonusAt)).toBe(12);
+});
+
+// A singleton column is usable ONCE, so two pieces of the same set collect its one-piece bonus a
+// single time: 10 + 10 + 9 = 29. A column per PIECE would answer 38.
+//
+// `credited` is the assertion that bites. The free columns here already pick both set-20 pieces
+// on their own, so scoreBuild reads 29 whether or not a singleton column exists — the realized
+// score cannot tell the two apart. Only credited can: without the column it is the bare 20 of
+// item values, with one column 29, and with one per piece 38.
+test("two pieces of a set whose second piece pays nothing are credited once", () => {
+  const index = indexOf([
+    { slot: 1, set: 20, value: 10 }, { slot: 1, set: 0, value: 3 },
+    { slot: 2, set: 20, value: 10 }, { slot: 2, set: 0, value: 3 },
+  ]);
+  const bonusAt = bonusOf({ 20: { 1: 9 } });
+  const { picks, credited } = assignPlan(index, bonusAt, []);
+  expect(credited).toBe(29);
+  expect(scoreBuild(picks, bonusAt)).toBe(29);
+});
+
+// A set the plan already names must not also get a singleton column, or its one-piece bonus is
+// paid on top of the bonus its named count already includes.
+//
+// Slot 3 supplies set 30 too, and that is what makes the case bite: with the plan's two pieces
+// already placed in slots 1 and 2, a stray singleton column for set 30 is something slot 3 can
+// actually take, for +4 over its free column. Drop slot 3's set-30 item and the column would go
+// unused, and the test would pass with the guard removed.
+test("a set named by the plan gets no singleton column", () => {
+  const index = indexOf([
+    { slot: 1, set: 30, value: 0 }, { slot: 2, set: 30, value: 0 },
+    { slot: 3, set: 30, value: 0 }, { slot: 3, set: 0, value: 0 },
+  ]);
+  const bonusAt = bonusOf({ 30: { 1: 4, 2: 10 } });
+  const { credited } = assignPlan(index, bonusAt, [{ setId: 30, count: 2 }]);
+  expect(credited).toBe(10);
+});
+
+// Set 0 is "no set". countsOf skips it, so a singleton column for it would credit a bonus
+// scoreBuild can never award — credited would exceed the realized score, which must never happen.
+test("set 0 never gets a singleton column", () => {
+  const index = indexOf([{ slot: 1, set: 0, value: 5 }]);
+  const bonusAt = bonusOf({ 0: { 1: 50 } });
+  const { picks, credited } = assignPlan(index, bonusAt, []);
+  expect(credited).toBe(5);
+  expect(scoreBuild(picks, bonusAt)).toBe(5);
+});
