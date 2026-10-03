@@ -1,7 +1,7 @@
 // oracle/analytics/__tests__/build-solve.test.mjs
 import { test, expect } from "vitest";
 import {
-  SLOTS, buildIndex, slotsSupplying, usefulCounts, enumeratePlans, scoreBuild,
+  SLOTS, buildIndex, slotsSupplying, usefulCounts, enumeratePlans, scoreBuild, assignPlan,
 } from "../build-solve.mjs";
 
 // Every item carries a plain `value` the injected valuation reads back. The module is
@@ -235,4 +235,95 @@ test("scoreBuild grants nothing for a set the model says nothing about", () => {
 // Set 0 is "no set". Counting it would make nine setless pieces look like a nine-piece set.
 test("scoreBuild never counts set 0 as a set", () => {
   expect(scoreBuild([pick(1, 0, 5), pick(2, 0, 5)], bonusOf({ 0: { 2: 99 } }))).toBe(10);
+});
+
+const ids = (picks) => picks.map((p) => p.item.id).sort((a, b) => a - b);
+
+test("assignPlan with the empty plan takes the best value in every slot", () => {
+  const index = indexOf([
+    { slot: 1, set: 4, value: 10 }, { slot: 1, set: 0, value: 30 },
+    { slot: 2, set: 4, value: 40 }, { slot: 2, set: 0, value: 5 },
+  ]);
+  const { picks, credited } = assignPlan(index, new Map(), []);
+  expect(picks.map((p) => p.slot)).toEqual([1, 2]);
+  expect(ids(picks)).toEqual([2, 3]);
+  expect(credited).toBe(70);
+});
+
+// The whole reason this is an assignment and not nine independent choices. Slot 1 holds the
+// pool's best item outright, but the plan's two pieces can only come from slots 1 and 2, so slot
+// 1 has to give its best up. A per-slot greedy takes the 50 and then cannot fill the plan at all.
+test("assignPlan gives up a slot's best item when the plan needs that slot", () => {
+  const index = indexOf([
+    { slot: 1, set: 4, value: 10 }, { slot: 1, set: 0, value: 50 },
+    { slot: 2, set: 4, value: 10 },
+    { slot: 3, set: 0, value: 7 },
+  ]);
+  const { picks, credited } = assignPlan(index, bonusOf({ 4: { 2: 12 } }), [{ setId: 4, count: 2 }]);
+  expect(picks.filter((p) => p.setId === 4)).toHaveLength(2);
+  expect(credited).toBe(10 + 10 + 7 + 12);
+});
+
+test("assignPlan returns null when the plan needs more pieces than there are slots", () => {
+  const index = indexOf([{ slot: 1, set: 4, value: 10 }]);
+  expect(assignPlan(index, bonusOf({ 4: { 2: 12 } }), [{ setId: 4, count: 2 }])).toBe(null);
+});
+
+// Slots can be plentiful and the plan still impossible — two pieces of a set only one slot
+// supplies. A build that quietly ignored the plan's counts would be scored as if it had honoured
+// them, which is a wrong answer rather than a missing one.
+test("assignPlan returns null when a plan's set cannot fill its count", () => {
+  const index = indexOf([
+    { slot: 1, set: 4, value: 10 }, { slot: 2, set: 0, value: 10 }, { slot: 3, set: 0, value: 10 },
+  ]);
+  expect(assignPlan(index, bonusOf({ 4: { 2: 12 } }), [{ setId: 4, count: 2 }])).toBe(null);
+});
+
+// Two sets that each fit alone and cannot both fit, because they draw on the same two slots.
+// enumeratePlans filters this plan out, so assignPlan is the only place the behaviour can be
+// checked — and it has to hold, because assignPlan is exported for the power solver to call.
+test("assignPlan returns null when two plan sets compete for the same slots", () => {
+  const index = indexOf([
+    { slot: 1, set: 4, value: 0 }, { slot: 1, set: 34, value: 0 },
+    { slot: 2, set: 4, value: 0 }, { slot: 2, set: 34, value: 0 },
+    { slot: 3, set: 0, value: 0 }, { slot: 4, set: 0, value: 0 },
+  ]);
+  const bonusAt = bonusOf({ 4: { 2: 12 }, 34: { 2: 12 } });
+  expect(assignPlan(index, bonusAt, [{ setId: 4, count: 2 }, { setId: 34, count: 2 }])).toBe(null);
+});
+
+// `credited` is what the assignment PAID FOR; scoreBuild is what the build is worth. They agree
+// when nothing is completed by accident, and credited is the lower one when something is — never
+// the other way round, because that would mean the solver had over-claimed.
+test("credited equals scoreBuild when no free pick completes a set by accident", () => {
+  const index = indexOf([
+    { slot: 1, set: 4, value: 10 }, { slot: 2, set: 4, value: 10 }, { slot: 3, set: 0, value: 7 },
+  ]);
+  const bonusAt = bonusOf({ 4: { 2: 12 } });
+  const { picks, credited } = assignPlan(index, bonusAt, [{ setId: 4, count: 2 }]);
+  expect(credited).toBe(39);
+  expect(scoreBuild(picks, bonusAt)).toBe(39);
+});
+
+// The empty plan names nothing, so it credits nothing — and still lands three pieces of set 40,
+// which pays 30. Scoring the plan would report 30 for a build worth 60.
+test("credited is below scoreBuild when a free pick completes a set by accident", () => {
+  const index = indexOf([
+    { slot: 1, set: 40, value: 10 }, { slot: 2, set: 40, value: 10 },
+    { slot: 3, set: 40, value: 10 }, { slot: 3, set: 0, value: 9 },
+  ]);
+  const bonusAt = bonusOf({ 40: { 2: 30 } });
+  const { picks, credited } = assignPlan(index, bonusAt, []);
+  expect(credited).toBe(30);
+  expect(scoreBuild(picks, bonusAt)).toBe(60);
+});
+
+test("assignPlan reports each pick's slot, set, item and value", () => {
+  const index = indexOf([{ slot: 3, set: 66, value: 11 }]);
+  const { picks } = assignPlan(index, new Map(), []);
+  expect(picks).toHaveLength(1);
+  expect(picks[0].slot).toBe(3);
+  expect(picks[0].setId).toBe(66);
+  expect(picks[0].value).toBe(11);
+  expect(picks[0].item.id).toBe(1);
 });

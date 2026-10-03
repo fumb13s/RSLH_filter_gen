@@ -166,3 +166,155 @@ export function scoreBuild(picks, bonusAt) {
   for (const [setId, count] of countsOf(picks)) total += bonusAt.get(setId)?.[count] ?? 0;
   return total;
 }
+
+// Maximum-weight assignment of rows to distinct columns, rows <= columns, every row matched. The
+// Kuhn-Munkres shortest-augmenting-path form with potentials: O(rows^2 * cols), which at nine
+// rows and about thirty columns is a few thousand operations — small enough to run once per plan
+// over a few hundred thousand plans.
+//
+// `weight` is a flat rows*cols array, row-major. Returns the column each row took. Written as a
+// MINIMISER fed negated weights, because every published form of this algorithm minimises and
+// transcribing one is less error-prone than inventing a maximiser.
+//
+// Ties go to the lowest column index: both comparisons below are strict, so the first column to
+// reach a value keeps it. That makes the result a fixed function of the matrix, which is what
+// `solve` needs in order to return the same build on a rerun.
+function maxWeightAssignment(weight, rows, cols) {
+  const u = new Float64Array(rows + 1);
+  const v = new Float64Array(cols + 1);
+  const p = new Int32Array(cols + 1);     // p[j] = the 1-based row holding column j, 0 = unheld
+  const way = new Int32Array(cols + 1);
+  const minv = new Float64Array(cols + 1);
+  const used = new Uint8Array(cols + 1);
+  for (let i = 1; i <= rows; i++) {
+    p[0] = i;
+    let j0 = 0;
+    minv.fill(Infinity);
+    used.fill(0);
+    do {
+      used[j0] = 1;
+      const i0 = p[j0];
+      let delta = Infinity;
+      let j1 = 0;
+      for (let j = 1; j <= cols; j++) {
+        if (used[j]) continue;
+        const cur = -weight[(i0 - 1) * cols + (j - 1)] - u[i0] - v[j];
+        if (cur < minv[j]) { minv[j] = cur; way[j] = j0; }
+        if (minv[j] < delta) { delta = minv[j]; j1 = j; }
+      }
+      for (let j = 0; j <= cols; j++) {
+        if (used[j]) { u[p[j]] += delta; v[j] -= delta; }
+        else minv[j] -= delta;
+      }
+      j0 = j1;
+    } while (p[j0] !== 0);
+    do {
+      const j1 = way[j0];
+      p[j0] = p[j1];
+      j0 = j1;
+    } while (j0);
+  }
+  const rowCol = new Int32Array(rows);
+  for (let j = 1; j <= cols; j++) if (p[j] > 0) rowCol[p[j] - 1] = j - 1;
+  return rowCol;
+}
+
+// Best item in a slot regardless of set — what a free column takes. Ties break on item id.
+function freeBest(bySet) {
+  let best = null;
+  for (const entry of bySet.values()) {
+    if (!best || entry.value > best.value
+      || (entry.value === best.value && entry.item.id < best.item.id)) best = entry;
+  }
+  return best;
+}
+
+const PLAN = 0, FREE = 2;
+
+// The best build this plan can reach, as a maximum-weight assignment of slots to columns.
+//
+// PLAN columns: `count` of them per named set, each taking that set's indexed item in whichever
+// slot it lands, and ALL of them must be filled or the plan is unfillable. FREE columns: one per
+// slot, usable only by its own row, taking that slot's best item with no bonus at all.
+//
+// Column ORDER is fixed — plan pieces in plan order, then free columns in slot order — so two
+// runs over the same index return the same build.
+export function assignPlan(index, bonusAt, plan) {
+  const slots = populated(index);
+  const need = plan.reduce((sum, p) => sum + p.count, 0);
+  if (need > slots.length) return null;
+
+  const cols = [];
+  for (const { setId, count } of plan) {
+    for (let k = 0; k < count; k++) cols.push({ kind: PLAN, setId, bonus: 0 });
+  }
+  for (const slot of slots) cols.push({ kind: FREE, slot, bonus: 0 });
+
+  const rows = slots.length;
+  const n = cols.length;
+  const frees = slots.map((slot) => freeBest(index.get(slot)));
+  const base = new Float64Array(rows * n);
+  const allowed = new Uint8Array(rows * n);
+  let span = 0;
+  for (let r = 0; r < rows; r++) {
+    const bySet = index.get(slots[r]);
+    for (let c = 0; c < n; c++) {
+      const col = cols[c];
+      let w;
+      if (col.kind === FREE) {
+        if (col.slot !== slots[r]) continue;
+        w = frees[r].value;
+      } else {
+        const entry = bySet.get(col.setId);
+        if (!entry) continue;
+        w = entry.value + col.bonus;
+      }
+      base[r * n + c] = w;
+      allowed[r * n + c] = 1;
+      if (Math.abs(w) > span) span = Math.abs(w);
+    }
+  }
+
+  // Two constants large enough that no arrangement of real weights can outvote them. Any
+  // assignment's real total lies in [-rows*span, rows*span], so BIG — added to every plan column
+  // — makes one more filled plan column beat every possible rearrangement of everything else, and
+  // a maximum-weight assignment therefore fills as many plan columns as can be filled. FORBIDDEN
+  // costs more than all `rows` plan columns and all the real weight put together, and the
+  // all-free assignment is always available, so a maximum-weight assignment never takes one.
+  const BIG = 2 * rows * span + 1;
+  const FORBIDDEN = -(rows + 1) * BIG;
+
+  const weight = new Float64Array(rows * n);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < n; c++) {
+      const k = r * n + c;
+      weight[k] = allowed[k] ? base[k] + (cols[c].kind === PLAN ? BIG : 0) : FORBIDDEN;
+    }
+  }
+
+  const rowCol = maxWeightAssignment(weight, rows, n);
+
+  // A plan is fillable exactly when every one of its columns got a row. BIG makes the assignment
+  // fill as many as it can, so a gap here means no assignment could have filled them all.
+  let filled = 0;
+  for (let r = 0; r < rows; r++) if (cols[rowCol[r]].kind === PLAN) filled++;
+  if (filled < need) return null;
+
+  const picks = [];
+  let credited = 0;
+  for (let r = 0; r < rows; r++) {
+    const c = rowCol[r];
+    // Unreachable by the argument above. Loud rather than silent if BIG and FORBIDDEN are ever
+    // made too small, because the quiet failure is a build naming an item that is not there.
+    if (!allowed[r * n + c]) {
+      throw new Error("build-solve: the assignment took a forbidden cell —"
+        + " BIG and FORBIDDEN are no longer large enough to rule one out");
+    }
+    const col = cols[c];
+    const entry = col.kind === FREE ? frees[r] : index.get(slots[r]).get(col.setId);
+    picks.push({ slot: slots[r], setId: entry.item.set, item: entry.item, value: entry.value });
+    credited += base[r * n + c];
+  }
+  for (const { setId, count } of plan) credited += bonusAt.get(setId)[count];
+  return { picks, credited };
+}
