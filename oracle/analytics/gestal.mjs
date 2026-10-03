@@ -204,6 +204,8 @@ export function gestalChampStats(snapshot) {
         empower: from("empower"), factionGuardian: from("factionGuardian"),
       },
       observedSets,
+      loreOfSteel: Math.round((c.loreOfSteelMultiplier ?? 0) * 10000) / 10000,
+      awaken: c.awakenLevel,
     });
   }
   return out;

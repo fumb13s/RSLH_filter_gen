@@ -190,3 +190,54 @@ test("observedSets is empty when the copy wears no set, and refuses an unknown s
   expect(() => only({ bonusesV2: { sets: [{ statKindId: 9, isAbsolute: true, value: 1 }] } }))
     .toThrow(/unknown Gestal stat kind 9 \(sets bonus of champion Elhain 100\)/);
 });
+
+// --- loreOfSteel and awaken -----------------------------------------------------------
+
+// 0.15 when the mastery is taken, 0 otherwise. Four decimals is well past the precision the
+// multiplier is stored at and clears the same float noise the bonus fractions carry.
+test("loreOfSteel is the multiplier, rounded to four decimals", () => {
+  expect(only().loreOfSteel).toBe(0.15);
+  expect(only({ loreOfSteelMultiplier: 0.1500000001 }).loreOfSteel).toBe(0.15);
+  expect(only({ loreOfSteelMultiplier: 0.123456789 }).loreOfSteel).toBe(0.1235);
+});
+
+// A champion without the mastery must scale set bonuses by zero, not by undefined — which would
+// make every Masteries column NaN.
+test("a null or missing loreOfSteelMultiplier reads as 0", () => {
+  expect(only({ loreOfSteelMultiplier: null }).loreOfSteel).toBe(0);
+  expect(only({ loreOfSteelMultiplier: undefined }).loreOfSteel).toBe(0);
+});
+
+test("awaken is the copy's awaken level", () => {
+  expect(only().awaken).toBe(2);
+  expect(only({ awakenLevel: 0 }).awaken).toBe(0);
+});
+
+// --- the whole record and the Map ------------------------------------------------------
+
+test("one champion decodes to the whole record, keyed by heroId", () => {
+  expect(only()).toEqual({
+    base: { HP: 15000, ATK: 1000, DEF: 900, SPD: 100, "C.RATE": 15, "C.DMG": 50, RES: 30, ACC: 0 },
+    sources: {
+      mastery: [["SPD", 8]],
+      blessing: [["RES", 40]],
+      relic: [["ACC", 50]],
+      empower: [],
+      factionGuardian: [["HP", 2000]],
+    },
+    observedSets: new Map([["ATK%", 15]]),
+    loreOfSteel: 0.15,
+    awaken: 2,
+  });
+});
+
+test("every champion in the roster document gets an entry, keyed by its heroId", () => {
+  const snap = snapshotOf([champion(), champion({ heroId: 200, name: "Kael" })]);
+  const stats = gestalChampStats(snap);
+  expect([...stats.keys()]).toEqual([100, 200]);
+  expect(stats.get(200).base.HP).toBe(15000);
+});
+
+test("an empty roster gives an empty Map rather than throwing", () => {
+  expect(gestalChampStats(snapshotOf([])).size).toBe(0);
+});
