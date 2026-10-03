@@ -50,7 +50,26 @@ export function itemVector(item, base) {
   return out;
 }
 
-export const setVectors = () => { throw new Error("not implemented"); };
+// One set's bonus at 0..9 pieces, as stat vectors. set-bonuses.mjs is multiplier-free, so Lore of
+// Steel is applied HERE, once, to every set — the mastery scales all of them, not only the eight
+// basic ones. Scaling the summed contribution is the same number as scaling each term, because
+// nothing on this path floors: (1 + l) * SUM terms == SUM (1 + l) * terms.
+//
+// setBonusTotals, not setBonusTerms. The warning on setBonusTotals is about the SPEED model,
+// where the game floors each set term against base separately; the Total Stats screen does not,
+// and champion-stats.mjs says so outright. Do not reconcile the two here.
+export function setVectors(setId, base, loreOfSteel) {
+  const scale = 1 + loreOfSteel;
+  return Array.from({ length: SLOTS.length + 1 }, (_, count) => {
+    const out = zeros();
+    for (const [key, value] of setBonusTotals(new Map([[setId, count]]))) {
+      const [stat, amount] = contribution(key, value, base);
+      out[stat] += amount * scale;
+    }
+    return out;
+  });
+}
+
 export const nonGearTotals = () => { throw new Error("not implemented"); };
 export const buildTotals = () => { throw new Error("not implemented"); };
 export const solvePower = () => { throw new Error("not implemented"); };

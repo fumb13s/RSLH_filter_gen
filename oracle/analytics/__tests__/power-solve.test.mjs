@@ -5,6 +5,7 @@ import {
 } from "../power-solve.mjs";
 import { STATS, statBreakdown } from "../champion-stats.mjs";
 import { lin } from "../power-model.mjs";
+import { SET_BONUSES as SET_BONUSES_IDS } from "../set-bonuses.mjs";
 
 // Every field a decoded artifact carries (oracle/analytics/decode.mjs's decodeRow), so the
 // fixtures exercise the real Item shape rather than a hand-rolled stat bag.
@@ -98,4 +99,57 @@ test("itemVector adds a substat's glyph to its value", () => {
 
 test("itemVector is keyed by all eight stats", () => {
   expect(Object.keys(itemVector(item(), ZERO_BASE)).sort()).toEqual([...STATS].sort());
+});
+
+// --- setVectors --------------------------------------------------------------------------------
+
+// Set 1 is Life, "HP%" 15 per 2-piece completion, so the vector is base-relative: a 20,000 HP
+// champion earns 3,000 HP per completion, not 15. One piece completes nothing.
+test("setVectors turns a percent key into an amount relative to the champion's base", () => {
+  const vectors = setVectors(1, { ...ZERO_BASE, HP: 20000 }, 0);
+  expect(vectors[0].HP).toBe(0);
+  expect(vectors[1].HP).toBe(0);
+  expect(vectors[2].HP).toBeCloseTo(3000, 9);
+  expect(vectors[4].HP).toBeCloseTo(6000, 9);
+});
+
+// C.RATE and C.DMG are percentage POINTS and carry no "%" suffix, so set 5 (Crit Rate, +12 per
+// 2-piece completion) adds 12 points however large the champion's base crit rate is. Reading it
+// as a percent key would give 12% of 15 — 1.8 — which is wrong and plausible-looking.
+test("setVectors adds a crit key as points rather than a percentage of base crit", () => {
+  expect(setVectors(5, { ...ZERO_BASE, "C.RATE": 15 }, 0)[2]["C.RATE"]).toBeCloseTo(12, 9);
+});
+
+// Lore of Steel scales EVERY set's bonus, once. Applying it twice is the quiet failure this
+// pins: 12 * 1.15 is 13.8 and 12 * 1.15 * 1.15 is 15.87, and neither looks wrong on its own.
+test("setVectors applies Lore of Steel exactly once", () => {
+  expect(setVectors(5, ZERO_BASE, 0.15)[2]["C.RATE"]).toBeCloseTo(13.8, 9);
+  expect(setVectors(5, ZERO_BASE, 0.15)[4]["C.RATE"]).toBeCloseTo(27.6, 9);
+});
+
+// A tiered set's FIRST tier can be a single piece — set 60 is Slayer, C.RATE +5 off one piece —
+// which is the shape most easily assumed away, and the reason build-solve has singleton columns.
+test("setVectors credits a one-piece tier at one piece", () => {
+  expect(setVectors(60, ZERO_BASE, 0)[1]["C.RATE"]).toBeCloseTo(5, 9);
+});
+
+// Ten entries, zero at zero pieces: build-solve's checkBonusAt rejects anything else, and a
+// nine-entry array would read bonus[9] as undefined and poison the score into NaN.
+test("setVectors is a ten-entry array that is zero at zero pieces", () => {
+  const vectors = setVectors(60, ZERO_BASE, 0);
+  expect(vectors).toHaveLength(10);
+  expect(vectors[0]).toEqual(ZERO_BASE);
+});
+
+// The precondition build-solve leans on, checked against the real table rather than assumed.
+test("every set's vectors are non-decreasing in piece count on every stat", () => {
+  for (const setId of Object.keys(SET_BONUSES_IDS)) {
+    const vectors = setVectors(Number(setId), { ...ZERO_BASE, HP: 20000, SPD: 100 }, 0.15);
+    for (let n = 1; n < vectors.length; n++) {
+      for (const stat of STATS) {
+        expect(vectors[n][stat], `set ${setId} stat ${stat} at ${n}`)
+          .toBeGreaterThanOrEqual(vectors[n - 1][stat]);
+      }
+    }
+  }
 });
