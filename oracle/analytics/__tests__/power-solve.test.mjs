@@ -184,3 +184,86 @@ test("nonGearTotals is unaffected by Lore of Steel", () => {
   const without = nonGearTotals(champStats({ base: { HP: 20000 } }));
   expect(withMastery).toEqual(without);
 });
+
+// --- buildTotals -------------------------------------------------------------------------------
+
+// The stat model's columns summed WITHOUT rounding — deliberately not statBreakdown().totals,
+// which rounds each column to reproduce the game's screen. This is the independent second
+// implementation buildTotals is checked against.
+const summedColumns = (stats, items) => {
+  const { columns } = statBreakdown(stats, items);
+  return Object.fromEntries(STATS.map((stat) =>
+    [stat, columns.reduce((sum, [, v]) => sum + v[stat], 0)]));
+};
+
+// Two Offense pieces (set 2, a 2-piece stacker) and one Stone Skin (set 48, whose FIRST tier is a
+// single piece), so both set mechanics are in play at once.
+const GEAR = [
+  item({ id: 1, slot: 1, set: 2, mainStat: { statId: 1, isFlat: true, value: 1000 } }),
+  item({ id: 2, slot: 2, set: 2, mainStat: { statId: 2, isFlat: false, value: 60 },
+    substats: [sub(4, 10, true)] }),
+  item({ id: 3, slot: 3, set: 48, mainStat: { statId: 5, isFlat: false, value: 20 },
+    ascStat: { statId: 6, isFlat: false, value: 12 } }),
+];
+
+const WORN_STATS = champStats({
+  base: { HP: 20000, ATK: 1500, DEF: 1200, SPD: 100, "C.RATE": 15, "C.DMG": 50, RES: 30 },
+  sources: { mastery: [["ATK%", 5], ["C.RATE", 5]], blessing: [["SPD", 7]] },
+  loreOfSteel: 0.15,
+});
+
+// LORE OF STEEL AT 0.15 is the case that matters. The stat model splits a set's bonus across the
+// Artifacts column and the Masteries column, and buildTotals has to land on the same number from
+// a single (1 + 0.15) scaling applied per set. A champion with the mastery OFF would pass this
+// with the scaling missing altogether.
+//
+// toBeCloseTo, not toBe: the two sum the same terms in different orders, so they agree
+// mathematically and can differ in the last bits.
+test("buildTotals equals the stat model's columns summed unrounded, with Lore of Steel", () => {
+  const got = buildTotals(WORN_STATS, GEAR);
+  const want = summedColumns(WORN_STATS, GEAR);
+  for (const stat of STATS) expect(got[stat], stat).toBeCloseTo(want[stat], 9);
+});
+
+test("buildTotals equals the stat model's columns summed unrounded, without Lore of Steel", () => {
+  const none = champStats({ base: WORN_STATS.base, sources: WORN_STATS.sources });
+  const got = buildTotals(none, GEAR);
+  const want = summedColumns(none, GEAR);
+  for (const stat of STATS) expect(got[stat], stat).toBeCloseTo(want[stat], 9);
+});
+
+test("buildTotals with no items is nonGearTotals", () => {
+  expect(buildTotals(WORN_STATS, [])).toEqual(nonGearTotals(WORN_STATS));
+});
+
+// --- solvePower: the weights precondition ------------------------------------------------------
+
+const ONE_PIECE = [crit(1, 1, 50, 0)];
+const callWith = (weights) => () => solvePower({
+  items: ONE_PIECE, faction: 0, champStats: champStats(), current: ONE_PIECE, weights,
+});
+
+// Both consequences are quiet rather than loud. A negative per-stat scalar makes a set's bonus
+// DECREASE with more pieces, which build-solve rejects for one weight and silently mis-solves
+// for another; and the McCormick estimators are upper bounds only for k >= 0, so a negative k
+// turns the certificate into a confident wrong number.
+test("solvePower refuses a negative weight, naming it", () => {
+  expect(callWith({ ...CRIT_ONLY, r: -0.1 })).toThrow(/power-solve: weight r/);
+  expect(callWith({ ...CRIT_ONLY, k: -1 })).toThrow(/power-solve: weight k/);
+  expect(callWith({ ...CRIT_ONLY, b: -0.001 })).toThrow(/power-solve: weight b/);
+});
+
+// A least-squares fit can return null for a weight it could not determine and NaN from a broken
+// one. Neither is a measurement, and lin turns either into NaN, which sorts below everything and
+// is silently never returned rather than failing.
+test("solvePower refuses a weight that is not a finite number", () => {
+  for (const bad of [NaN, Infinity, -Infinity, undefined, null, "1"]) {
+    expect(callWith({ ...CRIT_ONLY, s: bad }), `s = ${bad}`).toThrow(/power-solve: weight s/);
+  }
+});
+
+// Zero is LEGAL, unlike weightsFor's own `measured` test which requires > 0. Every crit case in
+// this file leans on it: k alone, with b, r, a and s all zero.
+test("solvePower accepts a zero weight", () => {
+  expect(callWith(CRIT_ONLY)).not.toThrow();
+});

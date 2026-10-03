@@ -81,5 +81,44 @@ export function nonGearTotals(champStats) {
   return out;
 }
 
-export const buildTotals = () => { throw new Error("not implemented"); };
-export const solvePower = () => { throw new Error("not implemented"); };
+// The unrounded stat totals of one copy wearing one set of items: what it has before any gear,
+// plus each piece, plus each set's bonus AT THE COUNT THE BUILD HOLDS.
+//
+// Summing per set is exact rather than an approximation: setBonusTerms walks its counts set by
+// set independently, so the sum of each set's own totals is the whole build's set totals.
+export function buildTotals(champStats, items) {
+  const { base, loreOfSteel } = champStats;
+  const out = nonGearTotals(champStats);
+  for (const item of items) addInto(out, itemVector(item, base));
+  for (const [setId, count] of setCounts(items)) {
+    addInto(out, setVectors(setId, base, loreOfSteel)[count]);
+  }
+  return out;
+}
+
+// --- solvePower --------------------------------------------------------------------------------
+
+const WEIGHT_NAMES = ["b", "r", "a", "s", "k"];
+
+// Checked once per call rather than trusted, because both failures are quiet. See the two
+// consequences spelled out in the header. weightsFor never returns a bad weight, so this fires on
+// a hand-built weights object or a fit that came back undetermined.
+function checkWeights(weights) {
+  for (const name of WEIGHT_NAMES) {
+    const value = weights?.[name];
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+      throw new Error(`power-solve: weight ${name} is ${value}, must be a finite number >= 0 —`
+        + " build-solve needs non-decreasing set bonuses and the McCormick bound needs k >= 0");
+    }
+  }
+}
+
+export function solvePower({ items, faction, champStats, current, weights, top = 1,
+  maxRounds = 20 }) {
+  checkWeights(weights);
+  // The published signature is complete from the start, but only `weights` is read yet. These
+  // `void`s keep ESLint's no-unused-vars quiet without an eslint-disable; each one disappears as
+  // Tasks 9 to 15 consume its parameter.
+  void items; void faction; void champStats; void current; void top; void maxRounds;
+  return { builds: [], rounds: 0, converged: false, upperBound: 0, gap: 0 };
+}
