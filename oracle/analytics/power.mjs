@@ -217,3 +217,35 @@ export function formatGain(currentLin, bestLin, c) {
   return `  BEST  ≈ +${pct.toFixed(1)}%`
     + " (per-copy constant unknown: log a reading or pass --power)";
 }
+
+// What the solver PROVED, as opposed to what it found. power-solve's `upperBound` is a genuine
+// upper bound on the objective over EVERY assignment of this vault, so the gap is a proven ceiling
+// on how much the answer could still be improved — "within X of the maximum", never "the maximum".
+//
+// `converged` means a FIXED POINT of the linearize-and-resolve map, which is the exact optimum of
+// the objective linearized at its own crit totals and is NOT the optimum of the true objective. The
+// wording must not drift into claiming otherwise; power-solve.mjs's header is explicit about it.
+// A wide gap is the signal that this champion's crit range is too broad for the linearization,
+// which is what the planned exact mode is for.
+export function formatCertificate({ gap, upperBound, rounds, converged }, bestLin, c) {
+  const best = c === null ? bestLin : powerOf(bestLin, c);
+  const amount = c === null ? gap : powerOf(upperBound, c) - best;
+  // Two decimals in sqrt(power), where the numbers are single digits; whole numbers in power, which
+  // the game shows as an integer.
+  const shown = c === null ? amount.toFixed(2) : String(Math.round(amount));
+  const pct = best > 0 ? `${((amount / best) * 100).toFixed(2)}%` : "n/a";
+  return `    at most ${shown} ${c === null ? "√power" : "power"} (${pct}) below the true maximum`
+    + `   [${rounds} round${rounds === 1 ? "" : "s"},`
+    + ` ${converged ? "converged" : "no fixed point"}]`;
+}
+
+// One runner-up's distance from BEST, in the same unit as the certificate line above so the two
+// numbers on one report can be compared. Same shape as speed.mjs's printRanked.
+//
+// These are the best DISTINCT SETS OF ITEMS the iteration happened to see, which is not a proved
+// top-N — power-solve says so outright and this line does not imply otherwise.
+export function formatOffBest(index, build, best, c) {
+  const delta = c === null ? build.lin - best.lin : powerOf(build.lin, c) - powerOf(best.lin, c);
+  const shown = c === null ? delta.toFixed(2) : String(Math.round(delta));
+  return `  #${index}  (${shown} ${c === null ? "√power" : "power"} off BEST)`;
+}

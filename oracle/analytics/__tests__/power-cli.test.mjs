@@ -10,7 +10,7 @@
 // and append to the developer's real oracle/analytics/out/ — a test that pollutes a personal
 // reading log, and one whose own assertions would depend on whatever is already in it.
 import { expect, test } from "vitest";
-import { formatBreakdown, formatGain, formatTotals, mainCopies,
+import { formatBreakdown, formatCertificate, formatGain, formatOffBest, formatTotals, mainCopies,
   parsePowerArgs } from "../power.mjs";
 import { STATS } from "../champion-stats.mjs";
 
@@ -302,4 +302,55 @@ test("formatGain handles a negative constant without losing the sign", () => {
 // read as "+0.0%" for a build that is in fact an infinite improvement.
 test("formatGain names a zero current rather than reporting a ratio for it", () => {
   expect(formatGain(0, 120, null)).toMatch(/gain unknown/);
+});
+
+// --- formatCertificate ----------------------------------------------------------
+//
+// `gap` and `upperBound` come out of power-solve in sqrt(power) units — it maximizes `lin`, and its
+// McCormick bound bounds `lin`. With `c` they convert to power; without it they are reported in
+// their own units rather than silently mislabelled as power, which is the one way this line could
+// be read as a much smaller number than it is.
+
+const cert = (o = {}) => ({ gap: 5, upperBound: 125, rounds: 3, converged: true, ...o });
+
+//   best (120 + 5)^2 = 15,625 · bound (125 + 5)^2 = 16,900 · gap 1,275 · 1275/15625 = 8.16%
+test("formatCertificate converts the gap to power when the constant is known", () => {
+  expect(formatCertificate(cert(), 120, 5))
+    .toBe("    at most 1275 power (8.16%) below the true maximum   [3 rounds, converged]");
+});
+
+//   gap 5 in sqrt(power) against a best `lin` of 120 · 5/120 = 4.17%
+test("formatCertificate keeps the gap in sqrt(power) when the constant is unknown", () => {
+  expect(formatCertificate(cert({ rounds: 1, converged: false }), 120, null))
+    .toBe("    at most 5.00 √power (4.17%) below the true maximum   [1 round, no fixed point]");
+});
+
+// `converged` is a fixed point of the linearize-and-resolve map, NOT an optimum, and a cycle or a
+// maxRounds stop is neither. The wording has to keep those apart without either claiming
+// optimality.
+test("formatCertificate says plainly when there was no fixed point", () => {
+  expect(formatCertificate(cert({ converged: false }), 120, 5)).toMatch(/no fixed point/);
+  expect(formatCertificate(cert({ converged: true }), 120, 5)).toMatch(/converged/);
+});
+
+// power-solve leaves `gap` unclamped so a violated assumption stays visible, and float noise can
+// put it a hair below zero. Printing the sign is the whole point; absorbing it into an absolute
+// value would hide exactly the case the gap was left signed for.
+test("formatCertificate keeps a negative gap visible rather than absorbing it", () => {
+  expect(formatCertificate(cert({ gap: -0.004 }), 120, null)).toMatch(/at most -0\.00 √power/);
+});
+
+// --- formatOffBest --------------------------------------------------------------
+
+// The runners-up, measured against BEST in the SAME unit as the certificate line, so the two
+// numbers on one report are comparable. The delta is negative by construction — these are worse
+// builds — and the sign is printed rather than a minus being pasted in front of an absolute value.
+//   (110 + 5)^2 = 13,225 against (120 + 5)^2 = 15,625 -> -2,400
+test("formatOffBest measures a runner-up against BEST in power when the constant is known", () => {
+  expect(formatOffBest(2, { lin: 110 }, { lin: 120 }, 5)).toBe("  #2  (-2400 power off BEST)");
+});
+
+test("formatOffBest measures it in sqrt(power) when the constant is unknown", () => {
+  expect(formatOffBest(3, { lin: 110 }, { lin: 120 }, null))
+    .toBe("  #3  (-10.00 √power off BEST)");
 });
