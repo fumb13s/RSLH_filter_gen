@@ -335,3 +335,42 @@ test("the iteration walks off a low-crit linear pick onto the crit-heavy optimum
   expect(got.builds[0].items.map((it) => it.id)).toEqual([3]);
   expect(got.builds[0].lin).toBeCloseTo(8250, 6);
 });
+
+// --- solvePower: a cycle -----------------------------------------------------------------------
+
+// Two slots, each offering a C.RATE 50 piece or a C.DMG 150 piece and nothing else. The
+// linearization alternates between the two corners and never looks at the mixed build, which is
+// the actual optimum. Built from ordinary items — no injected valuation is needed to produce it.
+//
+//   worn (both C.RATE)  C.RATE 100, C.DMG  25  true 100 * 125 = 12,500
+//   both C.DMG          C.RATE   0, C.DMG 325  true   0 * 425 =      0
+//   one of each         C.RATE  50, C.DMG 175  true  50 * 275 = 13,750  <- never reached
+//
+//   round 1 at (100,  25): C.RATE x 125, C.DMG x 100 -> per slot 15,000 > 6,250, so both C.DMG
+//   round 2 at (  0, 325): C.RATE x 425, C.DMG x   0 -> per slot 21,250 > 0, so both C.RATE,
+//                          which is ROUND 0's build — a cycle, and no fixed point exists.
+const CYCLE = [
+  crit(1, 1, 50, 0), crit(2, 1, 0, 150),
+  crit(3, 2, 50, 0), crit(4, 2, 0, 150),
+];
+const CYCLE_ARGS = {
+  items: CYCLE, faction: 0, champStats: champStats(),
+  current: [CYCLE[0], CYCLE[2]], weights: CRIT_ONLY,
+};
+const idsOf = (build) => build.items.map((it) => it.id).sort((a, b) => a - b);
+
+test("a cycle stops the iteration and is reported as not converged", () => {
+  const got = solvePower(CYCLE_ARGS);
+  expect(got.converged).toBe(false);
+  expect(got.rounds).toBe(2);
+});
+
+// The answer is below the true optimum, and that is the point: this mode is a fixed-point search,
+// not a proof. A solver claiming optimality here would be claiming 12,500 is the best of a pool
+// whose best is 13,750.
+test("a cycle still returns the best build it saw", () => {
+  const got = solvePower(CYCLE_ARGS);
+  expect(idsOf(got.builds[0])).toEqual([1, 3]);
+  expect(got.builds[0].lin).toBeCloseTo(12500, 6);
+  expect(got.builds[0].lin).toBeLessThan(13750);
+});

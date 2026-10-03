@@ -176,7 +176,10 @@ export function solvePower({ items, faction, champStats, current, weights, top =
     }
     best = roundBest;
     const key = itemsKey(roundBest.items);
-    if (roundOf.get(key) === rounds - 1) { converged = true; break; }
+    // Repeating the PREVIOUS round's build is a fixed point. Repeating any EARLIER one is a
+    // cycle, and there is no fixed point to report — the iteration would alternate forever.
+    const earlier = roundOf.get(key);
+    if (earlier !== undefined) { converged = earlier === rounds - 1; break; }
     roundOf.set(key, rounds);
     reference = { cr: roundBest.totals["C.RATE"], cd: roundBest.totals["C.DMG"] };
   }
