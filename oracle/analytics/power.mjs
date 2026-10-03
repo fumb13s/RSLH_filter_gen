@@ -5,6 +5,8 @@
 //     --top N        print the N best builds rather than only the winner
 //     --exact        prove the maximum instead of certifying a fixed point. Slower, and takes no
 //                    --top: it proves one build and keeps no runner-up to rank.
+//     --glyph G      also solve with every glyphable substat at the cap of glyph grade G
+//                    (5, normal, rare, epic, legendary)
 //
 //   node --experimental-sqlite oracle/analytics/power.mjs log <name|ID> <in-game power>
 //     record a power reading against Gestal's LIVE stats, for `fit` to calibrate from.

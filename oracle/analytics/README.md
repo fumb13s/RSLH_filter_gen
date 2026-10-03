@@ -129,7 +129,7 @@ on a same-date tie, the Gestal one, whose record of who wears what is current.
    Advisory and strictly read-only: both reads open read-only, nothing is written, and a mistyped
    path fails rather than creating an empty database.
 6. Highest-power build for one champion:
-   `node --experimental-sqlite oracle/analytics/power.mjs <name|ID> [snapshot.json.gz] [--power N] [--top N] [--exact]`
+   `node --experimental-sqlite oracle/analytics/power.mjs <name|ID> [snapshot.json.gz] [--power N] [--top N] [--exact] [--glyph G]`
    `node --experimental-sqlite oracle/analytics/power.mjs log <name|ID> <in-game power>`
    `node --experimental-sqlite oracle/analytics/power.mjs fit <name|ID>`
    `node --experimental-sqlite oracle/analytics/power.mjs verify [snapshot.json.gz]`
@@ -173,6 +173,30 @@ on a same-date tie, the Gestal one, whose record of who wears what is current.
    is **opt-in because it is slower**: the default mode is a handful of exact solves, while this one
    bounds every plan and then runs a branch-and-bound over the slots. It proves one build and keeps
    no runner-up, so it takes no `--top` — not even `--top 1`.
+
+   `--glyph G` answers a different question: what this champion could reach if its gear were
+   glyphed. It re-values the whole vault with every glyphable substat holding the cap of glyph
+   grade `G` — `5`, `normal`, `rare`, `epic` or `legendary`, a 5★ glyph and then the four 6★
+   rarities — and solves again, printing a second block under the plain BEST. A grade rather than a
+   number, because glyph values differ per stat: a SPD glyph tops out at 12 and a flat HP one at
+   1,150, so no single number covers both. The caps are the tops of each grade's roll ranges, not
+   the largest values the vault happens to hold — those record what was *applied*, not what is
+   possible. `glyphs.mjs`'s header has the provenance.
+
+   A 5★ item takes at most a 5★ glyph whatever grade was asked for, and nothing below 5★ is lifted
+   at all. An existing glyph is never lowered: the cap is a floor, so a substat already glyphed
+   above it keeps what it has and is not listed as work to do. Crit is never glyphable — no C.RATE
+   or C.DMG substat in the vault carries a glyph, and neither does any damage-type substat — so a
+   glyph only ever adds to the linear part of the objective, which is why neither solver changes
+   and why each glyph's reported worth is exact.
+
+   The block prints its own headline (`WITH 6★ Epic GLYPHS`, with the gain over BEST), the build
+   slot by slot with one `glyph <stat> <from>→<to>` line under each piece that needs one and what
+   that single glyph is worth, a `glyphs to apply: N` count for the build, and its own certificate
+   — or `proven maximum` with `--exact`, which proves the lifted maximum as it proves the plain
+   one. `--top N` gives the block its own runners-up, measured against the build it reported. It is
+   never below the plain BEST: BEST's own pieces are re-scored with their glyphs applied and
+   reported instead if that beats the lifted solve's answer.
 
    `power.mjs verify` checks the set table against the game's own per-champion set bonuses on a
    fresh capture and exits 1 on any mismatch. The set table is game data and will drift on a patch;
