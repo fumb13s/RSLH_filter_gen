@@ -374,3 +374,27 @@ test("a cycle still returns the best build it saw", () => {
   expect(got.builds[0].lin).toBeCloseTo(12500, 6);
   expect(got.builds[0].lin).toBeLessThan(13750);
 });
+
+// --- solvePower: maxRounds ---------------------------------------------------------------------
+//
+// Both of these are REGRESSION LOCKS on the loop bound being read from the parameter, not new
+// behaviour: the bound has read `maxRounds` since the loop was introduced, because the round-0
+// tests above pass `maxRounds: 0` and would otherwise have a round run underneath them. They are
+// here because a bound quietly hardcoded back to a literal is invisible to every other test in
+// this file.
+
+// Cut the cycle off before it closes. One round runs, nothing has repeated yet, so there is no
+// fixed point to claim.
+test("maxRounds stops the iteration and leaves converged false", () => {
+  const got = solvePower({ ...CYCLE_ARGS, maxRounds: 1 });
+  expect(got.rounds).toBe(1);
+  expect(got.converged).toBe(false);
+});
+
+// Zero rounds is a legal request — it reports the worn gear and nothing else, which is what the
+// round-0 tests above use.
+test("maxRounds of zero runs no round at all", () => {
+  const got = solvePower({ ...CYCLE_ARGS, maxRounds: 0 });
+  expect(got.rounds).toBe(0);
+  expect(got.converged).toBe(false);
+});
