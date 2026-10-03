@@ -517,3 +517,40 @@ test("gap is upperBound less the best build's lin", () => {
   expect(got.gap).toBeCloseTo(got.upperBound - got.builds[0].lin, 9);
   expect(got.gap).toBeGreaterThanOrEqual(0);
 });
+
+// --- solvePower: certify ------------------------------------------------------------------------
+//
+// An INTERNAL option, for solvePowerExact, which calls this for its incumbent and then throws the
+// certificate away and computes its own box. The certificate is four more exact solves — two for
+// the box and one per McCormick estimator — and build-solve.prop.test.mjs measures a full-vault
+// solve at 9.7 s, so on a real vault those four are most of a minute spent proving a ceiling that
+// is discarded unread.
+
+// The two fields are ABSENT rather than null or zero. A caller that reads one gets undefined,
+// which turns into NaN in arithmetic and is loud; a null would read as 0 and print as a zero gap,
+// which is a certificate claiming the answer is proved optimal — the one thing this mode must
+// never say.
+test("certify false drops the certificate fields rather than zeroing them", () => {
+  const got = solvePower({ ...CONVERGE_ARGS, certify: false });
+  expect(got).not.toHaveProperty("upperBound");
+  expect(got).not.toHaveProperty("gap");
+});
+
+// Skipping the certificate must not move the answer: it is computed after the iteration and feeds
+// nothing back into it.
+test("certify false returns the same builds, rounds and convergence", () => {
+  const full = solvePower(CONVERGE_ARGS);
+  const bare = solvePower({ ...CONVERGE_ARGS, certify: false });
+  expect(bare.builds.map((b) => b.items.map((it) => it.id)))
+    .toEqual(full.builds.map((b) => b.items.map((it) => it.id)));
+  expect(bare.builds[0].lin).toBeCloseTo(full.builds[0].lin, 9);
+  expect(bare.rounds).toBe(full.rounds);
+  expect(bare.converged).toBe(full.converged);
+});
+
+// The default is the certificate, because every caller outside this module wants it — power.mjs
+// prints it, and the public contract is a certified answer.
+test("certify defaults to true", () => {
+  expect(solvePower(CONVERGE_ARGS)).toHaveProperty("upperBound");
+  expect(solvePower({ ...CONVERGE_ARGS, certify: true })).toHaveProperty("gap");
+});

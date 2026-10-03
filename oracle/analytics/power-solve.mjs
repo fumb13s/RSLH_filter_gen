@@ -1,8 +1,9 @@
 // oracle/analytics/power-solve.mjs
 //
-// The gear assignment, out of the whole vault, that maximizes a champion's in-game POWER. The
-// default mode: linearize the crit term, solve exactly, iterate to a fixed point, and certify how
-// far the answer could still be from the maximum. The provably exact search is a separate mode.
+// The gear assignment, out of the whole vault, that maximizes a champion's in-game POWER. Two
+// modes. The DEFAULT linearizes the crit term, solves exactly, iterates to a fixed point, and
+// certifies how far the answer could still be from the maximum. solvePowerExact PROVES the
+// maximum instead, and costs more.
 //
 // WHY MAXIMIZING `lin` MAXIMIZES POWER. power-model.mjs gives power = (lin + c)^2, where `lin` is
 // a weighted sum of stat totals and `c` is a property of the COPY that no gear change can move.
@@ -37,15 +38,74 @@
 // of the crit product over the box of C.RATE and C.DMG the vault can actually reach, each of
 // which is affine and therefore one more exact solve. The bound is LOOSE exactly when that box is
 // wide — a champion whose crit can swing from almost nothing to a fully stacked double-crit build
-// — and a wide `gap` is the signal to pay for the provably exact mode instead of trusting this
-// one.
+// — and a wide `gap` is the signal to pay for solvePowerExact instead of trusting this one.
 //
 // `current` IS ASSUMED DRAWN FROM `items`. Every bound rests on it: the crit box is the non-gear
 // totals plus the most any assignment of `items` can add, so a worn piece that is not in the pool
 // could sit outside that box and make `gap` negative rather than zero. Not checked, because the
 // one precondition worth paying for on every call is the weights; a vault that omits worn gear is
 // a caller bug upstream of here.
-import { buildIndex, SLOTS, solve } from "./build-solve.mjs";
+//
+// WHY solvePowerExact IS EXACT. Four claims, in the order the code makes them.
+//
+// (1) FULL BUILDS ARE ENOUGH. With every weight >= 0 and every stat a piece or a set adds >= 0,
+// `lin` is non-decreasing in every stat total: its non-crit part is a non-negative combination,
+// and the crit product k * C.RATE * (100 + C.DMG) grows with each factor while both stay
+// non-negative. A set's bonus never shrinks with more pieces either — setVectors is
+// non-decreasing in count, which power-solve.test.mjs pins against the real table. So filling a
+// slot never lowers the objective, and the best build taking one piece in EVERY slot the pool can
+// fill is the best build over "at most one piece per slot". The search therefore enumerates full
+// builds only. This rests on CRlo >= 0 and 100 + CDlo >= 0 — true for every champion the game
+// has, and documented rather than checked, as `current` is.
+//
+// (2) A PIECE MATTERS THROUGH THREE NUMBERS. Fix a slot and a set. Then which piece of that set
+// fills the slot cannot change the build's set COUNTS, and the objective reads the piece only
+// through its non-crit linear value, its C.RATE and its C.DMG — because the non-crit part of
+// `lin` is a single linear functional of the stat vector, so a piece enters it as one scalar, and
+// the crit part reads those two stats and nothing else. Those three are a sufficient statistic
+// for a piece, so one that is no better than another of the same slot and set on all three can be
+// dropped with nothing lost. Of pieces equal on all three exactly one survives, the lowest id, as
+// buildIndex's tie-break does.
+//
+// (3) NO BOUND PRUNES THE OPTIMUM. Two bounds, both strict-only: a branch is cut when its
+// ceiling is STRICTLY below the incumbent, so the branch holding the optimum survives a ceiling
+// that merely equals it. The PLAN bound is valid for every build whose naming plan is that plan —
+// the build's true objective is at most its McCormick estimator value, that estimator value is
+// exactly what the assignment credits the build under its naming plan, and that credited value is
+// at most the plan's assignment maximum. Every build has a naming plan, so the surviving plans
+// cover every build that could beat the incumbent. The NODE bound is the smaller of three
+// ceilings on the final objective of any completion: the issue's product of three independently
+// maximized totals, and each McCormick estimator read as one affine lane. Each is sound alone
+// because every lane is a non-negative linear functional, so a per-slot maximum and a per-set
+// headroom are both upper bounds on what the remaining slots can add.
+//
+// (4) THE SEARCH IS OTHERWISE EXHAUSTIVE. Slot order and candidate order are speed choices: the
+// search visits every unpruned leaf whatever order it visits them in.
+//
+// WHAT THE PLAN COUNTS MEAN. `plansTotal` is every plan build-solve would enumerate for this
+// pool, the empty one included; `plansPruned` counts the ones that needed no search, because
+// either no assignment can fill them or their bound fell strictly below the incumbent. When every
+// plan is pruned the incumbent is already the maximum and no search runs at all. In practice the
+// EMPTY plan almost never prunes — its assignment is the best free pick in every slot plus every
+// one-piece bonus the pool can reach, which an estimator values above any real build — so the
+// counts are a diagnostic on how much of the plan space the bound could rule out, not usually an
+// early exit. Said plainly rather than claimed otherwise.
+//
+// The largest per-plan bound is also a global upper bound, and a tighter one than the
+// certificate's: both maximize the same estimator over the same plans, but this one uses each
+// plan's `credited`, which never exceeds the realized score solve() maximizes. It is not
+// reported, because `provenOptimal` makes it redundant.
+//
+// FLOAT ORDER, SAID PLAINLY. A leaf's ceiling is the same sum as the score the leaf is then
+// given, added in a different order, so the two can differ in the last bits. A leaf dropped that
+// way ties the incumbent to within rounding and cannot move the maximum by more than float noise;
+// the property test compares against an exhaustive search with a relative tolerance of 1e-9 for
+// exactly this reason. `provenOptimal` is a claim about the SEARCH, not about IEEE arithmetic.
+//
+// WHY NOT ALWAYS. Nothing here bounds the runtime. On a full vault the plan space runs to
+// hundreds of thousands of plans and the search to a branching factor per slot, which is why the
+// mode is opt-in and the default one certifies instead.
+import { assignPlan, buildIndex, enumeratePlans, SLOTS, solve } from "./build-solve.mjs";
 import { STATS, contribution, itemEntries, statBreakdown } from "./champion-stats.mjs";
 import { SET_BONUSES, setBonusTotals, setCounts } from "./set-bonuses.mjs";
 import { lin } from "./power-model.mjs";
@@ -77,6 +137,23 @@ export function linearizedWeights(w, crRef, cdRef) {
     SPD: w.s,
     "C.RATE": w.k * (100 + cdRef),
     "C.DMG": w.k * crRef,
+    RES: w.r,
+    ACC: w.a,
+  };
+}
+
+// `lin`'s non-crit weights alone, as one scalar per stat. The crit scalars are ZERO rather than
+// frozen at a reference, so dot(nonCritWeights(w), totals) is exactly `lin` less its crit
+// product. linearizedWeights cannot stand in: at a reference of (0, 0) its C.RATE scalar is
+// k * 100, not 0, and a search that used it would double-count every point of crit rate.
+export function nonCritWeights(w) {
+  return {
+    HP: w.b / 15,
+    ATK: w.b,
+    DEF: w.b,
+    SPD: w.s,
+    "C.RATE": 0,
+    "C.DMG": 0,
     RES: w.r,
     ACC: w.a,
   };
@@ -132,14 +209,27 @@ export function nonGearTotals(champStats) {
 //
 // Summing per set is exact rather than an approximation: setBonusTerms walks its counts set by
 // set independently, so the sum of each set's own totals is the whole build's set totals.
+//
+// The non-gear part and the two caches are PARAMETERS because solvePowerExact scores a build per
+// leaf and already holds all three; recomputing nonGearTotals and every set's ten-entry tier
+// table per leaf is the difference between a search that finishes and one that does not. One
+// implementation, so the exact search and the default mode can never disagree on a build's score.
+//
+// `vectorOf` is keyed by item IDENTITY and `setVecs` by set id; both must cover every item and
+// every set the build holds. `nonGear` is COPIED rather than mutated, since callers share one.
+function totalsFrom(nonGear, items, vectorOf, setVecs) {
+  const out = { ...nonGear };
+  for (const item of items) addInto(out, vectorOf.get(item));
+  for (const [setId, count] of setCounts(items)) addInto(out, setVecs.get(setId)[count]);
+  return out;
+}
+
 export function buildTotals(champStats, items) {
   const { base, loreOfSteel } = champStats;
-  const out = nonGearTotals(champStats);
-  for (const item of items) addInto(out, itemVector(item, base));
-  for (const [setId, count] of setCounts(items)) {
-    addInto(out, setVectors(setId, base, loreOfSteel)[count]);
-  }
-  return out;
+  const vectorOf = new Map(items.map((item) => [item, itemVector(item, base)]));
+  const setVecs = new Map([...setCounts(items).keys()]
+    .map((setId) => [setId, setVectors(setId, base, loreOfSteel)]));
+  return totalsFrom(nonGearTotals(champStats), items, vectorOf, setVecs);
 }
 
 // --- solvePower --------------------------------------------------------------------------------
@@ -163,8 +253,38 @@ function checkWeights(weights) {
 // however the solver happened to order them. Same key build-solve dedups on.
 const itemsKey = (items) => items.map((it) => it.id).sort((a, b) => a - b).join(",");
 
+// THE BOX: the C.RATE and C.DMG every assignment of this pool lies between. Gear only ADDS crit
+// — every item stat and every set bonus is non-negative — so the non-gear totals are the floor,
+// and the ceiling is that floor plus the most any assignment can add, which is one exact solve
+// weighting that stat alone. Those two solves are cheap: a set with no crit gets an all-zero
+// column, which build-solve's usefulCounts skips (no increase) and singletonSets skips
+// (bonus[1] > 0 fails), so plan enumeration collapses onto the crit sets alone rather than
+// walking all 41.
+//
+// Shared by the certificate and by solvePowerExact, which needs the SAME box: a McCormick
+// estimator is an upper bound only over a box that covers every assignment, so a box computed two
+// ways is a bound that holds for one mode and not the other.
+function critBox(items, faction, vectorOf, setVecs, nonGear) {
+  const maxGear = (stat) => {
+    const index = buildIndex(items, faction, (item) => vectorOf.get(item)[stat]);
+    const bonusAt = new Map([...setVecs]
+      .map(([setId, vectors]) => [setId, vectors.map((v) => v[stat])]));
+    const ranked = solve(index, bonusAt, { top: 1 });
+    return ranked.length ? ranked[0].score : 0;
+  };
+  const CRlo = nonGear["C.RATE"];
+  const CDlo = nonGear["C.DMG"];
+  return { CRlo, CDlo, CRhi: CRlo + maxGear("C.RATE"), CDhi: CDlo + maxGear("C.DMG") };
+}
+
+// `certify` is INTERNAL, for solvePowerExact, which wants this function for its INCUMBENT and
+// nothing else: it discards the certificate and computes its own box, which its node bounds need
+// anyway. The certificate is four more exact solves — two for the box and one per McCormick
+// estimator — and build-solve.prop.test.mjs measures one full-vault solve at 9.7 s, so on a real
+// vault those four are most of a minute spent proving a ceiling nobody reads. In the one mode
+// whose entire cost story is runtime, that is worth an option.
 export function solvePower({ items, faction, champStats, current, weights, top = 1,
-  maxRounds = 20 }) {
+  maxRounds = 20, certify = true }) {
   checkWeights(weights);
   const { base, loreOfSteel } = champStats;
 
@@ -228,25 +348,28 @@ export function solvePower({ items, faction, champStats, current, weights, top =
     reference = { cr: roundBest.totals["C.RATE"], cd: roundBest.totals["C.DMG"] };
   }
 
+  // The whole POOL, not the last round: the best build may have come from any round, or be the
+  // gear already worn. Stable sort, so a tie falls to insertion order — round order, then
+  // build-solve's own deterministic ranking — and a rerun returns the same list.
+  //
+  // These are the best DISTINCT SETS OF ITEMS this iteration happened to see. That is not a
+  // proved top-N, and build-solve's own `top` is not either: its entries after the first are the
+  // best each OTHER plan could reach. Said plainly rather than claimed otherwise.
+  //
+  // Always non-empty: round 0 records the worn gear before the iteration starts.
+  const builds = [...pool.values()]
+    .sort((a, b) => b.lin - a.lin)
+    .slice(0, Math.max(1, top));
+
   // --- the certificate ------------------------------------------------------------------------
 
-  // THE BOX. Gear only ADDS crit — every item stat and every set bonus is non-negative — so the
-  // non-gear totals are the floor, and the ceiling is that floor plus the most any assignment can
-  // add, which is one exact solve weighting that stat alone. Those two solves are cheap: a set
-  // with no crit gets an all-zero column, which build-solve's usefulCounts skips (no increase)
-  // and singletonSets skips (bonus[1] > 0 fails), so plan enumeration collapses onto the crit
-  // sets alone rather than walking all 41.
-  const maxGear = (stat) => {
-    const index = buildIndex(items, faction, (item) => vectorOf.get(item)[stat]);
-    const bonusAt = new Map([...setVecs]
-      .map(([setId, vectors]) => [setId, vectors.map((v) => v[stat])]));
-    const ranked = solve(index, bonusAt, { top: 1 });
-    return ranked.length ? ranked[0].score : 0;
-  };
-  const CRlo = nonGear["C.RATE"];
-  const CDlo = nonGear["C.DMG"];
-  const CRhi = CRlo + maxGear("C.RATE");
-  const CDhi = CDlo + maxGear("C.DMG");
+  // The two fields are ABSENT rather than null when the certificate is skipped. A caller reading
+  // one then gets undefined, which turns into NaN in arithmetic and is loud at once; a null would
+  // read as 0 and print as a zero gap — a certificate claiming the answer is proved optimal,
+  // which is the one thing this mode must never say.
+  if (!certify) return { builds, rounds, converged };
+
+  const { CRlo, CDlo, CRhi, CDhi } = critBox(items, faction, vectorOf, setVecs, nonGear);
 
   // McCORMICK. With x = C.RATE in [CRlo, CRhi] and y = 100 + C.DMG in [Dlo, Dhi], both
   // (CRhi - x)(y - Dlo) >= 0 and (x - CRlo)(Dhi - y) >= 0, which rearrange to
@@ -266,15 +389,440 @@ export function solvePower({ items, faction, champStats, current, weights, top =
   };
   const upperBound = Math.min(upperAt(CRhi, CDlo), upperAt(CRlo, CDhi));
 
-  // The whole POOL, not the last round: the best build may have come from any round, or be the
-  // gear already worn. Stable sort, so a tie falls to insertion order — round order, then
-  // build-solve's own deterministic ranking — and a rerun returns the same list.
-  //
-  // These are the best DISTINCT SETS OF ITEMS this iteration happened to see. That is not a
-  // proved top-N, and build-solve's own `top` is not either: its entries after the first are the
-  // best each OTHER plan could reach. Said plainly rather than claimed otherwise.
-  const builds = [...pool.values()]
-    .sort((a, b) => b.lin - a.lin)
-    .slice(0, Math.max(1, top));
   return { builds, rounds, converged, upperBound, gap: upperBound - builds[0].lin };
+}
+
+// --- solvePowerExact ---------------------------------------------------------------------------
+
+// A weights object that reads one stat and ignores the rest, so every quantity the search bounds
+// is the same shape — one dot product against a stat vector — and the lanes in searchBest need no
+// special case for the two crit stats.
+const unitWeights = (stat) => Object.fromEntries(STATS.map((s) => [s, s === stat ? 1 : 0]));
+
+// The probe linearization's weight row. Strictly positive on every stat, which is the only
+// property plan enumeration needs — see WHICH PLANS in the header.
+const ONES = { b: 1, r: 1, a: 1, s: 1, k: 1 };
+
+// The pieces worth branching on, slot by slot. Once a piece's slot and set are fixed it affects
+// the objective only through three numbers — see (2) in the header — so within one (slot, set)
+// group every piece no better than another on all three is dropped. Of pieces equal on all three
+// the lowest id survives, as buildIndex's tie-break does, so a rerun returns the same build.
+//
+// Accessory slots are filtered to the champion's faction HERE as well as in buildIndex: a
+// candidate list that skipped it would prove a maximum over builds the champion cannot wear.
+// Slots outside SLOTS are skipped, because build-solve's `populated` skips them too.
+//
+// Returns slot -> entry[], ascending slot, each list non-empty and ordered by item id — the
+// search re-orders it for speed, and starting from a fixed order is what makes that reproducible.
+function candidatesBySlot(items, faction, ncW, vectorOf) {
+  const groups = new Map();
+  for (const item of items) {
+    if (item.isAccessory && item.faction !== faction) continue;
+    if (!SLOTS.includes(item.slot)) continue;
+    let bySet = groups.get(item.slot);
+    if (!bySet) groups.set(item.slot, (bySet = new Map()));
+    let group = bySet.get(item.set);
+    if (!group) bySet.set(item.set, (group = []));
+    const v = vectorOf.get(item);
+    group.push({ item, nc: dot(ncW, v), cr: v["C.RATE"], cd: v["C.DMG"] });
+  }
+  const out = new Map();
+  for (const slot of SLOTS) {
+    const bySet = groups.get(slot);
+    if (!bySet) continue;
+    const kept = [];
+    for (const group of bySet.values()) {
+      for (const x of group) {
+        // Weak domination with an id tie-break. At least one member of every group survives: the
+        // piece nothing strictly dominates, with the lowest id among those equal to it.
+        const beaten = group.some((y) => y !== x
+          && y.nc >= x.nc && y.cr >= x.cr && y.cd >= x.cd
+          && (y.nc > x.nc || y.cr > x.cr || y.cd > x.cd || y.item.id < x.item.id));
+        if (!beaten) kept.push(x);
+      }
+    }
+    kept.sort((a, b) => a.item.id - b.item.id);
+    out.set(slot, kept);
+  }
+  return out;
+}
+
+// Depth-first branch and bound over the slots, exhaustive over FULL builds and seeded with the
+// incumbent. See (1) to (4) in the header for why it is exact. Everything here that is not a
+// bound — the slot order, the candidate order — is a speed choice that cannot move the answer,
+// because the search visits every unpruned leaf whatever order it visits them in.
+function searchBest({ cands, weights, ncW, setVecs, nonGear, box, vectorOf, best }) {
+  // ONE LANE per quantity the bound tracks: the non-crit linear value, C.RATE and C.DMG. Those
+  // three are a sufficient statistic for a build — see (2) in the header — so every ceiling below
+  // is built from them. Each lane is a NON-NEGATIVE linear functional of a stat vector, which is
+  // what makes a per-slot maximum and a set-bonus headroom upper bounds on what the remaining
+  // slots can add to it.
+  const laneW = [ncW, unitWeights("C.RATE"), unitWeights("C.DMG")];
+  const laneSet = laneW.map((w) => new Map([...setVecs]
+    .map(([setId, vectors]) => [setId, vectors.map((v) => dot(w, v))])));
+  // What each lane holds before any gear. The two crit lanes carry the box floors, which ARE the
+  // non-gear crit totals.
+  const laneBase = [dot(ncW, nonGear), box.CRlo, box.CDlo];
+  const L = laneW.length;
+
+  for (const list of cands.values()) {
+    for (const entry of list) entry.lane = laneW.map((w) => dot(w, vectorOf.get(entry.item)));
+  }
+
+  // An optimistic single scalar per piece, used ONLY to order the search: its non-crit value plus
+  // the most the crit product could ever pay for its crit, at the top of the global box. Ordering
+  // by it tries likely-good leaves first, which raises the incumbent early and prunes more.
+  const proxy = (entry) =>
+    entry.nc + weights.k * (entry.cr * (100 + box.CDhi) + entry.cd * box.CRhi);
+  for (const list of cands.values()) {
+    list.sort((a, b) => proxy(b) - proxy(a) || a.item.id - b.item.id);
+  }
+  // Slots whose candidates differ most go FIRST: that is where a choice moves the bound, and a
+  // bound that falls early prunes a whole subtree rather than a leaf. Ties on the slot id, so a
+  // rerun searches in the same order and returns the same build.
+  const spreadOf = (slot) => {
+    const list = cands.get(slot);
+    return proxy(list[0]) - proxy(list[list.length - 1]);
+  };
+  const order = [...cands.keys()].sort((a, b) => spreadOf(b) - spreadOf(a) || a - b);
+  const n = order.length;
+  // The candidate lists in SEARCH order, as a plain array. canBeat walks them per node, and a
+  // Map lookup per slot per node is measurable at this depth.
+  const slotCands = order.map((slot) => cands.get(slot));
+
+  // suffMax[lane][i]: the largest value each slot from i on could still contribute in that lane,
+  // summed. Every slot's candidate list is non-empty, so the inner maximum is always a real one.
+  const suffMax = laneW.map((_, lane) => {
+    const out = new Float64Array(n + 1);
+    for (let i = n - 1; i >= 0; i--) {
+      let max = -Infinity;
+      for (const entry of slotCands[i]) {
+        if (entry.lane[lane] > max) max = entry.lane[lane];
+      }
+      out[i] = out[i + 1] + max;
+    }
+    return out;
+  });
+
+  // The least crit the remaining slots can be left holding. Every slot must take SOME piece, so
+  // the floor of the node's crit box is the current total plus each remaining slot's smallest
+  // contribution — not the current total, which no completion can actually stay at. Set bonuses
+  // only ever add, so they contribute nothing to a floor.
+  const suffMinCR = new Float64Array(n + 1);
+  const suffMinCD = new Float64Array(n + 1);
+  for (let i = n - 1; i >= 0; i--) {
+    let minCR = Infinity;
+    let minCD = Infinity;
+    for (const entry of slotCands[i]) {
+      if (entry.lane[1] < minCR) minCR = entry.lane[1];
+      if (entry.lane[2] < minCD) minCD = entry.lane[2];
+    }
+    suffMinCR[i] = suffMinCR[i + 1] + minCR;
+    suffMinCD[i] = suffMinCD[i + 1] + minCD;
+  }
+
+  // suffSupply[i]: setId -> how many slots from i on could supply a piece of it. A tighter cap on
+  // a set's remaining headroom than the number of slots left on its own, and the only place the
+  // bound uses WHICH sets the remaining slots actually carry. A set no remaining slot supplies is
+  // absent, and contributes nothing — correctly, since its count cannot rise.
+  const suffSupply = new Array(n + 1);
+  suffSupply[n] = new Map();
+  for (let i = n - 1; i >= 0; i--) {
+    const here = new Map(suffSupply[i + 1]);
+    for (const setId of new Set(cands.get(order[i]).map((entry) => entry.item.set))) {
+      if (setId !== 0) here.set(setId, (suffSupply[i + 1].get(setId) ?? 0) + 1);
+    }
+    suffSupply[i] = here;
+  }
+
+  // What one more piece of a set is worth in one lane, at each count. A lane's set column is
+  // non-decreasing, so every increment is >= 0 — which is what lets laneGain pick the largest few
+  // and still bound the rest. Irregular on purpose: a tiered set pays at 1, 2, 3, 5, 7 and 8, so
+  // its increments at 4 and 6 are zero with positive ones after, and laneGain must not stop early.
+  const laneInc = laneSet.map((columns) => {
+    const out = new Map();
+    for (const [setId, column] of columns) {
+      const inc = new Float64Array(column.length);
+      for (let c = 1; c < column.length; c++) inc[c] = column[c] - column[c - 1];
+      out.set(setId, inc);
+    }
+    return out;
+  });
+
+  // Reused across every laneGain call. Safe because the calls are strictly sequential — one
+  // finishes before the next begins — and it saves an allocation per lane per node.
+  const topBuf = new Float64Array(n);
+
+  // An upper bound on the TOTAL set-bonus increase the remaining slots can still buy in one lane.
+  //
+  // THE COUNTING ARGUMENT. The remaining slots place exactly `left` more pieces between them, so
+  // if set s ends at held_s + j_s then the j_s sum to `left`. Set s's gain telescopes into its
+  // own consecutive increments from held_s, so the whole gain is a sub-multiset of the available
+  // increments of size `left`. Every increment is non-negative, so the sum of the `left` LARGEST
+  // available increments bounds it.
+  //
+  // Summing each set's full headroom instead — the obvious bound — hands every set at once all
+  // the pieces only one of them can have, and on a pool carrying eight sets in every slot that is
+  // roughly eight times too generous. Measured: it made the nine-slot performance instance
+  // intractable (six slots already took 4.8 s, growing about twelvefold per slot), because the
+  // crit ceilings it feeds are multiplied together and the product bound never bit.
+  // `a` and `b` combine the three lanes into one — the affine form a McCormick corner reads the
+  // build through. Bounding that form's set gain directly is TIGHTER than bounding each lane and
+  // recombining: three separate selections each spend their `left` picks on whichever sets suit
+  // that lane, so a pure-C.RATE set and a pure-C.DMG set both get counted in full, while one
+  // combined selection makes them compete for the same slots, which is what actually happens.
+  // Passing a = b = 0 reads lane 0 alone, which is what the product bound's three calls do.
+  const gainOf = (depth, counts, lane, a, b) => {
+    const left = n - depth;
+    if (left === 0) return 0;
+    const inc0 = laneInc[lane];
+    const inc1 = laneInc[1];
+    const inc2 = laneInc[2];
+    let filled = 0;
+    let total = 0;
+    for (const [setId, supply] of suffSupply[depth]) {
+      const c0 = inc0.get(setId);
+      if (!c0) continue;
+      const c1 = inc1.get(setId);
+      const c2 = inc2.get(setId);
+      const held = counts.get(setId) ?? 0;
+      const cap = Math.min(supply, left, SLOTS.length - held);
+      for (let t = 1; t <= cap; t++) {
+        const at = held + t;
+        const v = a === 0 && b === 0 ? c0[at] : c0[at] + a * c1[at] + b * c2[at];
+        if (v <= 0) continue;
+        if (filled < left) {
+          // Keep the buffer ASCENDING, so topBuf[0] is always the smallest kept increment and
+          // the test below is one comparison.
+          let i = filled++;
+          while (i > 0 && topBuf[i - 1] > v) { topBuf[i] = topBuf[i - 1]; i--; }
+          topBuf[i] = v;
+          total += v;
+        } else if (v > topBuf[0]) {
+          total += v - topBuf[0];
+          let i = 0;
+          while (i + 1 < left && topBuf[i + 1] < v) { topBuf[i] = topBuf[i + 1]; i++; }
+          topBuf[i] = v;
+        }
+      }
+    }
+    return total;
+  };
+
+  // Whether any completion of this partial build could still reach the incumbent. Three sound
+  // ceilings on the final objective; the node bound is the smallest, and the smallest being
+  // STRICTLY below the incumbent is the same as ANY of them being — so the moment one is, the
+  // rest need not be computed. Strict, so a branch whose ceiling merely equals the incumbent is
+  // kept: that is what stops the search from pruning a branch holding an equally good optimum.
+  //
+  // (a) THE PRODUCT BOUND, the issue's: each of the three lanes maximized independently, then
+  // recombined. Cheap — every term is a precomputed suffix — so it is tried first.
+  //
+  // (b) and (c) TWO McCORMICK CORNERS OVER THE NODE'S OWN BOX. The certificate's estimators are
+  // taken over the GLOBAL crit box, and that box never shrinks, so their error stays the full
+  // certificate gap at every depth — measured at 17% of the optimum six slots in, which prunes
+  // nothing until the build is nearly complete. Re-deriving McCormick over the box this node's
+  // completions can actually reach shrinks the error with the square of the slots left, which is
+  // what makes the search finish. Over the node box [crLo, crHi] x [cdLo, cdHi]:
+  //
+  //   (crHi - CR)(CD - cdLo) >= 0  =>  CR(100 + CD) <= crHi(100 + CD) + (100 + cdLo)CR - crHi(100 + cdLo)
+  //   (CR - crLo)(cdHi - CD) >= 0  =>  CR(100 + CD) <= crLo(100 + CD) + (100 + cdHi)CR - crLo(100 + cdHi)
+  //
+  // Each is AFFINE in the build's C.RATE and C.DMG, so maximizing it over the completions is one
+  // scalar per piece and a per-slot maximum is ATTAINABLE rather than three maxima belonging to
+  // three different pieces. Both coefficients are non-negative — k >= 0 and no crit total is
+  // below -100 — so the lane gains may be bounded term by term. The per-slot scan is the cost,
+  // and it is why these come second.
+  //
+  // THE CONSTANT IS -k * crRef * cdRef, the same correction solvePower's upperAt applies, and the
+  // 100 is why: multiplying the first rearrangement by k gives
+  // k*crHi*(100 + CD) + k*(100 + cdLo)*CR - k*crHi*(100 + cdLo), whose C.DMG coefficient is
+  // k*crHi and whose C.RATE coefficient is k*(100 + cdLo); the two k*crHi*100 terms then cancel,
+  // leaving -k * crHi * cdLo. Carrying the (100 + cdLo) into the constant instead makes the
+  // ceiling k*crHi*100 too SMALL, which prunes the optimum — it did, and the probe that compares
+  // this mode against solvePower on the same pool is what caught it.
+  const canBeat = (depth, acc, counts) => {
+    const gNC = gainOf(depth, counts, 0, 0, 0);
+    const gCR = gainOf(depth, counts, 1, 0, 0);
+    const gCD = gainOf(depth, counts, 2, 0, 0);
+    const ncNow = laneBase[0] + acc[0];
+    const crNow = laneBase[1] + acc[1];
+    const cdNow = laneBase[2] + acc[2];
+    const crHi = crNow + suffMax[1][depth] + gCR;
+    const cdHi = cdNow + suffMax[2][depth] + gCD;
+    if (ncNow + suffMax[0][depth] + gNC + weights.k * crHi * (100 + cdHi) < best.lin) return false;
+
+    const crLo = crNow + suffMinCR[depth];
+    const cdLo = cdNow + suffMinCD[depth];
+    const aHi = weights.k * (100 + cdLo);
+    const bHi = weights.k * crHi;
+    const aLo = weights.k * (100 + cdHi);
+    const bLo = weights.k * crLo;
+    let sumHi = 0;
+    let sumLo = 0;
+    for (let i = depth; i < n; i++) {
+      let maxHi = -Infinity;
+      let maxLo = -Infinity;
+      for (const entry of slotCands[i]) {
+        const hi = entry.lane[0] + aHi * entry.lane[1] + bHi * entry.lane[2];
+        if (hi > maxHi) maxHi = hi;
+        const lo = entry.lane[0] + aLo * entry.lane[1] + bLo * entry.lane[2];
+        if (lo > maxLo) maxLo = lo;
+      }
+      sumHi += maxHi;
+      sumLo += maxLo;
+    }
+    const atHi = ncNow + aHi * crNow + bHi * cdNow + gainOf(depth, counts, 0, aHi, bHi)
+      - weights.k * crHi * cdLo + sumHi;
+    if (atHi < best.lin) return false;
+    const atLo = ncNow + aLo * crNow + bLo * cdNow + gainOf(depth, counts, 0, aLo, bLo)
+      - weights.k * crLo * cdHi + sumLo;
+    return atLo >= best.lin;
+  };
+
+  const chosen = new Array(n);
+  const counts = new Map();
+
+  // `acc` is rebuilt per node rather than incremented and undone. Integer counts undo exactly;
+  // float lane sums do not, and an add/subtract cycle over a deep search drifts — which would
+  // move a ceiling, and a ceiling that drifts DOWN prunes the optimum.
+  const walk = (depth, acc) => {
+    if (depth === n) {
+      // Scored on the TRUE objective from the ACTUAL set counts — so a one-piece tier and a set
+      // completed by accident both count — through the same totalsFrom the default mode scores
+      // its pool with, so a build's reported `lin` is the one number both modes agree on. Sorted
+      // by slot first, so the sum is in the same order whatever order the search reached the
+      // slots in and two runs cannot differ in the last bits.
+      const picked = chosen.slice().sort((a, b) => a.item.slot - b.item.slot)
+        .map((entry) => entry.item);
+      const totals = totalsFrom(nonGear, picked, vectorOf, setVecs);
+      const score = lin(totals, weights);
+      if (score > best.lin) best = { items: picked, totals, lin: score };
+      return;
+    }
+    for (const entry of cands.get(order[depth])) {
+      const setId = entry.item.set;
+      const held = setId ? counts.get(setId) ?? 0 : 0;
+      const next = Float64Array.from(acc);
+      for (let lane = 0; lane < L; lane++) {
+        next[lane] += entry.lane[lane];
+        if (setId) {
+          const column = laneSet[lane].get(setId);
+          next[lane] += column[held + 1] - column[held];
+        }
+      }
+      if (setId) counts.set(setId, held + 1);
+      chosen[depth] = entry;
+      // Pruned only when the ceiling is STRICTLY below the incumbent, so the branch holding the
+      // optimum survives a ceiling that merely equals it.
+      if (canBeat(depth + 1, next, counts)) walk(depth + 1, next);
+      if (setId) { if (held === 0) counts.delete(setId); else counts.set(setId, held); }
+    }
+  };
+  walk(0, new Float64Array(L));
+  return best;
+}
+
+export function solvePowerExact({ items, faction, champStats, current, weights }) {
+  checkWeights(weights);
+  const started = Date.now();
+  const { base, loreOfSteel } = champStats;
+
+  const vectorOf = new Map(items.map((item) => [item, itemVector(item, base)]));
+  // Every set the bonus table knows, PLUS any set id the pool actually carries, so totalsFrom can
+  // look up a held set unconditionally. A set with no row gets an all-zero column, exactly as
+  // setBonusTerms gives it nothing — and an all-zero column is inert in build-solve too, which
+  // usefulCounts reads as "no count ever pays" and singletonSets as "nothing to buy".
+  const setIds = [...new Set([...Object.keys(SET_BONUSES).map(Number),
+    ...items.map((item) => item.set)])].filter((setId) => setId !== 0).sort((a, b) => a - b);
+  const setVecs = new Map(setIds.map((setId) => [setId, setVectors(setId, base, loreOfSteel)]));
+  const nonGear = nonGearTotals(champStats);
+
+  const ncW = nonCritWeights(weights);
+  const cands = candidatesBySlot(items, faction, ncW, vectorOf);
+  // No slot can be filled at all — the pool is empty, or every accessory is the wrong faction.
+  // The same answer speed-solve.mjs gives for an empty index, and the only honest one: there is
+  // no assignment to prove anything about. No plan was considered, so both counts are zero.
+  if (cands.size === 0) {
+    return { build: null, provenOptimal: true, plansTotal: 0, plansPruned: 0,
+      runtimeMs: Date.now() - started };
+  }
+
+  // THE INCUMBENT. The default mode's answer, which is already the worn gear or better, so the
+  // screen below starts from a build the champion could actually wear rather than from nothing —
+  // and a pool whose every plan falls below it needs no search at all.
+  //
+  // `certify: false` because its certificate would be discarded: this mode proves the maximum, so
+  // a ceiling on it says nothing, and the box it needs is computed just below from the same
+  // critBox. That saves four exact solves on every call — see the note on the option.
+  let best = solvePower({ items, faction, champStats, current, weights, certify: false })
+    .builds[0];
+
+  const box = critBox(items, faction, vectorOf, setVecs, nonGear);
+  const bonusOf = (w) => new Map([...setVecs]
+    .map(([setId, vectors]) => [setId, vectors.map((v) => dot(w, v))]));
+
+  // THE TWO McCORMICK ESTIMATORS, at the box corners (CRhi, CDlo) and (CRlo, CDhi) — the only two
+  // references at which the bound holds, and the same two the certificate uses. Each is affine in
+  // the build's C.RATE and C.DMG, so each is one linearization plus a constant; `offset` is
+  // everything in it that does not come off gear, namely the non-gear totals at this estimator's
+  // weights and its own affine correction of -k * crRef * cdRef.
+  const estimators = [[box.CRhi, box.CDlo], [box.CRlo, box.CDhi]].map(([crRef, cdRef]) => {
+    const w = linearizedWeights(weights, crRef, cdRef);
+    return {
+      w,
+      bonusAt: bonusOf(w),
+      offset: dot(w, nonGear) - weights.k * crRef * cdRef,
+      index: buildIndex(items, faction, (item) => dot(w, vectorOf.get(item))),
+    };
+  });
+
+  // WHICH PLANS. From a STRICTLY POSITIVE linearization, never from `weights`, which may legally
+  // be all zero — and an all-zero valuation gives every set an all-zero bonus column, which
+  // usefulCounts reads as "no count ever pays" and which would collapse the plan space to the
+  // empty plan alone. With every scalar positive a set's bonus rises at exactly the counts its
+  // stat bonus does, so the plans are the same whichever positive row is used. enumeratePlans
+  // reads the index only for which (slot, set) pairs exist, so the valuation cannot move them
+  // either.
+  const probeW = linearizedWeights(ONES, 1, 1);
+  const probeIndex = buildIndex(items, faction, (item) => dot(probeW, vectorOf.get(item)));
+  const plans = enumeratePlans(probeIndex, bonusOf(probeW));
+  const plansTotal = plans.length;
+
+  // THE PER-PLAN BOUND, valid for every build whose NAMING PLAN is this plan: the build's true
+  // objective is at most its estimator value (McCormick, over a box that covers every
+  // assignment); that estimator value is exactly what the assignment credits it under its naming
+  // plan (build-solve's exactness argument); and that credited value is at most the plan's
+  // assignment maximum, which is what assignPlan returns. So the plan's own maximum plus the
+  // estimator's constant terms bounds every build under it, and the smaller of the two estimators
+  // is the bound.
+  //
+  // This does NOT contradict build-solve's own "NO BRANCH AND BOUND": that note is about bounds
+  // computed from the sets a plan NAMES, which miss the singleton bonuses an assignment also
+  // collects. This bound is the assignment's own `credited`, so it misses nothing.
+  const survivors = [];
+  for (const plan of plans) {
+    let bound = Infinity;
+    for (const estimator of estimators) {
+      const assigned = assignPlan(estimator.index, estimator.bonusAt, plan);
+      // Unfillable, so no build names this plan and there is nothing under it to search. Both
+      // estimators agree here: fillability reads only which (slot, set) pairs the index has.
+      if (!assigned) { bound = -Infinity; break; }
+      bound = Math.min(bound, assigned.credited + estimator.offset);
+    }
+    // STRICTLY below, so the plan holding the optimum survives a bound that merely equals the
+    // incumbent — in which case the incumbent is already optimal and the search confirms it.
+    if (bound < best.lin) continue;
+    survivors.push(plan);
+  }
+  const plansPruned = plansTotal - survivors.length;
+
+  // Every build has a naming plan, so when every plan's bound fell below the incumbent the
+  // incumbent IS the maximum and there is nothing left to search.
+  if (survivors.length > 0) {
+    best = searchBest({ cands, weights, ncW, setVecs, nonGear, box, vectorOf, best });
+  }
+
+  return { build: best, provenOptimal: true, plansTotal, plansPruned,
+    runtimeMs: Date.now() - started };
 }
