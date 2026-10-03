@@ -1,6 +1,7 @@
 // oracle/analytics/__tests__/set-bonuses.test.mjs
 import { test, expect } from "vitest";
 import { SET_BONUSES, NO_STAT_SETS, setCounts } from "../set-bonuses.mjs";
+import { setCounts as setCountsFromSpeedModel } from "../speed-model.mjs";
 import { SETS } from "../sets.mjs";
 import { ARTIFACT_SET_NAMES } from "@rslh/core";
 
@@ -134,4 +135,11 @@ test("setCounts tallies how many of these items carry each set", () => {
 // like a completion candidate to every caller that reads these counts.
 test("setCounts skips setless items", () => {
   expect(setCounts([{ set: 4 }, { set: 0 }, { set: 0 }]).has(0)).toBe(false);
+});
+
+// speed-model.mjs used to define its own copy. It re-exports this one, so the two cannot drift —
+// a stronger claim than "both happen to pass the same tests today", and the only one a reference
+// check can make.
+test("speed-model re-exports THIS setCounts rather than a second copy", () => {
+  expect(setCountsFromSpeedModel).toBe(setCounts);
 });
