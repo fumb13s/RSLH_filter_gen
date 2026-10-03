@@ -1,3 +1,37 @@
+// Calibrating one champion's power weights from logged readings: least squares on y = sqrt(power),
+// with a separate constant per COPY. The formula and the fallback tables are in power-model.mjs.
+//
+// A reading record, shared with the CLI that logs them:
+//
+//   { t, heroId, baseTypeId, name, roleId,
+//     totals: { HP, ATK, DEF, SPD, "C.RATE", "C.DMG", RES, ACC }, power }
+//
+// `t` is an ISO-8601 timestamp. ONE CHAMPION PER CALL: the weights are per champion, so a mixed
+// input is refused rather than averaged. Callers group by baseTypeId.
+//
+// Six steps, in this order:
+//
+//   1. Copy constants first — center y and every stat column WITHIN each copy. This removes the
+//      constants exactly, so none is ever dropped or flagged, and they come back at step 6.
+//   2. Varying columns — a column whose centered norm is under 1e-9 of its uncentered norm is
+//      constant within every copy, the constants absorb it, and its parameter is UNDETERMINED.
+//   3. Too few readings — below copies + varying columns the system has fewer equations than
+//      unknowns, and the answer would be arbitrary rather than wrong by a little. It throws.
+//   4. Dependent columns — unpivoted Householder QR over the varying columns scaled to unit norm,
+//      in the fixed order below. A column whose remaining norm after the kept columns' reflections
+//      is under 1e-9 depends on them: undetermined, and skipped. No pivoting, so the outcome never
+//      depends on rounding.
+//   5. Priors — an undetermined parameter's weightsFor fallback comes OUT of the right-hand side
+//      before the kept columns solve, so the fitted weights stay consistent with the values the
+//      solvers will substitute.
+//   6. Constants — each copy's c is the mean of sqrt(power) - lin(totals, w) over its readings,
+//      with w the weights the model is actually evaluated with.
+//
+// Undetermined parameters come back null and are listed in `undetermined`; no non-finite value is
+// ever returned, and `constants` always holds one finite value per copy. The normal equations are
+// deliberately NOT used: the stat columns span about 1 to 1e5, and forming X'X squares that.
+//
+// The readings are personal account data and stay local. Nothing here reads a file.
 import { lin, power, weightsFor } from "./power-model.mjs";
 
 // The design columns, in the FIXED order the factorization walks them. The order is part of the
