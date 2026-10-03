@@ -136,3 +136,20 @@ export function setBonusTotals(counts) {
   }
   return totals;
 }
+
+// Where this table and an observation disagree. `observed` is a Map(key -> value) in the same key
+// space as setBonusTotals. A key present on only one side reads as 0 on the other, so a set that
+// gained or lost a stat in a patch is reported rather than skipped — and the same tolerance covers
+// it. 0.01 is the precision the game displays; below that is float noise from Gestal's x100 ints.
+export function diffSetBonuses(counts, observed) {
+  const totals = setBonusTotals(counts);
+  const out = [];
+  for (const key of new Set([...totals.keys(), ...observed.keys()])) {
+    const fromTable = totals.get(key) ?? 0;
+    const fromGame = observed.get(key) ?? 0;
+    if (Math.abs(fromTable - fromGame) > 0.01) {
+      out.push({ key, table: fromTable, observed: fromGame });
+    }
+  }
+  return out;
+}

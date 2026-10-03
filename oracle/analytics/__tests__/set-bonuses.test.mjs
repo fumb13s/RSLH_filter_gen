@@ -1,6 +1,6 @@
 // oracle/analytics/__tests__/set-bonuses.test.mjs
 import { test, expect } from "vitest";
-import { SET_BONUSES, NO_STAT_SETS, setCounts, setBonusTerms, setBonusTotals }
+import { SET_BONUSES, NO_STAT_SETS, setCounts, setBonusTerms, setBonusTotals, diffSetBonuses }
   from "../set-bonuses.mjs";
 import { setCounts as setCountsFromSpeedModel } from "../speed-model.mjs";
 import { SETS } from "../sets.mjs";
@@ -16,6 +16,7 @@ const KEYS = ["HP%", "ATK%", "DEF%", "SPD%", "C.RATE", "C.DMG", "ACC", "RES"];
 const counts = (o) => new Map(Object.entries(o).map(([k, v]) => [Number(k), v]));
 // Totals as a plain object, so an assertion reads clearly and does not depend on Map key order.
 const totalsOf = (o) => Object.fromEntries(setBonusTotals(counts(o)));
+const observed = (o) => new Map(Object.entries(o));
 
 // --- Pinned rows ------------------------------------------------------------------------------
 //
@@ -226,4 +227,42 @@ test("setBonusTotals sums across different sets", () => {
 
 test("setBonusTotals is empty for an ungeared build", () => {
   expect(setBonusTotals(new Map()).size).toBe(0);
+});
+
+// --- diffSetBonuses ---------------------------------------------------------------------------
+//
+// What a later `power.mjs verify` compares the table against the game's own set bonuses with.
+
+test("diffSetBonuses reports nothing when the table matches what was observed", () => {
+  expect(diffSetBonuses(counts({ 4: 2 }), observed({ "SPD%": 12 }))).toEqual([]);
+});
+
+test("diffSetBonuses reports a mismatch with both values", () => {
+  expect(diffSetBonuses(counts({ 4: 2 }), observed({ "SPD%": 10 })))
+    .toEqual([{ key: "SPD%", table: 12, observed: 10 }]);
+});
+
+// A key on one side only is the shape a patch takes when a set gains or loses a stat, so it has to
+// be reported rather than skipped. Reading the missing side as 0 is what makes the same tolerance
+// apply to it.
+test("diffSetBonuses reports a key the table has and the observation does not, as 0", () => {
+  expect(diffSetBonuses(counts({ 4: 2 }), new Map()))
+    .toEqual([{ key: "SPD%", table: 12, observed: 0 }]);
+});
+
+test("diffSetBonuses reports a key the observation has and the table does not, as 0", () => {
+  expect(diffSetBonuses(new Map(), observed({ "ACC": 40 })))
+    .toEqual([{ key: "ACC", table: 0, observed: 40 }]);
+});
+
+// Gestal stores every value as an integer x100 and we divide back down, so exact equality would
+// report float noise as a table error. 0.01 is the display precision; nothing below it is real.
+test("diffSetBonuses ignores a difference below 0.01 and reports one above it", () => {
+  expect(diffSetBonuses(counts({ 4: 2 }), observed({ "SPD%": 12.005 }))).toEqual([]);
+  expect(diffSetBonuses(counts({ 4: 2 }), observed({ "SPD%": 12.02 })))
+    .toEqual([{ key: "SPD%", table: 12, observed: 12.02 }]);
+});
+
+test("diffSetBonuses reports nothing when both sides are empty", () => {
+  expect(diffSetBonuses(new Map(), new Map())).toEqual([]);
 });
