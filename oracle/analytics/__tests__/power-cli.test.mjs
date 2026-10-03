@@ -1217,6 +1217,31 @@ test("--glyph closes the glyph block with its own certificate", () => {
     .toMatch(/^ {4}at most -?[\d.]+ √power \([\d.]+%\) below the true maximum {3}\[\d+ rounds?, (converged|no fixed point)\]$/m);
 });
 
+// The block gets its own runners-up, measured against the build IT reported rather than against
+// the plain BEST: a glyphed runner-up compared with an unglyphed winner would not add up.
+//
+// Asserted on the text after the headline, because the plain path prints its own #2 above.
+test("--glyph --top 2 adds a runner-up inside the glyph block", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--glyph", "legendary",
+    "--top", "2"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toContain("WITH 6★ Legendary GLYPHS");
+  const [, tail] = res.stdout.split("WITH 6★ Legendary GLYPHS");
+  expect(tail).toMatch(/^ {2}#2 {2}\(-?[\d.]+ √power off BEST\)$/m);
+  // The runner-up gets the same per-build detail as the winner, its glyph count included, so it
+  // can be acted on directly.
+  expect(tail.match(/^ {4}glyphs to apply: /gm)).toHaveLength(2);
+});
+
+// The default is one build in the block, matching the plain path's default.
+test("--glyph prints only one build in the block without --top", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--glyph", "legendary"]);
+  expect(res.status, res.stderr).toBe(0);
+  const [, tail] = res.stdout.split("WITH 6★ Legendary GLYPHS");
+  expect(tail).not.toMatch(/off BEST/);
+  expect(tail.match(/^ {4}glyphs to apply: /gm)).toHaveLength(1);
+});
+
 // --- verify ----------------------------------------------------------------------
 //
 // The set table is GAME DATA and will drift on a patch. verify is the guard: it diffs the table

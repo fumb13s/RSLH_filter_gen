@@ -599,6 +599,11 @@ function printBuild(build, wearers, linesById) {
   console.log(formatTotals(build.totals));
 }
 
+// A build's identity: its item ids, sorted, so "the same set of items" is one string compare
+// however the solver ordered them. The same key power-solve.mjs dedups its own pool on, which is
+// module-private there.
+const itemsKey = (buildItems) => buildItems.map((it) => it.id).sort((a, b) => a - b).join(",");
+
 // The glyph block: the whole vault re-valued as if every glyphable substat held `args.glyph`'s
 // cap, solved again, and printed under the plain BEST it is measured against.
 //
@@ -654,6 +659,21 @@ function printGlyphBlock({ items, champStats, weights, faction, current, plainBe
   // LIFTED pool, and the floor build is one of them.
   console.log(formatCertificate({ ...result, gap: result.upperBound - reported.lin },
     reported.lin, c));
+
+  // The lifted solve's own builds, in its order, each measured against the REPORTED build. ALL of
+  // them rather than builds[1..], because when the floor won the lifted solve's best is itself a
+  // runner-up; the one build that must not appear twice is the reported one, skipped by its items.
+  //
+  // Up to --top - 1 of them, as the plain path prints, so `--top 2` is two builds in each block.
+  const reportedKey = itemsKey(reported.items);
+  let rank = 1;
+  for (const build of result.builds) {
+    if (rank >= args.top) break;
+    if (itemsKey(build.items) === reportedKey) continue;
+    rank++;
+    console.log(`\n${formatOffBest(rank, build, reported, c)}`);
+    printOne(build);
+  }
 }
 
 function printCopy(row, { items, rows, statsById, fitted, readings, args }) {
