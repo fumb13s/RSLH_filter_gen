@@ -349,13 +349,17 @@ function lcg(seed) {
   return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
 }
 
-// Measured locally: 6.8 s wall run alone (6825 and 6850 ms on two runs) and 9.5 s inside a full
-// `npm test`, from 988 plans of which 13 were pruned. The 15 s TARGET is met either way, with
-// about a third of it still in hand under full-suite load; the 60 s timeout below is the actual
-// pass condition, and that has roughly six times the measured figure in hand for a slower CI
-// runner.
+// Measured locally: the solve itself 6.8 s (6825 and 6850 ms), the whole test 6.9 s run alone and
+// 9.5 s inside a full `npm test`, from 988 plans of which 13 were pruned. The 15 s TARGET is met
+// either way, with a third of it still in hand under full-suite load; the 60 s timeout below is
+// the actual pass condition, and that has roughly six times the measured figure in hand for a
+// slower CI runner.
 //
-// The two numbers are quoted from the run rather than printed by it. An earlier draft logged them
+// `certify: false` on the incumbent does NOT show up here, and should not: it saves four exact
+// solves, which on this 216-piece instance are milliseconds. It is a real-vault saving, where
+// build-solve.prop.test.mjs measures one solve at 9.7 s.
+//
+// The numbers are quoted from the run rather than printed by it. An earlier draft logged them
 // from inside the test, which put the only console.log in oracle/analytics/__tests__ onto every
 // `npm test` and all ten fuzz shards every fifteen minutes — a permanent charge to record a
 // number twice.

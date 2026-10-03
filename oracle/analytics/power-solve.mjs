@@ -277,8 +277,14 @@ function critBox(items, faction, vectorOf, setVecs, nonGear) {
   return { CRlo, CDlo, CRhi: CRlo + maxGear("C.RATE"), CDhi: CDlo + maxGear("C.DMG") };
 }
 
+// `certify` is INTERNAL, for solvePowerExact, which wants this function for its INCUMBENT and
+// nothing else: it discards the certificate and computes its own box, which its node bounds need
+// anyway. The certificate is four more exact solves — two for the box and one per McCormick
+// estimator — and build-solve.prop.test.mjs measures one full-vault solve at 9.7 s, so on a real
+// vault those four are most of a minute spent proving a ceiling nobody reads. In the one mode
+// whose entire cost story is runtime, that is worth an option.
 export function solvePower({ items, faction, champStats, current, weights, top = 1,
-  maxRounds = 20 }) {
+  maxRounds = 20, certify = true }) {
   checkWeights(weights);
   const { base, loreOfSteel } = champStats;
 
@@ -342,7 +348,26 @@ export function solvePower({ items, faction, champStats, current, weights, top =
     reference = { cr: roundBest.totals["C.RATE"], cd: roundBest.totals["C.DMG"] };
   }
 
+  // The whole POOL, not the last round: the best build may have come from any round, or be the
+  // gear already worn. Stable sort, so a tie falls to insertion order — round order, then
+  // build-solve's own deterministic ranking — and a rerun returns the same list.
+  //
+  // These are the best DISTINCT SETS OF ITEMS this iteration happened to see. That is not a
+  // proved top-N, and build-solve's own `top` is not either: its entries after the first are the
+  // best each OTHER plan could reach. Said plainly rather than claimed otherwise.
+  //
+  // Always non-empty: round 0 records the worn gear before the iteration starts.
+  const builds = [...pool.values()]
+    .sort((a, b) => b.lin - a.lin)
+    .slice(0, Math.max(1, top));
+
   // --- the certificate ------------------------------------------------------------------------
+
+  // The two fields are ABSENT rather than null when the certificate is skipped. A caller reading
+  // one then gets undefined, which turns into NaN in arithmetic and is loud at once; a null would
+  // read as 0 and print as a zero gap — a certificate claiming the answer is proved optimal,
+  // which is the one thing this mode must never say.
+  if (!certify) return { builds, rounds, converged };
 
   const { CRlo, CDlo, CRhi, CDhi } = critBox(items, faction, vectorOf, setVecs, nonGear);
 
@@ -364,16 +389,6 @@ export function solvePower({ items, faction, champStats, current, weights, top =
   };
   const upperBound = Math.min(upperAt(CRhi, CDlo), upperAt(CRlo, CDhi));
 
-  // The whole POOL, not the last round: the best build may have come from any round, or be the
-  // gear already worn. Stable sort, so a tie falls to insertion order — round order, then
-  // build-solve's own deterministic ranking — and a rerun returns the same list.
-  //
-  // These are the best DISTINCT SETS OF ITEMS this iteration happened to see. That is not a
-  // proved top-N, and build-solve's own `top` is not either: its entries after the first are the
-  // best each OTHER plan could reach. Said plainly rather than claimed otherwise.
-  const builds = [...pool.values()]
-    .sort((a, b) => b.lin - a.lin)
-    .slice(0, Math.max(1, top));
   return { builds, rounds, converged, upperBound, gap: upperBound - builds[0].lin };
 }
 
@@ -736,7 +751,12 @@ export function solvePowerExact({ items, faction, champStats, current, weights }
   // THE INCUMBENT. The default mode's answer, which is already the worn gear or better, so the
   // screen below starts from a build the champion could actually wear rather than from nothing —
   // and a pool whose every plan falls below it needs no search at all.
-  let best = solvePower({ items, faction, champStats, current, weights }).builds[0];
+  //
+  // `certify: false` because its certificate would be discarded: this mode proves the maximum, so
+  // a ceiling on it says nothing, and the box it needs is computed just below from the same
+  // critBox. That saves four exact solves on every call — see the note on the option.
+  let best = solvePower({ items, faction, champStats, current, weights, certify: false })
+    .builds[0];
 
   const box = critBox(items, faction, vectorOf, setVecs, nonGear);
   const bonusOf = (w) => new Map([...setVecs]
