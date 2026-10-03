@@ -1,4 +1,4 @@
-import { lin } from "./power-model.mjs";
+import { lin, power } from "./power-model.mjs";
 
 // The design columns, in the FIXED order the factorization walks them. The order is part of the
 // contract: the QR does not pivot, so which of two mutually dependent stats is kept and which is
@@ -149,5 +149,11 @@ export function fitWeights(readings) {
     constants.set(heroId, mean(rows.map((i) => y[i] - lin(readings[i].totals, params))));
   }
 
-  return { params, constants, undetermined };
+  // In input order, so a caller can line a residual up with the reading it came from.
+  const residuals = readings.map((r) => ({
+    heroId: r.heroId, t: r.t, power: r.power,
+    predicted: power(r.totals, params, constants.get(r.heroId)),
+  }));
+
+  return { params, constants, undetermined, residuals };
 }

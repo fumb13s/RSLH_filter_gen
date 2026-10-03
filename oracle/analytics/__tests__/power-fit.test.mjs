@@ -123,3 +123,22 @@ test("fitWeights recovers both copies' constants when the copies sit at differen
   expect(close(fit.constants.get(11), C11)).toBeLessThan(1e-6);
   expect(close(fit.constants.get(22), C22)).toBeLessThan(1e-6);
 });
+
+// --- residuals ---------------------------------------------------------------------------------
+
+// In input order, so a caller can line a residual up with the reading that produced it without
+// matching on anything. `predicted` is power() rebuilt from the returned weights and that
+// reading's own copy constant — not a number the fit carried along separately.
+test("residuals come back one per reading, in input order, rebuilt from the returned values", () => {
+  const readings = [...copy(11, W, C11), ...copy(22, W, C22, OVER_22)];
+  const fit = fitWeights(readings);
+  expect(fit.residuals).toHaveLength(readings.length);
+  expect(fit.residuals.map((res) => res.t)).toEqual(readings.map((r) => r.t));
+  expect(fit.residuals.map((res) => res.heroId)).toEqual(readings.map((r) => r.heroId));
+  fit.residuals.forEach((res, i) => {
+    expect(res.power).toBe(readings[i].power);
+    const want = power(readings[i].totals, fit.params, fit.constants.get(res.heroId));
+    expect(close(res.predicted, want)).toBeLessThan(1e-12);
+    expect(close(res.predicted, readings[i].power)).toBeLessThan(1e-9);
+  });
+});
