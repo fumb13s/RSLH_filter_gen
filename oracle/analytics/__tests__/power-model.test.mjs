@@ -167,3 +167,15 @@ test("weightsFor skips a fitted value that is not a finite positive number", () 
     expect(got.weights.s, `fitted s = ${bad}`).toBe(BUILT_IN[7200].s);
   }
 });
+
+// Unconditional on purpose. The tempting shortcut — skip the role lookup when a fitted row already
+// supplies all five — would make the bad roleId surface only for the FIRST champion that needs a
+// default, long after the data that produced it.
+test("weightsFor throws on an unknown roleId even when a full fitted table is supplied", () => {
+  const bad = (roleId) => () => weightsFor({ baseTypeId: 7090, roleId }, { 7090: FITTED });
+  expect(bad(4)).toThrow(/power-model/);
+  expect(bad(4)).toThrow(/roleId 4/);
+  expect(bad(undefined)).toThrow(/roleId/);
+  expect(bad(null)).toThrow(/roleId/);
+  expect(bad("Attack")).toThrow(/roleId/);
+});
