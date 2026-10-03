@@ -348,6 +348,31 @@ export function assignPlan(index, bonusAt, plan) {
   return { picks, credited };
 }
 
+// The model has to be a staircase from zero: zero pieces grant nothing, and a piece never takes a
+// bonus away. Checked once per solve rather than trusted, because both failures are quiet — a
+// non-zero [0] credits a set nobody wears, and a decreasing entry breaks the lower-bound argument
+// `credited` rests on. Either way the solver still returns an answer, and it still looks
+// reasonable.
+function checkBonusAt(bonusAt) {
+  for (const [setId, bonus] of bonusAt) {
+    if (!Array.isArray(bonus) || bonus.length !== SLOTS.length + 1) {
+      throw new Error(`build-solve: bonusAt[${setId}] must be an array of ${SLOTS.length + 1}`
+        + " numbers, the bonus at 0..9 pieces");
+    }
+    if (bonus[0] !== 0) {
+      throw new Error(`build-solve: bonusAt[${setId}][0] is ${bonus[0]}, must be 0 —`
+        + " a set nobody wears grants nothing");
+    }
+    for (let count = 1; count < bonus.length; count++) {
+      if (bonus[count] < bonus[count - 1]) {
+        throw new Error(`build-solve: bonusAt[${setId}] decreases at ${count}`
+          + ` (${bonus[count - 1]} -> ${bonus[count]}) —`
+          + " a bonus must never shrink with more pieces");
+      }
+    }
+  }
+}
+
 // Every plan, assigned and then scored on the items it actually produced, best first.
 //
 // Deduplicated on the sorted item ids, with the FIRST plan to reach a build keeping it, so a
@@ -360,6 +385,7 @@ export function assignPlan(index, bonusAt, plan) {
 // could reach, and the true runner-up may be a second build under the winning plan, which is
 // never generated. Said plainly rather than claimed otherwise.
 export function solve(index, bonusAt, { top = 1 } = {}) {
+  checkBonusAt(bonusAt);
   const slots = populated(index);
   if (slots.length === 0) return [];
   const seen = new Map();

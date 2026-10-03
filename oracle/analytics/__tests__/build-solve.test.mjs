@@ -520,3 +520,27 @@ test("solve takes a fifth active set over a fourth multi-piece set", () => {
   expect(result.score).toBe(78);
   expect(result.counts).toEqual(new Map([[1, 2], [2, 2], [3, 2], [5, 1], [6, 1]]));
 });
+
+// Both rules are load-bearing, not hygiene. `[0] === 0` is what lets a set absent from a build be
+// ignored rather than subtracted; non-decreasing is what makes `credited` a lower bound on the
+// realized score, and therefore what makes the exactness argument at the top of the module hold.
+// Violated quietly, each produces a confident wrong answer rather than a crash.
+test("solve rejects a model that pays for zero pieces", () => {
+  const index = indexOf([{ slot: 1, set: 4, value: 1 }]);
+  const bonusAt = new Map([[4, [3, 3, 3, 3, 3, 3, 3, 3, 3, 3]]]);
+  expect(() => solve(index, bonusAt)).toThrow(/\[0\]/);
+});
+
+test("solve rejects a model whose bonus shrinks with more pieces", () => {
+  const index = indexOf([{ slot: 1, set: 4, value: 1 }]);
+  const bonusAt = new Map([[4, [0, 0, 9, 4, 4, 4, 4, 4, 4, 4]]]);
+  expect(() => solve(index, bonusAt)).toThrow(/decrease/);
+});
+
+// A nine-entry array reads bonus[9] as undefined, and undefined poisons the arithmetic into NaN
+// rather than failing — a build whose score is NaN sorts below everything and is silently never
+// returned.
+test("solve rejects a model that is not ten entries long", () => {
+  const index = indexOf([{ slot: 1, set: 4, value: 1 }]);
+  expect(() => solve(index, new Map([[4, [0, 0, 5]]]))).toThrow(/10/);
+});
