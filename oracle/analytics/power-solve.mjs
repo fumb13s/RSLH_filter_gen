@@ -132,14 +132,27 @@ export function nonGearTotals(champStats) {
 //
 // Summing per set is exact rather than an approximation: setBonusTerms walks its counts set by
 // set independently, so the sum of each set's own totals is the whole build's set totals.
+//
+// The non-gear part and the two caches are PARAMETERS because solvePowerExact scores a build per
+// leaf and already holds all three; recomputing nonGearTotals and every set's ten-entry tier
+// table per leaf is the difference between a search that finishes and one that does not. One
+// implementation, so the exact search and the default mode can never disagree on a build's score.
+//
+// `vectorOf` is keyed by item IDENTITY and `setVecs` by set id; both must cover every item and
+// every set the build holds. `nonGear` is COPIED rather than mutated, since callers share one.
+function totalsFrom(nonGear, items, vectorOf, setVecs) {
+  const out = { ...nonGear };
+  for (const item of items) addInto(out, vectorOf.get(item));
+  for (const [setId, count] of setCounts(items)) addInto(out, setVecs.get(setId)[count]);
+  return out;
+}
+
 export function buildTotals(champStats, items) {
   const { base, loreOfSteel } = champStats;
-  const out = nonGearTotals(champStats);
-  for (const item of items) addInto(out, itemVector(item, base));
-  for (const [setId, count] of setCounts(items)) {
-    addInto(out, setVectors(setId, base, loreOfSteel)[count]);
-  }
-  return out;
+  const vectorOf = new Map(items.map((item) => [item, itemVector(item, base)]));
+  const setVecs = new Map([...setCounts(items).keys()]
+    .map((setId) => [setId, setVectors(setId, base, loreOfSteel)]));
+  return totalsFrom(nonGearTotals(champStats), items, vectorOf, setVecs);
 }
 
 // --- solvePower --------------------------------------------------------------------------------
@@ -162,6 +175,30 @@ function checkWeights(weights) {
 // A build's identity: its item ids, sorted, so "the same set of items" is one string compare
 // however the solver happened to order them. Same key build-solve dedups on.
 const itemsKey = (items) => items.map((it) => it.id).sort((a, b) => a - b).join(",");
+
+// THE BOX: the C.RATE and C.DMG every assignment of this pool lies between. Gear only ADDS crit
+// — every item stat and every set bonus is non-negative — so the non-gear totals are the floor,
+// and the ceiling is that floor plus the most any assignment can add, which is one exact solve
+// weighting that stat alone. Those two solves are cheap: a set with no crit gets an all-zero
+// column, which build-solve's usefulCounts skips (no increase) and singletonSets skips
+// (bonus[1] > 0 fails), so plan enumeration collapses onto the crit sets alone rather than
+// walking all 41.
+//
+// Shared by the certificate and by solvePowerExact, which needs the SAME box: a McCormick
+// estimator is an upper bound only over a box that covers every assignment, so a box computed two
+// ways is a bound that holds for one mode and not the other.
+function critBox(items, faction, vectorOf, setVecs, nonGear) {
+  const maxGear = (stat) => {
+    const index = buildIndex(items, faction, (item) => vectorOf.get(item)[stat]);
+    const bonusAt = new Map([...setVecs]
+      .map(([setId, vectors]) => [setId, vectors.map((v) => v[stat])]));
+    const ranked = solve(index, bonusAt, { top: 1 });
+    return ranked.length ? ranked[0].score : 0;
+  };
+  const CRlo = nonGear["C.RATE"];
+  const CDlo = nonGear["C.DMG"];
+  return { CRlo, CDlo, CRhi: CRlo + maxGear("C.RATE"), CDhi: CDlo + maxGear("C.DMG") };
+}
 
 export function solvePower({ items, faction, champStats, current, weights, top = 1,
   maxRounds = 20 }) {
@@ -230,23 +267,7 @@ export function solvePower({ items, faction, champStats, current, weights, top =
 
   // --- the certificate ------------------------------------------------------------------------
 
-  // THE BOX. Gear only ADDS crit — every item stat and every set bonus is non-negative — so the
-  // non-gear totals are the floor, and the ceiling is that floor plus the most any assignment can
-  // add, which is one exact solve weighting that stat alone. Those two solves are cheap: a set
-  // with no crit gets an all-zero column, which build-solve's usefulCounts skips (no increase)
-  // and singletonSets skips (bonus[1] > 0 fails), so plan enumeration collapses onto the crit
-  // sets alone rather than walking all 41.
-  const maxGear = (stat) => {
-    const index = buildIndex(items, faction, (item) => vectorOf.get(item)[stat]);
-    const bonusAt = new Map([...setVecs]
-      .map(([setId, vectors]) => [setId, vectors.map((v) => v[stat])]));
-    const ranked = solve(index, bonusAt, { top: 1 });
-    return ranked.length ? ranked[0].score : 0;
-  };
-  const CRlo = nonGear["C.RATE"];
-  const CDlo = nonGear["C.DMG"];
-  const CRhi = CRlo + maxGear("C.RATE");
-  const CDhi = CDlo + maxGear("C.DMG");
+  const { CRlo, CDlo, CRhi, CDhi } = critBox(items, faction, vectorOf, setVecs, nonGear);
 
   // McCORMICK. With x = C.RATE in [CRlo, CRhi] and y = 100 + C.DMG in [Dlo, Dhi], both
   // (CRhi - x)(y - Dlo) >= 0 and (x - CRlo)(Dhi - y) >= 0, which rearrange to
