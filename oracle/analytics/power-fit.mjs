@@ -1,4 +1,4 @@
-import { lin, power } from "./power-model.mjs";
+import { lin, power, weightsFor } from "./power-model.mjs";
 
 // The design columns, in the FIXED order the factorization walks them. The order is part of the
 // contract: the QR does not pivot, so which of two mutually dependent stats is kept and which is
@@ -15,6 +15,10 @@ const COLUMNS = [
 // Every key lin() reads. Checked up front so a typo in a logged reading fails here, naming the
 // stat, rather than becoming a NaN that propagates into every number the fit returns.
 const TOTAL_KEYS = ["HP", "ATK", "DEF", "SPD", "C.RATE", "C.DMG", "RES", "ACC"];
+
+// A centered column counts as VARYING when it keeps this fraction of its own uncentered norm.
+// Dimensionless, so the test means the same thing for SPD (~200) and X_K (~15000).
+const VARY_TOL = 1e-9;
 
 const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 const mean = (xs) => sum(xs) / xs.length;
@@ -130,7 +134,11 @@ export function fitWeights(readings) {
   }
 
   const scale = cx.map((col) => norm2(col));
-  const varying = [...COLUMNS.keys()];
+  // Step 2: which columns still carry information. A stat that is constant WITHIN every copy — even
+  // at a different value per copy — centers to zero, and the copy constants absorb it exactly. Its
+  // parameter is UNDETERMINED rather than fitted to rounding noise. Compared against the column's
+  // own uncentered norm, so the test means the same thing for SPD (~200) and X_K (~15000).
+  const varying = [...COLUMNS.keys()].filter((j) => scale[j] > VARY_TOL * norm2(x[j]));
 
   // Step 4: the factorization, over the varying columns scaled to unit 2-norm.
   const fac = factorize(varying.map((j) => cx[j].map((v) => v / scale[j])));
@@ -141,17 +149,28 @@ export function fitWeights(readings) {
     const j = varying[q];
     params[COLUMNS[j].param] = gamma[i] / scale[j];
   });
-  const undetermined = [];
+  const keptCols = fac.kept.map((q) => varying[q]);
+  const undeterminedCols = [...COLUMNS.keys()].filter((j) => !keptCols.includes(j));
+  const undetermined = undeterminedCols.map((j) => COLUMNS[j].param);
 
-  // Step 6: each copy's constant is the mean, over its readings, of sqrt(power) - lin(totals, w).
+  // Step 5 (priors): an undetermined parameter is not unknown to the SOLVERS — they will take
+  // exactly what weightsFor falls back to. roleId is static champion data, and every reading here
+  // is one champion, so the first reading settles it; an unknown roleId throws out of weightsFor.
+  const prior = weightsFor({ baseTypeId: ids[0], roleId: readings[0].roleId }).weights;
+  const effective = { ...params };
+  for (const name of undetermined) effective[name] = prior[name];
+
+  // Step 6: each copy's constant is the mean, over its readings, of sqrt(power) - lin(totals, w),
+  // with w the weights the model is actually evaluated with — undetermined ones at their prior.
+  // Always one finite value per copy: the centering never dropped a constant, so every copy has one.
   const constants = new Map();
   for (const [heroId, rows] of copies) {
-    constants.set(heroId, mean(rows.map((i) => y[i] - lin(readings[i].totals, params))));
+    constants.set(heroId, mean(rows.map((i) => y[i] - lin(readings[i].totals, effective))));
   }
 
   // In input order, so a caller can line a residual up with the reading it came from.
   const residuals = readings.map((r) => {
-    const predicted = power(r.totals, params, constants.get(r.heroId));
+    const predicted = power(r.totals, effective, constants.get(r.heroId));
     return { heroId: r.heroId, t: r.t, power: r.power, predicted,
       errorPct: ((predicted - r.power) / r.power) * 100 };
   });

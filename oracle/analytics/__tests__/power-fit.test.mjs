@@ -1,7 +1,7 @@
 // oracle/analytics/__tests__/power-fit.test.mjs
 import { test, expect } from "vitest";
 import { fitWeights } from "../power-fit.mjs";
-import { power } from "../power-model.mjs";
+import { power, weightsFor } from "../power-model.mjs";
 
 // A baseTypeId in no BUILT_IN table, so every prior in these tests is a role default and the test
 // never has to know which champion it is standing in for.
@@ -158,4 +158,29 @@ test("errorPct goes negative for a reading whose power was raised above the fit"
 test("errorPct is about zero across an exactly solvable fit", () => {
   const fit = fitWeights([...copy(11, W, C11), ...copy(22, W, C22, OVER_22)]);
   for (const res of fit.residuals) expect(Math.abs(res.errorPct)).toBeLessThan(1e-6);
+});
+
+// --- undetermined parameters -------------------------------------------------------------------
+
+const PRIOR = weightsFor({ baseTypeId: BASE, roleId: ROLE }).weights;
+const NO_SPD_STEPS = STEPS.filter((step) => !("SPD" in step));
+
+// SPD is constant within each copy (at a different value per copy), so after the within-copy
+// centering its column is exactly zero and its effect is indistinguishable from that copy's
+// constant. Fitting `s` to that would be fitting noise, so it comes back null — and the weights the
+// solvers will actually use put it at its prior, which is what the constants are measured against.
+test("a stat that is constant within every copy leaves its parameter undetermined", () => {
+  const w = { ...W, s: PRIOR.s };
+  const fit = fitWeights([
+    ...copy(11, w, C11, { SPD: 200 }, NO_SPD_STEPS),
+    ...copy(22, w, C22, { ...OVER_22, SPD: 260 }, NO_SPD_STEPS),
+  ]);
+  expect(fit.params.s).toBeNull();
+  expect(fit.undetermined).toEqual(["s"]);
+  for (const name of ["b", "r", "a", "k"]) {
+    expect(close(fit.params[name], w[name]), name).toBeLessThan(1e-6);
+  }
+  expect(fit.constants.size).toBe(2);
+  expect(close(fit.constants.get(11), C11)).toBeLessThan(1e-6);
+  expect(close(fit.constants.get(22), C22)).toBeLessThan(1e-6);
 });
