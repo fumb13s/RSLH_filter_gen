@@ -45,7 +45,7 @@
 // could sit outside that box and make `gap` negative rather than zero. Not checked, because the
 // one precondition worth paying for on every call is the weights; a vault that omits worn gear is
 // a caller bug upstream of here.
-import { buildIndex, SLOTS, solve } from "./build-solve.mjs";
+import { assignPlan, buildIndex, enumeratePlans, SLOTS, solve } from "./build-solve.mjs";
 import { STATS, contribution, itemEntries, statBreakdown } from "./champion-stats.mjs";
 import { SET_BONUSES, setBonusTotals, setCounts } from "./set-bonuses.mjs";
 import { lin } from "./power-model.mjs";
@@ -77,6 +77,23 @@ export function linearizedWeights(w, crRef, cdRef) {
     SPD: w.s,
     "C.RATE": w.k * (100 + cdRef),
     "C.DMG": w.k * crRef,
+    RES: w.r,
+    ACC: w.a,
+  };
+}
+
+// `lin`'s non-crit weights alone, as one scalar per stat. The crit scalars are ZERO rather than
+// frozen at a reference, so dot(nonCritWeights(w), totals) is exactly `lin` less its crit
+// product. linearizedWeights cannot stand in: at a reference of (0, 0) its C.RATE scalar is
+// k * 100, not 0, and a search that used it would double-count every point of crit rate.
+export function nonCritWeights(w) {
+  return {
+    HP: w.b / 15,
+    ATK: w.b,
+    DEF: w.b,
+    SPD: w.s,
+    "C.RATE": 0,
+    "C.DMG": 0,
     RES: w.r,
     ACC: w.a,
   };
@@ -298,4 +315,147 @@ export function solvePower({ items, faction, champStats, current, weights, top =
     .sort((a, b) => b.lin - a.lin)
     .slice(0, Math.max(1, top));
   return { builds, rounds, converged, upperBound, gap: upperBound - builds[0].lin };
+}
+
+// --- solvePowerExact ---------------------------------------------------------------------------
+
+// The probe linearization's weight row. Strictly positive on every stat, which is the only
+// property plan enumeration needs — see WHICH PLANS in the header.
+const ONES = { b: 1, r: 1, a: 1, s: 1, k: 1 };
+
+// The pieces worth branching on, slot by slot. Once a piece's slot and set are fixed it affects
+// the objective only through three numbers — see (2) in the header — so within one (slot, set)
+// group every piece no better than another on all three is dropped. Of pieces equal on all three
+// the lowest id survives, as buildIndex's tie-break does, so a rerun returns the same build.
+//
+// Accessory slots are filtered to the champion's faction HERE as well as in buildIndex: a
+// candidate list that skipped it would prove a maximum over builds the champion cannot wear.
+// Slots outside SLOTS are skipped, because build-solve's `populated` skips them too.
+//
+// Returns slot -> entry[], ascending slot, each list non-empty and ordered by item id — the
+// search re-orders it for speed, and starting from a fixed order is what makes that reproducible.
+function candidatesBySlot(items, faction, ncW, vectorOf) {
+  const groups = new Map();
+  for (const item of items) {
+    if (item.isAccessory && item.faction !== faction) continue;
+    if (!SLOTS.includes(item.slot)) continue;
+    let bySet = groups.get(item.slot);
+    if (!bySet) groups.set(item.slot, (bySet = new Map()));
+    let group = bySet.get(item.set);
+    if (!group) bySet.set(item.set, (group = []));
+    const v = vectorOf.get(item);
+    group.push({ item, nc: dot(ncW, v), cr: v["C.RATE"], cd: v["C.DMG"] });
+  }
+  const out = new Map();
+  for (const slot of SLOTS) {
+    const bySet = groups.get(slot);
+    if (!bySet) continue;
+    const kept = [];
+    for (const group of bySet.values()) {
+      for (const x of group) {
+        // Weak domination with an id tie-break. At least one member of every group survives: the
+        // piece nothing strictly dominates, with the lowest id among those equal to it.
+        const beaten = group.some((y) => y !== x
+          && y.nc >= x.nc && y.cr >= x.cr && y.cd >= x.cd
+          && (y.nc > x.nc || y.cr > x.cr || y.cd > x.cd || y.item.id < x.item.id));
+        if (!beaten) kept.push(x);
+      }
+    }
+    kept.sort((a, b) => a.item.id - b.item.id);
+    out.set(slot, kept);
+  }
+  return out;
+}
+
+export function solvePowerExact({ items, faction, champStats, current, weights }) {
+  checkWeights(weights);
+  const started = Date.now();
+  const { base, loreOfSteel } = champStats;
+
+  const vectorOf = new Map(items.map((item) => [item, itemVector(item, base)]));
+  // Every set the bonus table knows, PLUS any set id the pool actually carries, so totalsFrom can
+  // look up a held set unconditionally. A set with no row gets an all-zero column, exactly as
+  // setBonusTerms gives it nothing — and an all-zero column is inert in build-solve too, which
+  // usefulCounts reads as "no count ever pays" and singletonSets as "nothing to buy".
+  const setIds = [...new Set([...Object.keys(SET_BONUSES).map(Number),
+    ...items.map((item) => item.set)])].filter((setId) => setId !== 0).sort((a, b) => a - b);
+  const setVecs = new Map(setIds.map((setId) => [setId, setVectors(setId, base, loreOfSteel)]));
+  const nonGear = nonGearTotals(champStats);
+
+  const ncW = nonCritWeights(weights);
+  const cands = candidatesBySlot(items, faction, ncW, vectorOf);
+  // No slot can be filled at all — the pool is empty, or every accessory is the wrong faction.
+  // The same answer speed-solve.mjs gives for an empty index, and the only honest one: there is
+  // no assignment to prove anything about. No plan was considered, so both counts are zero.
+  if (cands.size === 0) {
+    return { build: null, provenOptimal: true, plansTotal: 0, plansPruned: 0,
+      runtimeMs: Date.now() - started };
+  }
+
+  // THE INCUMBENT. The default mode's answer, which is already the worn gear or better, so the
+  // screen below starts from a build the champion could actually wear rather than from nothing —
+  // and a pool whose every plan falls below it needs no search at all.
+  const best = solvePower({ items, faction, champStats, current, weights }).builds[0];
+
+  const box = critBox(items, faction, vectorOf, setVecs, nonGear);
+  const bonusOf = (w) => new Map([...setVecs]
+    .map(([setId, vectors]) => [setId, vectors.map((v) => dot(w, v))]));
+
+  // THE TWO McCORMICK ESTIMATORS, at the box corners (CRhi, CDlo) and (CRlo, CDhi) — the only two
+  // references at which the bound holds, and the same two the certificate uses. Each is affine in
+  // the build's C.RATE and C.DMG, so each is one linearization plus a constant; `offset` is
+  // everything in it that does not come off gear, namely the non-gear totals at this estimator's
+  // weights and its own affine correction of -k * crRef * cdRef.
+  const estimators = [[box.CRhi, box.CDlo], [box.CRlo, box.CDhi]].map(([crRef, cdRef]) => {
+    const w = linearizedWeights(weights, crRef, cdRef);
+    return {
+      w,
+      bonusAt: bonusOf(w),
+      offset: dot(w, nonGear) - weights.k * crRef * cdRef,
+      index: buildIndex(items, faction, (item) => dot(w, vectorOf.get(item))),
+    };
+  });
+
+  // WHICH PLANS. From a STRICTLY POSITIVE linearization, never from `weights`, which may legally
+  // be all zero — and an all-zero valuation gives every set an all-zero bonus column, which
+  // usefulCounts reads as "no count ever pays" and which would collapse the plan space to the
+  // empty plan alone. With every scalar positive a set's bonus rises at exactly the counts its
+  // stat bonus does, so the plans are the same whichever positive row is used. enumeratePlans
+  // reads the index only for which (slot, set) pairs exist, so the valuation cannot move them
+  // either.
+  const probeW = linearizedWeights(ONES, 1, 1);
+  const probeIndex = buildIndex(items, faction, (item) => dot(probeW, vectorOf.get(item)));
+  const plans = enumeratePlans(probeIndex, bonusOf(probeW));
+  const plansTotal = plans.length;
+
+  // THE PER-PLAN BOUND, valid for every build whose NAMING PLAN is this plan: the build's true
+  // objective is at most its estimator value (McCormick, over a box that covers every
+  // assignment); that estimator value is exactly what the assignment credits it under its naming
+  // plan (build-solve's exactness argument); and that credited value is at most the plan's
+  // assignment maximum, which is what assignPlan returns. So the plan's own maximum plus the
+  // estimator's constant terms bounds every build under it, and the smaller of the two estimators
+  // is the bound.
+  //
+  // This does NOT contradict build-solve's own "NO BRANCH AND BOUND": that note is about bounds
+  // computed from the sets a plan NAMES, which miss the singleton bonuses an assignment also
+  // collects. This bound is the assignment's own `credited`, so it misses nothing.
+  const survivors = [];
+  for (const plan of plans) {
+    let bound = Infinity;
+    for (const estimator of estimators) {
+      const assigned = assignPlan(estimator.index, estimator.bonusAt, plan);
+      // Unfillable, so no build names this plan and there is nothing under it to search. Both
+      // estimators agree here: fillability reads only which (slot, set) pairs the index has.
+      if (!assigned) { bound = -Infinity; break; }
+      bound = Math.min(bound, assigned.credited + estimator.offset);
+    }
+    // STRICTLY below, so the plan holding the optimum survives a bound that merely equals the
+    // incumbent — in which case the incumbent is already optimal and the search confirms it.
+    if (bound < best.lin) continue;
+    survivors.push(plan);
+  }
+  const plansPruned = plansTotal - survivors.length;
+
+  return { build: best, provenOptimal: true, plansTotal, plansPruned,
+    runtimeMs: Date.now() - started };
 }
