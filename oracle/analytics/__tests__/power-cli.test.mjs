@@ -1202,6 +1202,21 @@ test("--glyph counts the glyphs the reported build would need", () => {
   expect(res.stdout.match(/^ {4}glyphs to apply: /gm)).toHaveLength(1);
 });
 
+// The block gets its OWN certificate, against the lifted vault and the build it reported. Without
+// one the block would be the only build in the report with no statement of what was proved about
+// it — and the plain certificate above says nothing about a pool it never saw.
+//
+// Asserted on the text AFTER the headline, because the plain block prints a certificate of its own
+// above: a line found there would not be this block's.
+test("--glyph closes the glyph block with its own certificate", () => {
+  const res = run(["Elhain", snapshotFile({ artifacts: GEAR_WITH_SPD }), "--glyph", "legendary"]);
+  expect(res.status, res.stderr).toBe(0);
+  expect(res.stdout).toContain("WITH 6★ Legendary GLYPHS");
+  const [, tail] = res.stdout.split("WITH 6★ Legendary GLYPHS");
+  expect(tail)
+    .toMatch(/^ {4}at most -?[\d.]+ √power \([\d.]+%\) below the true maximum {3}\[\d+ rounds?, (converged|no fixed point)\]$/m);
+});
+
 // --- verify ----------------------------------------------------------------------
 //
 // The set table is GAME DATA and will drift on a patch. verify is the guard: it diffs the table

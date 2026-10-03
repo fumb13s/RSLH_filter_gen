@@ -649,6 +649,11 @@ function printGlyphBlock({ items, champStats, weights, faction, current, plainBe
   const reported = result.builds[0].lin >= floor.lin ? result.builds[0] : floor;
   console.log(`\n${formatGlyphGain(plainBest.lin, reported.lin, c, args.glyph)}`);
   printOne(reported);
+  // The certificate against the REPORTED build, so the two numbers on this block describe one
+  // answer. The gap stays non-negative either way: `upperBound` bounds every assignment of the
+  // LIFTED pool, and the floor build is one of them.
+  console.log(formatCertificate({ ...result, gap: result.upperBound - reported.lin },
+    reported.lin, c));
 }
 
 function printCopy(row, { items, rows, statsById, fitted, readings, args }) {
