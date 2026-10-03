@@ -373,6 +373,21 @@ export function liftDelta(lift, base, weights) {
   return linearizedWeights(weights, 0, 0)[stat] * amount;
 }
 
+// One glyph to apply, printed under the piece it belongs to. Six spaces, one level deeper than the
+// four-space piece line above it, so a build reads as a list of pieces each with its glyphs rather
+// than as two interleaved lists.
+//
+// The value is what this ONE glyph is worth to the build it sits in. In power when `c` is known,
+// which needs the build's own `lin`: power is a square, so a fixed delta in sqrt(power) is worth
+// more on a stronger build and the two units are not interchangeable. In sqrt(power) otherwise,
+// where `delta` is already the answer.
+export function formatLift(lift, delta, buildLin, c) {
+  const shown = c === null
+    ? delta.toFixed(2)
+    : String(Math.round(powerOf(buildLin, c) - powerOf(buildLin - delta, c)));
+  return `      glyph ${lift.key} ${lift.from}→${lift.to}  (+${shown})`;
+}
+
 // --- labels ---------------------------------------------------------------------
 
 const slotName = (s) => lookupName(ARTIFACT_SLOT_NAMES, s);

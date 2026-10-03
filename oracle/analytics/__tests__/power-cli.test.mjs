@@ -15,9 +15,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, test } from "vitest";
-import { formatBreakdown, formatCertificate, formatGain, formatGlyphGain, formatOffBest,
-  formatProven, formatSets, formatTotals, latestReading, liftDelta, mainCopies, parsePowerArgs,
-  powerDir, readingsFor, readingsPath, weightsPath } from "../power.mjs";
+import { formatBreakdown, formatCertificate, formatGain, formatGlyphGain, formatLift,
+  formatOffBest, formatProven, formatSets, formatTotals, latestReading, liftDelta, mainCopies,
+  parsePowerArgs, powerDir, readingsFor, readingsPath, weightsPath } from "../power.mjs";
 import { STATS } from "../champion-stats.mjs";
 import { FORMAT, FORMAT_VERSION } from "../gestal.mjs";
 import { power as powerOf } from "../power-model.mjs";
@@ -555,6 +555,35 @@ test("liftDelta does not scale a flat lift on a percent-capable stat", () => {
 test("liftDelta values only the rise, not the whole new glyph", () => {
   expect(liftDelta({ key: "RES", from: 3, to: 10 }, LIFT_BASE, LIFT_W))
     .toBeCloseTo(1.96, 9);
+});
+
+// --- formatLift -----------------------------------------------------------------
+
+// SIX spaces, one level deeper than printBuild's four-space piece line, so a build reads as a list
+// of pieces each with its glyphs rather than as two interleaved lists.
+//
+// With the constant the worth is in POWER, and that needs the BUILD's own `lin`: power is a
+// square, so a fixed delta in sqrt(power) is worth more on a stronger build. Reporting `delta`
+// itself here would print a sqrt(power) number labelled as power.
+//   (120 + 5)^2 - (110 + 5)^2 = 15,625 - 13,225 = 2,400
+test("formatLift states one glyph's worth in power when the constant is known", () => {
+  expect(formatLift({ key: "SPD", from: 0, to: 12 }, 10, 120, 5))
+    .toBe("      glyph SPD 0→12  (+2400)");
+});
+
+// Without it, `delta` is already the answer and is printed in its own unit — two decimals, where
+// the numbers are fractions of a point.
+test("formatLift states it in sqrt(power) when the constant is unknown", () => {
+  expect(formatLift({ key: "HP%", from: 2, to: 12 }, 1.2, 120, null))
+    .toBe("      glyph HP% 2→12  (+1.20)");
+});
+
+// The arrow carries the glyph the piece HAS and the one the grade assumes, so a reader can tell a
+// fresh glyph from an upgrade of one already on the piece — which is the difference between
+// spending a glyph and re-rolling one.
+test("formatLift shows an existing glyph as the arrow's left side", () => {
+  expect(formatLift({ key: "RES", from: 3, to: 10 }, 1.96, 300, null))
+    .toBe("      glyph RES 3→10  (+1.96)");
 });
 
 // --- formatSets -----------------------------------------------------------------
