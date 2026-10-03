@@ -124,3 +124,37 @@ test("a champion with no bonusesV2 at all reads as five empty lists", () => {
   expect(only({ bonusesV2: undefined }).sources)
     .toEqual({ mastery: [], blessing: [], relic: [], empower: [], factionGuardian: [] });
 });
+
+// --- shapes the adapter refuses -----------------------------------------------------
+//
+// Guessing a meaning for an unseen shape would put wrong numbers on the Total Stats screen
+// silently. Refusing makes the next Gestal change visible, as it does for item stat ids.
+
+test("an unknown stat kind is refused, naming the champion and the source", () => {
+  const bad = { bonusesV2: { relic: [{ statKindId: 9, isAbsolute: true, value: 1 }] } };
+  expect(() => only(bad)).toThrow(/unknown Gestal stat kind 9/);
+  expect(() => only(bad)).toThrow(/relic bonus of champion Elhain 100/);
+});
+
+// RES and ACC arrive flat on every capture seen. A relative one would mean a percentage of a base
+// the model has no rule for.
+test("a relative RES or ACC bonus is refused rather than read as a percentage", () => {
+  expect(() => only({ bonusesV2: { blessing: [{ statKindId: 5, isAbsolute: false, value: 0.4 }] } }))
+    .toThrow(/relative Gestal stat kind 5 \(blessing bonus of champion Elhain 100\)/);
+  expect(() => only({ bonusesV2: { blessing: [{ statKindId: 6, isAbsolute: false, value: 0.4 }] } }))
+    .toThrow(/relative Gestal stat kind 6/);
+});
+
+// The mirror: both crits arrive as fractions. An absolute one would already be in points, and
+// scaling it would be a silent x100.
+test("an absolute C.RATE or C.DMG bonus is refused rather than read as points", () => {
+  expect(() => only({ bonusesV2: { mastery: [{ statKindId: 7, isAbsolute: true, value: 15 }] } }))
+    .toThrow(/absolute Gestal stat kind 7 \(mastery bonus of champion Elhain 100\)/);
+  expect(() => only({ bonusesV2: { mastery: [{ statKindId: 8, isAbsolute: true, value: 50 }] } }))
+    .toThrow(/absolute Gestal stat kind 8/);
+});
+
+test("every refusal ends in the adapter's standard advice", () => {
+  expect(() => only({ bonusesV2: { relic: [{ statKindId: 9, isAbsolute: true, value: 1 }] } }))
+    .toThrow(/— the adapter needs updating$/);
+});
